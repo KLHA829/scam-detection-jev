@@ -75,9 +75,9 @@ See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rub
 - `LLM_REVIEW_ON_HIGH` (default `true` — used only when LLM review is enabled)
 - `LLM_REVIEW_GREY_MIN` / `LLM_REVIEW_GREY_MAX` (defaults `0.40` / `0.85`, score/100; `GREY_MAX` is also the high-score second-look line)
 - `LLM_REVIEW_OTP_MAX_CHARS` (default `96`)
-- `LLM_REVIEW_API_URL` or `OPENAI_BASE_URL` / `OPENAI_API_BASE`
-- `LLM_REVIEW_API_KEY` or `OPENAI_API_KEY`
-- `LLM_REVIEW_MODEL` (default `gpt-4o-mini`)
+- `LLM_REVIEW_API_URL` or `OPENAI_BASE_URL` / `OPENAI_API_BASE` — any OpenAI-compatible Chat Completions base
+- `LLM_REVIEW_API_KEY` or `OPENAI_API_KEY` — **optional**; omit for local servers with no auth; when set, sent as `Authorization: Bearer …`
+- `LLM_REVIEW_MODEL` (default `gpt-4o-mini`; use the model id your server expects)
 - `LLM_REVIEW_TIMEOUT_MS` (default `8000`)
 
 If LightJev times out, returns 5xx, or sends invalid JSON, the label is **`unknown`**. Unknown **does not archive** unless the foreign-number rule or heuristic fires.
@@ -100,25 +100,40 @@ LightJev scoring is unchanged. After it, obvious heuristics, optional local/RAG 
    - `label=not_scam` on a **score-only** archive (`lightjev_score`) → **release** to ignore (friend/family false positives such as meal FPS repay)
    - `unknown` / timeout / 5xx / invalid JSON → **keep** a score archive (fail toward scam on high); grey-band messages that were not already archived still **fail-open** (do not archive on the LLM error alone)
 
-Disable the LLM (`LLM_REVIEW_ENABLED=false`, default) for a LightJev-only deploy. Local Bonsai / llama.cpp / vLLM:
+Disable the LLM (`LLM_REVIEW_ENABLED=false`, default) for a LightJev-only deploy.
+
+The second pass is **any OpenAI-compatible Chat Completions API** (`POST …/v1/chat/completions` via `lib/llm-review.js`). It is not tied to one model or host. The same variables work for OpenAI cloud, Ollama, vLLM, or llama.cpp `llama-server`. `LLM_REVIEW_API_KEY` is optional: leave it empty when the server has no auth; when provided it is sent as Bearer.
 
 ```bash
+# OpenAI cloud
 LLM_REVIEW_ENABLED=true
-LLM_REVIEW_ON_HIGH=true
-LLM_REVIEW_API_URL=http://127.0.0.1:8081/v1
-LLM_REVIEW_MODEL=Ternary-Bonsai-2-27B
+LLM_REVIEW_API_URL=https://api.openai.com/v1
+LLM_REVIEW_API_KEY=sk-...
+LLM_REVIEW_MODEL=gpt-4o-mini
+
+# Ollama
+# LLM_REVIEW_API_URL=http://127.0.0.1:11434/v1
+# LLM_REVIEW_MODEL=llama3
+# LLM_REVIEW_API_KEY=
+
+# llama.cpp llama-server (example: Ternary-Bonsai)
+# LLM_REVIEW_API_URL=http://127.0.0.1:8081/v1
+# LLM_REVIEW_MODEL=Ternary-Bonsai-2-27B
+# LLM_REVIEW_API_KEY=local    # or empty if the server has no --api-key
 ```
+
+Aliases if `LLM_REVIEW_API_URL` / `LLM_REVIEW_API_KEY` are unset: `OPENAI_BASE_URL` / `OPENAI_API_BASE` and `OPENAI_API_KEY`.
 
 ## 第二輪覆核（灰帶／高分）
 
 流程維持：**LightJev／現有 heuristic／本地分類／RAG** 先跑；**唔會為咗 LLM 拆走現有計分**。WhatsApp 仍然只係 archive，唔會 block 聯絡人。
 
 - heuristic／RAG／外地號碼 hard archive → **立刻 archive，不呼叫 LLM**
-- LightJev 高分 archive（分數/100 **高過** `LLM_REVIEW_GREY_MAX`，預設 0.85）→ **Bonsai/LLM 第二輪**（`LLM_REVIEW_ON_HIGH=true`，預設開）。LLM `not_scam` 可以 **放行** 分數誤報；`unknown`／失敗則 **維持 archive**
+- LightJev 高分 archive（分數/100 **高過** `LLM_REVIEW_GREY_MAX`，預設 0.85）→ **LLM 第二輪**（`LLM_REVIEW_ON_HIGH=true`，預設開）。LLM `not_scam` 可以 **放行** 分數誤報；`unknown`／失敗則 **維持 archive**
 - 灰帶（預設分數/100 介乎 0.40–0.85）、LightJev 與本地規則衝突、短 OTP、未知號碼要錢 → **先規則遮罩 PII** → 再大模型覆核。灰帶原本未 archive 嘅，LLM 失敗仍然 fail-open（唔會單憑錯誤而 archive）
 - 抑制改為意圖閘門：純防騙新聞／「小心」提醒不 archive；假冒「防騙」兼要驗證碼／轉帳仍會 archive
 
-設定見 `.env.example`（`LLM_REVIEW_*`、`OPENAI_BASE_URL` / `OPENAI_API_KEY` 亦可）。可接雲端 API 或本地 Ollama／vLLM／Bonsai（`LLM_REVIEW_API_URL=http://127.0.0.1:8081/v1`）。
+第二輪係 **任何 OpenAI-compatible Chat Completions API**（唔限某一隻模型）：雲端 OpenAI、Ollama、vLLM、llama.cpp `llama-server`（例如 Ternary-Bonsai）都用同一組 `LLM_REVIEW_API_URL` / `LLM_REVIEW_API_KEY`。本地 server 無 auth 可以留空 key；有 key 就做 `Authorization: Bearer`。別名：`OPENAI_BASE_URL` / `OPENAI_API_BASE`、`OPENAI_API_KEY`。詳見 `.env.example`。
 
 ## Tests
 

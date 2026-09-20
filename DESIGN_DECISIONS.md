@@ -31,7 +31,7 @@ This repository started empty (`README` title only). Product invariants (archive
 | In-memory **TTL cache** and **per-chat single-flight** | Dedupes retries and overlapping handlers. |
 | In-process **`stub-lightjev.js`** | `npm test` never downloads 2.4 GB of weights. |
 | **Rule-based PII redaction** before any external LLM | HK phones, FPS/PayMe/bank ids, emails, ID-like tokens, light names; URLs reduced to domain. Mapping stays local. |
-| **Optional OpenAI-compatible LLM review** on grey/conflict **and** high LightJev scores | Grey-band still fail-open to `unknown` (do not archive on timeout/5xx alone). High/score-only archives (`lightjev_score`) get a Bonsai/LLM second look when `LLM_REVIEW_ON_HIGH=true` (default once review is enabled). LLM `not_scam` **releases** those score FPs (friend/family meal repay, cab fare). LLM `unknown`/fail **keeps** the score archive. Heuristic / RAG / foreign-number archives stay absolute. PII is still redacted before the LLM. |
+| **Optional OpenAI-compatible LLM review** on grey/conflict **and** high LightJev scores | Second pass is any Chat Completions API (OpenAI cloud, Ollama, vLLM, llama.cpp `llama-server`, …) — not a single vendor. API key is optional (Bearer only when set). Grey-band still fail-open to `unknown` (do not archive on timeout/5xx alone). High/score-only archives (`lightjev_score`) get an LLM second look when `LLM_REVIEW_ON_HIGH=true` (default once review is enabled). LLM `not_scam` **releases** those score FPs (friend/family meal repay, cab fare). LLM `unknown`/fail **keeps** the score archive. Heuristic / RAG / foreign-number archives stay absolute. PII is still redacted before the LLM. |
 
 ## Why this rubric
 
