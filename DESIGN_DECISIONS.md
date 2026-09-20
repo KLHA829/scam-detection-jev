@@ -31,7 +31,7 @@ This repository started empty (`README` title only). Product invariants (archive
 | In-memory **TTL cache** and **per-chat single-flight** | Dedupes retries and overlapping handlers. |
 | In-process **`stub-lightjev.js`** | `npm test` never downloads 2.4 GB of weights. |
 | **Rule-based PII redaction** before any external LLM | HK phones, FPS/PayMe/bank ids, emails, ID-like tokens, light names; URLs reduced to domain. Mapping stays local. |
-| **Optional OpenAI-compatible LLM review** on grey/conflict only | Fail-open to `unknown`. Never archives on LLM timeout/5xx alone. High-confidence LightJev/heuristic/RAG still skip the LLM. |
+| **Optional OpenAI-compatible LLM review** on grey/conflict **and** high LightJev scores | Second pass is any Chat Completions API (OpenAI cloud, Ollama, vLLM, llama.cpp `llama-server`, …) — not a single vendor. API key is optional (Bearer only when set). Grey-band still fail-open to `unknown` (do not archive on timeout/5xx alone). High/score-only archives (`lightjev_score`) get an LLM second look when `LLM_REVIEW_ON_HIGH=true` (default once review is enabled). LLM `not_scam` **releases** those score FPs (friend/family meal repay, cab fare). LLM `unknown`/fail **keeps** the score archive. Heuristic / RAG / foreign-number archives stay absolute. PII is still redacted before the LLM. |
 
 ## Why this rubric
 
@@ -66,11 +66,11 @@ LightJev-0.6B was trained on synthetic smart-home / catalog tasks. It is **not**
 
 Live DM, after filters:
 
-1. `score >= ARCHIVE_THRESHOLD` (label `scam`) → archive `lightjev_score` (any sender). Skip LLM.
+1. `score >= ARCHIVE_THRESHOLD` (label `scam`) → archive `lightjev_score` (any sender). If LLM review is enabled, this **score-only** archive still goes to the second pass when the score is in the grey band or (with `LLM_REVIEW_ON_HIGH`, default true) **score/100 > GREY_MAX**.
 2. Else obvious heuristic (or optional local classifier / RAG) → archive `obvious_scam` / `local_classifier` / `rag_scam_match`. Skip LLM.
 3. Else unsaved **and** non-local dial → archive `foreign_number` (low or unknown). Skip LLM.
-4. Else if the text is a warning/self-OTP **without** OTP-forward, money-transfer ask, or impersonation+secrecy → **suppress** (ignore).
-5. Else if LLM review is enabled and a **narrow trigger** fires (grey band 0.40–0.85 of score/100, LightJev vs local conflict, short OTP-ish DM, money ask from unknown/new number) → redact PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. LLM failure → `unknown`, do not archive.
+4. Else if the text is a warning/self-OTP **without** OTP-forward, money-transfer ask, or impersonation+secrecy → **suppress** (ignore). Skip LLM.
+5. Else if LLM review is enabled and a **trigger** fires (grey band 0.40–0.85 of score/100, high score above `GREY_MAX`, LightJev vs local conflict, short OTP-ish DM, money ask from unknown/new number) → redact PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. `not_scam` **releases** a score-only archive. LLM failure → keep a score archive; otherwise `unknown` and do not archive.
 6. Else ignore.
 
-Saved contacts are exempt from (3) only. High score and heuristic still archive them unless (4) applies. Unresolved `@lid` is treated as missing digits, so (3) does not fire.
+Saved contacts are exempt from (3) only. High score and heuristic still archive them unless (4) applies. LLM `not_scam` can later **release** a score-only archive. Unresolved `@lid` is treated as missing digits, so (3) does not fire.
