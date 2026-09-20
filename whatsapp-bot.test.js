@@ -20,7 +20,7 @@ const {
   scoreMessage,
   questionsFromRubric,
 } = require('./lib/score-message');
-const { OpenJevClient, parseAnswers } = require('./lib/openjev-client');
+const { LightJevClient, questionsToRecords, resultsToAnswers } = require('./lib/lightjev-client');
 const { processIncomingMessage, startupForeignArchive, pickSidebarOneToOne } = require('./lib/handle-incoming');
 const { TtlCache, cacheKeyForMessage } = require('./lib/cache');
 const {
@@ -28,7 +28,7 @@ const {
   createStubFetch,
   PRESETS,
   noulMapToAnswers,
-} = require('./stub-openjev');
+} = require('./stub-lightjev');
 
 const rubric = loadRubric();
 
@@ -180,11 +180,11 @@ describe('decideIncomingAction matrix', () => {
     const high = scoreResult({ score: 50, label: 'scam' });
     assert.deepEqual(
       decideIncomingAction(high, '85261234567', true, { hit: false }),
-      { action: 'archive', archiveReason: 'openjev_score' },
+      { action: 'archive', archiveReason: 'lightjev_score' },
     );
     assert.deepEqual(
       decideIncomingAction(high, '14155550123', false, { hit: true }),
-      { action: 'archive', archiveReason: 'openjev_score' },
+      { action: 'archive', archiveReason: 'lightjev_score' },
     );
   });
 
@@ -245,7 +245,7 @@ describe('decideIncomingAction matrix', () => {
 });
 
 describe('resolveIncomingMessageLabel', () => {
-  it('promotes heuristic to scam without changing OpenJEV fail-closed unknown otherwise', () => {
+  it('promotes heuristic to scam without changing LightJev fail-closed unknown otherwise', () => {
     const promoted = resolveIncomingMessageLabel(
       scoreResult({ label: 'not_scam', score: 2 }),
       'WhatsApp 官方通知：否則封號',
@@ -301,9 +301,13 @@ describe('scoring aggregation', () => {
     assert.equal(q.money.type, 'noul');
     assert.equal(q.login_ato.type, 'noul');
   });
+
+  it('caps state length for LightJev 256-token inputs', () => {
+    assert.ok(rubric.maxStateChars <= 256);
+  });
 });
 
-describe('scoreMessage with stub OpenJEV', () => {
+describe('scoreMessage with stub LightJev', () => {
   it('skips empty text as unknown without calling the client', async () => {
     let called = 0;
     const client = {
@@ -341,7 +345,7 @@ describe('scoreMessage with stub OpenJEV', () => {
   it('fails closed on timeout / 5xx / invalid JSON', async () => {
     const timeoutClient = {
       async systemOne() {
-        throw new Error('OpenJEV timeout');
+        throw new Error('LightJev timeout');
       },
     };
     const a = await scoreMessage('hello', { client: timeoutClient, rubric });
@@ -350,7 +354,7 @@ describe('scoreMessage with stub OpenJEV', () => {
 
     const fetch500 = async () =>
       new Response('nope', { status: 500, headers: { 'content-type': 'text/plain' } });
-    const client500 = new OpenJevClient({
+    const client500 = new LightJevClient({
       baseURL: 'http://127.0.0.1:9',
       apiKey: 'test',
       fetchImpl: fetch500,
@@ -362,8 +366,8 @@ describe('scoreMessage with stub OpenJEV', () => {
 
     const badJson = async () =>
       new Response('{', { status: 200, headers: { 'content-type': 'application/json' } });
-    const clientBad = new OpenJevClient({
-      baseURL: 'http://openjev.test',
+    const clientBad = new LightJevClient({
+      baseURL: 'http://lightjev.test',
       fetchImpl: badJson,
     });
     const c = await scoreMessage('hello', { client: clientBad, rubric });
@@ -371,9 +375,9 @@ describe('scoreMessage with stub OpenJEV', () => {
     assert.equal(c.ok, false);
   });
 
-  it('OpenJevClient parses canonical answers via stub fetch', async () => {
-    const client = new OpenJevClient({
-      baseURL: 'http://openjev.test',
+  it('LightJevClient maps noul questions to boolean records and parses /predict', async () => {
+    const client = new LightJevClient({
+      baseURL: 'http://lightjev.test',
       apiKey: 'stub',
       fetchImpl: createStubFetch('scam'),
     });
@@ -384,14 +388,28 @@ describe('scoreMessage with stub OpenJEV', () => {
     assert.equal(answers.money.noul, PRESETS.scam.money);
   });
 
-  it('parses flat (unwrapped) OpenJEV responses', () => {
-    const answers = parseAnswers({
-      model: 'openjev',
-      money: { type: 'noul', noul: 0.9 },
-      usage: { input_tokens: 1, output_tokens: 0 },
-    });
+  it('maps boolean probabilities[1] to noul', () => {
+    const answers = resultsToAnswers([
+      {
+        id: 'money',
+        kind: 'boolean',
+        candidates: ['false', 'true'],
+        probabilities: [0.1, 0.9],
+        selected: 'true',
+        selected_index: 1,
+      },
+    ]);
     assert.equal(answers.money.noul, 0.9);
-    assert.equal(answers.usage, undefined);
+    assert.equal(answers.money.type, 'noul');
+  });
+
+  it('encodes noul rubric questions as LightJev boolean records', () => {
+    const records = questionsToRecords('hi', questionsFromRubric(rubric), 'm1');
+    assert.equal(records.length, rubric.dimensions.length);
+    assert.ok(records.every((row) => row.kind === 'boolean'));
+    assert.deepEqual(records[0].candidates, ['false', 'true']);
+    assert.equal(records[0].state, 'hi');
+    assert.equal(records[0].group_id, 'm1');
   });
 
   it('retries once on 429 then succeeds', async () => {
@@ -402,12 +420,23 @@ describe('scoreMessage with stub OpenJEV', () => {
         return new Response('slow down', { status: 429 });
       }
       return new Response(
-        JSON.stringify({ answers: { money: { type: 'noul', noul: 0.1 } } }),
+        JSON.stringify({
+          results: [
+            {
+              id: 'money',
+              kind: 'boolean',
+              candidates: ['false', 'true'],
+              probabilities: [0.9, 0.1],
+              selected: 'false',
+              selected_index: 0,
+            },
+          ],
+        }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
     };
-    const client = new OpenJevClient({
-      baseURL: 'http://openjev.test',
+    const client = new LightJevClient({
+      baseURL: 'http://lightjev.test',
       fetchImpl,
       timeoutMs: 1000,
     });
@@ -482,8 +511,8 @@ describe('processIncomingMessage', () => {
     );
     assert.equal(out.ignored, false);
     assert.equal(out.decision.action, 'archive');
-    assert.equal(out.decision.archiveReason, 'openjev_score');
-    assert.deepEqual(reasons, ['openjev_score']);
+    assert.equal(out.decision.archiveReason, 'lightjev_score');
+    assert.deepEqual(reasons, ['lightjev_score']);
   });
 
   it('does not archive fail-closed unknown for local unsaved', async () => {
@@ -498,7 +527,7 @@ describe('processIncomingMessage', () => {
       {
         scoreClient: {
           async systemOne() {
-            throw new Error('OpenJEV timeout');
+            throw new Error('LightJev timeout');
           },
         },
         rubric,

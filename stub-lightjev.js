@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('http');
+const { questionsToRecords, resultsToAnswers } = require('./lib/lightjev-client');
 
 const DEFAULT_NOULS = {
   money: 0.05,
@@ -64,7 +65,19 @@ function noulMapToAnswers(noulMap) {
   return answers;
 }
 
-function wrapResponse(answers, model = 'stub-openjev') {
+function noulMapToLightJevResults(noulMap) {
+  return Object.entries(noulMap).map(([id, noul]) => ({
+    id,
+    kind: 'boolean',
+    candidates: ['false', 'true'],
+    probabilities: [Number((1 - noul).toFixed(6)), noul],
+    selected: noul >= 0.5 ? 'true' : 'false',
+    selected_index: noul >= 0.5 ? 1 : 0,
+    temperature: 1,
+  }));
+}
+
+function wrapResponse(answers, model = 'stub-lightjev') {
   return {
     model,
     answers,
@@ -84,6 +97,17 @@ function presetFromState(state) {
   return PRESETS.benign;
 }
 
+function mapForRequest(presetOrFn, body) {
+  if (typeof presetOrFn === 'function') return presetOrFn(body);
+  if (presetOrFn === 'from-state') {
+    const state =
+      (body && body.state) ||
+      (body && body.records && body.records[0] && body.records[0].state);
+    return presetFromState(state);
+  }
+  return PRESETS[presetOrFn] || PRESETS.benign;
+}
+
 function createStubClient(presetOrFn = 'benign') {
   return {
     async systemOne({ state } = {}) {
@@ -101,17 +125,16 @@ function createStubClient(presetOrFn = 'benign') {
 }
 
 function createStubFetch(presetOrFn = 'from-state') {
-  return async (_url, opts = {}) => {
+  return async (url, opts = {}) => {
     const body = opts.body ? JSON.parse(opts.body) : {};
-    let map;
-    if (typeof presetOrFn === 'function') {
-      map = presetOrFn(body);
-    } else if (presetOrFn === 'from-state') {
-      map = presetFromState(body.state);
+    const map = mapForRequest(presetOrFn, body);
+    const path = String(url);
+    let payload;
+    if (path.includes('/predict')) {
+      payload = { model: 'stub-lightjev', results: noulMapToLightJevResults(map) };
     } else {
-      map = PRESETS[presetOrFn] || PRESETS.benign;
+      payload = wrapResponse(noulMapToAnswers(map));
     }
-    const payload = wrapResponse(noulMapToAnswers(map));
     return new Response(JSON.stringify(payload), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -123,10 +146,11 @@ function createStubServer({ port = 8765, preset = 'from-state' } = {}) {
   const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
+      res.end(JSON.stringify({ ok: true, model: 'stub-lightjev' }));
       return;
     }
-    if (req.method !== 'POST' || !String(req.url).includes('/v1/systemone')) {
+    const path = String(req.url || '');
+    if (req.method !== 'POST' || !(path.includes('/predict') || path.includes('/v1/systemone'))) {
       res.writeHead(404, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: 'not found' }));
       return;
@@ -141,13 +165,10 @@ function createStubServer({ port = 8765, preset = 'from-state' } = {}) {
       res.end(JSON.stringify({ error: 'invalid json' }));
       return;
     }
-    const map =
-      typeof preset === 'function'
-        ? preset(body)
-        : preset === 'from-state'
-          ? presetFromState(body.state)
-          : PRESETS[preset] || PRESETS.benign;
-    const payload = wrapResponse(noulMapToAnswers(map));
+    const map = mapForRequest(preset, body);
+    const payload = path.includes('/predict')
+      ? { model: 'stub-lightjev', results: noulMapToLightJevResults(map) }
+      : wrapResponse(noulMapToAnswers(map));
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify(payload));
   });
@@ -157,10 +178,9 @@ function createStubServer({ port = 8765, preset = 'from-state' } = {}) {
 }
 
 async function main() {
-  const port = Number(process.env.STUB_OPENJEV_PORT || 8765);
+  const port = Number(process.env.STUB_LIGHTJEV_PORT || process.env.LIGHTJEV_PORT || 8765);
   const server = await createStubServer({ port, preset: 'from-state' });
-  // eslint-disable-next-line no-console
-  console.log(`[INFO] stub OpenJEV listening on http://127.0.0.1:${port}/v1/systemone`);
+  console.log(`[INFO] stub LightJev listening on http://127.0.0.1:${port}/predict`);
   return server;
 }
 
@@ -168,11 +188,14 @@ module.exports = {
   DEFAULT_NOULS,
   PRESETS,
   noulMapToAnswers,
+  noulMapToLightJevResults,
   wrapResponse,
   presetFromState,
   createStubClient,
   createStubFetch,
   createStubServer,
+  questionsToRecords,
+  resultsToAnswers,
 };
 
 if (require.main === module) {
