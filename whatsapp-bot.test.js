@@ -145,6 +145,10 @@ describe('heuristics', () => {
       true,
     );
     assert.equal(
+      matchObviousScam('請把驗證碼發給我').id,
+      'otp_harvest',
+    );
+    assert.equal(
       matchObviousScam('請用轉數快立即轉帳到此帳戶').id,
       'fps_urgent_transfer',
     );
@@ -241,6 +245,28 @@ describe('decideIncomingAction matrix', () => {
     const d = decideIncomingAction(high, '14155550123', false, { hit: true });
     assert.equal(d.action, 'archive');
     assert.notEqual(d.action, 'block');
+  });
+
+  it('archives optional RAG / local-classifier hits after heuristics', () => {
+    const low = scoreResult({ score: 4, label: 'not_scam' });
+    assert.deepEqual(
+      decideIncomingAction(low, '85261234567', true, { hit: false }, {
+        hit: true,
+        archiveReason: 'rag_scam_match',
+      }),
+      { action: 'archive', archiveReason: 'rag_scam_match' },
+    );
+    assert.deepEqual(
+      decideIncomingAction(
+        low,
+        '85261234567',
+        true,
+        { hit: false },
+        { hit: false },
+        { hit: true, archiveReason: 'local_classifier' },
+      ),
+      { action: 'archive', archiveReason: 'local_classifier' },
+    );
   });
 });
 

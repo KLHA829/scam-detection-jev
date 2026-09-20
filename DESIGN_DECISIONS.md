@@ -11,7 +11,8 @@ This repository started empty (`README` title only). Product invariants (archive
 | **Unsaved + non-local** archive when the message is clean or `unknown` | Complements text scoring for overseas spam DMs. Local = `852` / `86` / `886`. |
 | Exclude **880–883, 888** from being treated as China | Avoids prefix mistakes around `86` / `88x` ITU codes. |
 | **LID**: resolve `@lid` before the foreign rule; never use LID digits as a phone | LID identifiers are not country codes. Unresolved LID skips the foreign rule only; scoring still runs. |
-| Tight **regex heuristic** (archive only) | Failover when LightJev is down or under-confident on copy-paste tropes. |
+| Tight **regex heuristic** (archive only) | Failover when LightJev is down or under-confident on copy-paste tropes. Includes OTP harvest (`請提供密碼` / 發給我) so fake anti-scam bait still archives. |
+| **Intent-gated suppress** | Warning/self-OTP language (`防騙`, `小心`, `新聞`) suppresses archive **only if** the DM does not also solicit OTP-forward, money transfer, or impersonation+secrecy. |
 | Filters: `fromMe`, groups, notification types, official WhatsApp names, `isMe` | Avoids looping on your own chats and WhatsApp system accounts. |
 | Session in **`.wwebjs_auth`** via `LocalAuth` | Same operator workflow as a typical `whatsapp-web.js` bot. |
 | Optional **Docker** for WhatsApp Web Chromium | LightJev runs as a sibling Python process so the Node image stays small. |
@@ -29,6 +30,8 @@ This repository started empty (`README` title only). Product invariants (archive
 | `scoring-rubric.json` + `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` | Tune without code changes. |
 | In-memory **TTL cache** and **per-chat single-flight** | Dedupes retries and overlapping handlers. |
 | In-process **`stub-lightjev.js`** | `npm test` never downloads 2.4 GB of weights. |
+| **Rule-based PII redaction** before any external LLM | HK phones, FPS/PayMe/bank ids, emails, ID-like tokens, light names; URLs reduced to domain. Mapping stays local. |
+| **Optional OpenAI-compatible LLM review** on grey/conflict only | Fail-open to `unknown`. Never archives on LLM timeout/5xx alone. High-confidence LightJev/heuristic/RAG still skip the LLM. |
 
 ## Why this rubric
 
@@ -46,6 +49,7 @@ LightJev-0.6B was trained on synthetic smart-home / catalog tasks. It is **not**
 - Claiming that LightJev probabilities are calibrated frequencies.
 - Fine-tuning LightJev on scam DMs.
 - Live WhatsApp or live LightJev weights in CI.
+- Using an LLM to redact PII (rule-based only).
 
 ## Rejected
 
@@ -62,9 +66,11 @@ LightJev-0.6B was trained on synthetic smart-home / catalog tasks. It is **not**
 
 Live DM, after filters:
 
-1. `score >= ARCHIVE_THRESHOLD` (label `scam`) → archive `lightjev_score` (any sender).
-2. Else obvious heuristic → archive `obvious_scam`.
-3. Else unsaved **and** non-local dial → archive `foreign_number` (low or unknown).
-4. Else ignore.
+1. `score >= ARCHIVE_THRESHOLD` (label `scam`) → archive `lightjev_score` (any sender). Skip LLM.
+2. Else obvious heuristic (or optional local classifier / RAG) → archive `obvious_scam` / `local_classifier` / `rag_scam_match`. Skip LLM.
+3. Else unsaved **and** non-local dial → archive `foreign_number` (low or unknown). Skip LLM.
+4. Else if the text is a warning/self-OTP **without** OTP-forward, money-transfer ask, or impersonation+secrecy → **suppress** (ignore).
+5. Else if LLM review is enabled and a **narrow trigger** fires (grey band 0.40–0.85 of score/100, LightJev vs local conflict, short OTP-ish DM, money ask from unknown/new number) → redact PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. LLM failure → `unknown`, do not archive.
+6. Else ignore.
 
-Saved contacts are exempt from (3) only. High score and heuristic still archive them. Unresolved `@lid` is treated as missing digits, so (3) does not fire.
+Saved contacts are exempt from (3) only. High score and heuristic still archive them unless (4) applies. Unresolved `@lid` is treated as missing digits, so (3) does not fire.

@@ -71,8 +71,42 @@ See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rub
 - `STARTUP_FOREIGN_SCAN` (default `true`)
 - `SCORE_CACHE_TTL_MS` (default `900000`)
 - `RUBRIC_PATH` — override JSON path
+- `LLM_REVIEW_ENABLED` (default `false`)
+- `LLM_REVIEW_GREY_MIN` / `LLM_REVIEW_GREY_MAX` (defaults `0.40` / `0.85`, score/100)
+- `LLM_REVIEW_OTP_MAX_CHARS` (default `96`)
+- `LLM_REVIEW_API_URL` or `OPENAI_BASE_URL` / `OPENAI_API_BASE`
+- `LLM_REVIEW_API_KEY` or `OPENAI_API_KEY`
+- `LLM_REVIEW_MODEL` (default `gpt-4o-mini`)
+- `LLM_REVIEW_TIMEOUT_MS` (default `8000`)
 
 If LightJev times out, returns 5xx, or sends invalid JSON, the label is **`unknown`**. Unknown **does not archive** unless the foreign-number rule or heuristic fires.
+
+## Second-pass review (grey / conflict)
+
+LightJev scoring is unchanged. After it, obvious heuristics, optional local/RAG matchers, and the foreign-number rule, a **second pass** can run on uncertain DMs only:
+
+1. **High-confidence archive** (`lightjev_score`, `obvious_scam`, `rag_scam_match`, `local_classifier`, `foreign_number`) → archive immediately. No LLM.
+2. **Intent-gated suppress** — copy that only warns (`防騙` / `小心` / `新聞` / self-OTP) is **not** archived. Fake 「我係防騙協調中心…請提供密碼/轉帳」 is **not** suppressed, because it also solicits OTP, money, or impersonation+secrecy.
+3. **Grey / conflict → redact → LLM** (when `LLM_REVIEW_ENABLED=true`):
+   - score in grey band `LLM_REVIEW_GREY_MIN`–`LLM_REVIEW_GREY_MAX` (defaults **0.40–0.85**, i.e. LightJev score/100) and not already hard-archived
+   - LightJev vs local/heuristic conflict (including money/OTP solicitation vs a `not_scam` label)
+   - short OTP-ish message (`LLM_REVIEW_OTP_MAX_CHARS`, default 96)
+   - money ask from an unsaved / new / non-local number
+4. Rule-based PII redaction (`lib/redact.js`, **no LLM**) replaces HK phones `[電話]`, bank/FPS/PayMe `[戶口]`, emails `[電郵]`, ID-like `[證件]`, easy names `[姓名]`, and strips URL paths to the domain. A local mapping may be kept in memory for logs; it is **never** sent to the LLM.
+5. OpenAI-compatible `POST …/v1/chat/completions` (`lib/llm-review.js`) must return JSON `{ label, confidence, signals, should_archive, reason }`. `should_archive` or `label=scam` archives as `llm_review_scam`. Timeout / 5xx / invalid JSON → **unknown**, fail-open, **do not archive** on the LLM error alone.
+
+Disable the LLM (`LLM_REVIEW_ENABLED=false`, default) for a LightJev-only deploy.
+
+## 第二輪覆核（不確定訊息）
+
+流程維持：**LightJev／現有 heuristic／本地分類／RAG → 高風險即時 archive**，不會為了 LLM 拿掉現有計分。
+
+- 已達 archive 門檻或 heuristic／RAG 命中 → **立刻 archive，不呼叫 LLM**
+- 灰帶（預設分數/100 介乎 0.40–0.85 且尚未 hard archive）、LightJev 與本地規則衝突、短 OTP、未知號碼要錢 → **先規則遮罩 PII**（電話／戶口／電郵／證件；不用 LLM 做遮罩）→ 再大模型覆核
+- LLM 逾時或失敗 → 當 `unknown`，**不會單憑 LLM 錯誤而 archive**
+- 抑制改為意圖閘門：純防騙新聞／「小心」提醒不 archive；假冒「防騙」兼要驗證碼／轉帳仍會 archive
+
+設定見 `.env.example`（`LLM_REVIEW_*`、`OPENAI_BASE_URL` / `OPENAI_API_KEY` 亦可）。可接雲端 API 或本地 Ollama／vLLM。
 
 ## Tests
 
@@ -100,6 +134,9 @@ QR login still needs a terminal that can show the code (or inspect container log
 
 - `whatsapp-bot.js` — WhatsApp Web client, QR, archive-only actions
 - `lib/lightjev-client.js` — maps noul questions → LightJev boolean records; reads `P(true)`
+- `lib/redact.js` — rule-based PII redaction before any external LLM call
+- `lib/llm-review.js` — optional OpenAI-compatible second pass (grey / conflict only)
+- `lib/scam-intent.js` — intent-gated suppress (warning vs OTP/money solicitation)
 - `lightjev_serve.py` — persistent checkpoint worker (`POST /predict`)
 - `stub-lightjev.js` — fixed probabilities for tests and local HTTP stub
 - [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) — kept / improved / deferred / rejected

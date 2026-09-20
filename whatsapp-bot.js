@@ -21,6 +21,7 @@ const {
   decideIncomingAction,
   resolveIncomingMessageLabel,
 } = require('./lib/decide-incoming');
+const { createLlmReviewConfig } = require('./lib/llm-review');
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
 
@@ -86,7 +87,7 @@ async function runStartupForeignScan(client) {
   });
 }
 
-async function handleWaMessage(msg, { client, scoreClient, rubric, cache }) {
+async function handleWaMessage(msg, { client, scoreClient, rubric, cache, llmReview }) {
   let chat;
   let contact;
   try {
@@ -117,6 +118,7 @@ async function handleWaMessage(msg, { client, scoreClient, rubric, cache }) {
       scoreClient,
       rubric,
       cache,
+      llmReview,
       resolveNumber: () =>
         resolveRealNumber(client, isLidId(chatId) ? chatId : contactId || chatId, contact),
       archiveChat: async () => {
@@ -166,6 +168,7 @@ async function main() {
   const rubricPath = process.env.RUBRIC_PATH || undefined;
   const rubric = loadRubric(rubricPath);
   const scoreClient = createScoreClient();
+  const llmReview = createLlmReviewConfig();
   const ttl = Number(process.env.SCORE_CACHE_TTL_MS || 900000);
   const cache = new TtlCache({ ttlMs: ttl });
   const client = createWhatsAppClient();
@@ -175,9 +178,11 @@ async function main() {
     archiveThreshold: rubric.thresholds.archive,
     safeThreshold: rubric.thresholds.safe,
     maxStateChars: rubric.maxStateChars,
+    llmReviewEnabled: Boolean(llmReview.enabled),
+    llmReviewModel: llmReview.enabled ? llmReview.model : null,
   });
 
-  attachHandlers(client, { scoreClient, rubric, cache });
+  attachHandlers(client, { scoreClient, rubric, cache, llmReview });
   await client.initialize();
 }
 
