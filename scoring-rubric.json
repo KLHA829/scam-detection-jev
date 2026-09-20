@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "maxStateChars": 2000,
+  "noiseFloor": 0.45,
+  "comboBonus": 12,
+  "comboMoneyMin": 0.6,
+  "comboOtherMin": 0.55,
+  "thresholds": {
+    "archive": 42,
+    "safe": 18
+  },
+  "dimensions": [
+    {
+      "id": "money",
+      "weight": 16,
+      "question": {
+        "type": "noul",
+        "instructions": "Does this WhatsApp DM ask the recipient to send, lend, transfer, wire, or otherwise move money or crypto (including 借錢, 轉帳, 轉賬, 匯款, FPS payment, bitcoin, USDT)? Judge the message text only. Casual chat about prices or splitting a bill among friends is not a request to send funds to the sender.",
+        "criteria": {
+          "true": "The sender is soliciting a payment, loan, remittance, gift of money, or crypto transfer from the recipient.",
+          "false": "No request to move money or crypto; ordinary chat, questions, or mentioning money in passing."
+        }
+      }
+    },
+    {
+      "id": "banking",
+      "weight": 14,
+      "question": {
+        "type": "noul",
+        "instructions": "Does this message ask for bank account numbers, card numbers, CVV, FPS / 轉數快 identifiers, 戶口, 卡號, or other banking credentials?",
+        "criteria": {
+          "true": "The sender requests bank or payment-account details, card data, or FPS identifiers.",
+          "false": "No request for banking credentials; talking about a bank in general is not enough."
+        }
+      }
+    },
+    {
+      "id": "login_ato",
+      "weight": 18,
+      "question": {
+        "type": "noul",
+        "instructions": "Does this message try to take over an account: asking for OTP / 驗證碼, claiming the account is locked, urging a password reset, or telling the recipient to click a link to verify login?",
+        "criteria": {
+          "true": "Account-takeover or login-verification lure (OTP harvest, locked-account scare, verify-via-link).",
+          "false": "Not a login or OTP harvest attempt."
+        }
+      }
+    },
+    {
+      "id": "impersonation",
+      "weight": 16,
+      "question": {
+        "type": "noul",
+        "instructions": "Does the sender impersonate a trusted institution: government, police / 警察, tax / 稅務, a bank staff member, SF Express / 順豐, or WhatsApp official / 官方?",
+        "criteria": {
+          "true": "The message pretends to be an official, courier, bank, or government party the recipient would trust.",
+          "false": "No impersonation of a trusted organization or official channel."
+        }
+      }
+    },
+    {
+      "id": "credential_harvest",
+      "weight": 10,
+      "question": {
+        "type": "noul",
+        "instructions": "Does the message ask the recipient to send identity documents or selfies for verification (HKID, 身分證, 證件, passport, driver's license, face photo)?",
+        "criteria": {
+          "true": "Requests ID documents, selfies, or KYC photos from the recipient.",
+          "false": "Does not harvest identity documents."
+        }
+      }
+    },
+    {
+      "id": "parcel_customs",
+      "weight": 8,
+      "question": {
+        "type": "noul",
+        "instructions": "Is this a parcel / customs-fee scam: 包裹, 清關, unpaid postage, customs duty, or courier hold requiring a fee or personal details to release a package?",
+        "criteria": {
+          "true": "Courier, customs, or unpaid-postage lure typical of SF Express / postal scams.",
+          "false": "Not a parcel or customs-fee lure."
+        }
+      }
+    },
+    {
+      "id": "prize_job",
+      "weight": 6,
+      "question": {
+        "type": "noul",
+        "instructions": "Is this an unsolicited prize, tax-refund, or too-good job/part-time offer (中獎, 退稅, 兼職) that requires a fee, account details, or a click to claim?",
+        "criteria": {
+          "true": "Prize, refund, or recruitment lure asking for action or money to claim a benefit.",
+          "false": "Not a prize, refund, or fake-job lure."
+        }
+      }
+    },
+    {
+      "id": "crypto_romance",
+      "weight": 6,
+      "question": {
+        "type": "noul",
+        "instructions": "Does the message push a crypto/forex investment, guaranteed returns (保證回報), or a trading-platform signup typical of pig-butchering / romance-investment scams?",
+        "criteria": {
+          "true": "Investment or guaranteed-return pitch, often with a platform link or coaching to deposit.",
+          "false": "Not an investment or romance-crypto pitch."
+        }
+      }
+    },
+    {
+      "id": "link_lure",
+      "weight": 6,
+      "question": {
+        "type": "noul",
+        "instructions": "Does the message combine a call-to-action with a suspicious link (shortener, 'click here to unlock/verify/claim', bit.ly, tinyurl) meant to phish the recipient?",
+        "criteria": {
+          "true": "Phishy link plus pressure to click, verify, unlock, or claim.",
+          "false": "No phishing link lure. Sharing a normal URL among friends is not enough."
+        }
+      }
+    },
+    {
+      "id": "urgency",
+      "weight": 4,
+      "question": {
+        "type": "noul",
+        "instructions": "Does the message apply time pressure or a punishment threat (立即, 立刻, limited time, 否則封號, account will be banned) to force immediate action?",
+        "criteria": {
+          "true": "Explicit urgency or penalty-if-you-wait language.",
+          "false": "Calm or ordinary pacing; no ban/expiry threat."
+        }
+      }
+    }
+  ]
+}

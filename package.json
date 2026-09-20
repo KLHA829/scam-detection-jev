@@ -1,0 +1,20 @@
+{
+  "name": "scam-detection-jev",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local WhatsApp Web scam-risk bot using OpenJEV typed decisions (archive only).",
+  "main": "whatsapp-bot.js",
+  "scripts": {
+    "start": "node whatsapp-bot.js",
+    "test": "node --test whatsapp-bot.test.js",
+    "stub": "node stub-openjev.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.34.1"
+  }
+}
