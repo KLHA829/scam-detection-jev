@@ -5,3 +5,7 @@ node_modules
 .env
 *.md
 !README.md
+model
+scripts/model
+*.safetensors
+pytorch_model.bin

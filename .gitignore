@@ -11,3 +11,10 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .huggingface/
+
+# Fine-tuned classifier weights (too large; keep on the GPU machine)
+model/
+scripts/model/
+*.safetensors
+pytorch_model.bin
+tf_model.h5

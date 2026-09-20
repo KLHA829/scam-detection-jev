@@ -57,7 +57,7 @@ score = min(100, raw + bonus)
 |-------|-----------------|----------------------|
 | `scam` | `score >= 42` (`ARCHIVE_THRESHOLD`) | Yes |
 | `not_scam` | `score <= 18` (`SAFE_THRESHOLD`) | No |
-| `unknown` | in between, **or** empty text, **or** LightJev failure | No (unless foreign-number / heuristic) |
+| `unknown` | in between, **or** empty text, **or** LightJev failure | No (unless foreign-number / heuristic / enabled classifier) |
 
 Empty body: skip LightJev, `unknown`, `ok: true`.  
 Timeout / 5xx / 401 / 422 / invalid response / over-length input: `unknown`, `ok: false`.
@@ -95,6 +95,12 @@ Tight regexes in `lib/heuristics.js` (disable with `HEURISTIC_ENABLED=false`):
 - 順豐 / SF Express + 清關/customs + `http`
 
 These set `archiveReason: 'obvious_scam'` even when the LightJev score is low.
+
+## Optional local zh/yue classifier (archive overlay)
+
+When `SCAM_CLASSIFIER_ENABLED=true`, CJK messages are POSTed to `SCAM_CLASSIFIER_URL` (`{"text":"..."}`). The bot archives `local_classifier_scam` if `prob_scam >= SCAM_CLASSIFIER_THRESH` (default **0.85**) **and** LightJev + heuristics did not already archive.
+
+This does **not** replace the rubric. LightJev still runs. HTTP errors, timeouts, and English-only text fail open (no archive from this path). Known remaining false positives at 0.85: benign FPS/PayMe, self-OTP, and messages *about* scams.
 
 ## Tuning
 

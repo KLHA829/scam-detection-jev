@@ -21,6 +21,11 @@ const {
   decideIncomingAction,
   resolveIncomingMessageLabel,
 } = require('./lib/decide-incoming');
+const {
+  classifierEnabled,
+  classifierThreshold,
+  resolveScoreUrl,
+} = require('./lib/local-classifier-client');
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
 
@@ -175,6 +180,9 @@ async function main() {
     archiveThreshold: rubric.thresholds.archive,
     safeThreshold: rubric.thresholds.safe,
     maxStateChars: rubric.maxStateChars,
+    classifierEnabled: classifierEnabled(),
+    classifierUrl: classifierEnabled() ? resolveScoreUrl() : null,
+    classifierThresh: classifierThreshold(),
   });
 
   attachHandlers(client, { scoreClient, rubric, cache });

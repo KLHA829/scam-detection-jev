@@ -1,0 +1,6 @@
+# Optional local zh/yue scam classifier worker (scripts/score_server.py).
+# Install on the GPU machine that holds the fine-tuned weights — not required
+# for the WhatsApp bot or for `npm test`.
+# Do not commit model weights.
+transformers>=4.40.0
+torch>=2.1.0

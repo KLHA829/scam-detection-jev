@@ -242,6 +242,47 @@ describe('decideIncomingAction matrix', () => {
     assert.equal(d.action, 'archive');
     assert.notEqual(d.action, 'block');
   });
+
+  it('archives on local classifier overlay when LightJev and heuristic miss', () => {
+    const low = scoreResult({ score: 4, label: 'not_scam' });
+    assert.deepEqual(
+      decideIncomingAction(low, '85261234567', true, { hit: false }, {
+        hit: true,
+        archiveReason: 'local_classifier_scam',
+        prob_scam: 0.99,
+      }),
+      { action: 'archive', archiveReason: 'local_classifier_scam' },
+    );
+  });
+
+  it('keeps LightJev / heuristic ahead of the classifier overlay', () => {
+    const high = scoreResult({ score: 50, label: 'scam' });
+    assert.deepEqual(
+      decideIncomingAction(high, '85261234567', true, { hit: true }, {
+        classifier: { hit: true, archiveReason: 'local_classifier_scam' },
+      }),
+      { action: 'archive', archiveReason: 'lightjev_score' },
+    );
+    const low = scoreResult({ score: 4, label: 'not_scam' });
+    assert.deepEqual(
+      decideIncomingAction(low, '85261234567', true, { hit: true }, {
+        classifier: { hit: true, archiveReason: 'local_classifier_scam' },
+      }),
+      { action: 'archive', archiveReason: 'obvious_scam' },
+    );
+  });
+
+  it('does not archive from a fail-open classifier miss', () => {
+    const low = scoreResult({ score: 4, label: 'not_scam' });
+    assert.deepEqual(
+      decideIncomingAction(low, '85261234567', true, { hit: false }, {
+        ok: false,
+        hit: false,
+        reason: 'timeout',
+      }),
+      { action: 'ignore', archiveReason: null },
+    );
+  });
 });
 
 describe('resolveIncomingMessageLabel', () => {
@@ -259,6 +300,17 @@ describe('resolveIncomingMessageLabel', () => {
     );
     assert.equal(unknown.label, 'unknown');
     assert.equal(unknown.archiveReason, null);
+  });
+
+  it('promotes local classifier overlay after LightJev and heuristic miss', () => {
+    const promoted = resolveIncomingMessageLabel(
+      scoreResult({ label: 'not_scam', score: 2 }),
+      '今晚食飯',
+      {},
+      { hit: true, archiveReason: 'local_classifier_scam', prob_scam: 0.99 },
+    );
+    assert.equal(promoted.label, 'scam');
+    assert.equal(promoted.archiveReason, 'local_classifier_scam');
   });
 });
 
@@ -515,6 +567,37 @@ describe('processIncomingMessage', () => {
     assert.deepEqual(reasons, ['lightjev_score']);
   });
 
+  it('keeps LightJev archive when the classifier also hits', async () => {
+    const reasons = [];
+    const out = await processIncomingMessage(
+      {
+        type: 'chat',
+        body: '請立即把驗證碼發給我並轉帳',
+        chatId: '85261234567@c.us',
+        savedContact: true,
+        messageId: 'm-both',
+      },
+      {
+        scoreClient: createStubClient('scam'),
+        rubric,
+        env: { SCAM_CLASSIFIER_ENABLED: 'true', SCAM_CLASSIFIER_THRESH: '0.85' },
+        classifierFetch: async () =>
+          new Response(JSON.stringify({ label: 'scam', prob_scam: 0.99 }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        resolveNumber: async () => ({
+          digits: '85261234567',
+          unresolvedLid: false,
+        }),
+        archiveChat: async (reason) => reasons.push(reason),
+      },
+    );
+    assert.equal(out.decision.archiveReason, 'lightjev_score');
+    assert.equal(out.classifier.hit, true);
+    assert.deepEqual(reasons, ['lightjev_score']);
+  });
+
   it('does not archive fail-closed unknown for local unsaved', async () => {
     const reasons = [];
     const out = await processIncomingMessage(
@@ -539,6 +622,102 @@ describe('processIncomingMessage', () => {
       },
     );
     assert.equal(out.scoreResult.label, 'unknown');
+    assert.equal(out.decision.action, 'ignore');
+    assert.deepEqual(reasons, []);
+  });
+
+  it('archives via local classifier when LightJev is low and heuristic misses', async () => {
+    const reasons = [];
+    let classifierCalls = 0;
+    const out = await processIncomingMessage(
+      {
+        type: 'chat',
+        body: '細佬幫我轉數快三千，新號唔好打',
+        chatId: '85261234567@c.us',
+        savedContact: true,
+        messageId: 'm-clf',
+      },
+      {
+        scoreClient: createStubClient('benign'),
+        rubric,
+        env: {
+          SCAM_CLASSIFIER_ENABLED: 'true',
+          SCAM_CLASSIFIER_THRESH: '0.85',
+        },
+        classifierFetch: async () => {
+          classifierCalls += 1;
+          return new Response(
+            JSON.stringify({ label: 'scam', prob_scam: 0.9994 }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        },
+        resolveNumber: async () => ({
+          digits: '85261234567',
+          unresolvedLid: false,
+        }),
+        archiveChat: async (reason) => reasons.push(reason),
+      },
+    );
+    assert.equal(classifierCalls, 1);
+    assert.equal(out.classifier.hit, true);
+    assert.equal(out.decision.action, 'archive');
+    assert.equal(out.decision.archiveReason, 'local_classifier_scam');
+    assert.deepEqual(reasons, ['local_classifier_scam']);
+  });
+
+  it('does not call the classifier when disabled (default)', async () => {
+    let classifierCalls = 0;
+    const out = await processIncomingMessage(
+      {
+        type: 'chat',
+        body: '細佬幫我轉數快三千',
+        chatId: '852@c.us',
+        savedContact: true,
+      },
+      {
+        scoreClient: createStubClient('benign'),
+        rubric,
+        env: {},
+        classifierFetch: async () => {
+          classifierCalls += 1;
+          return new Response('{}', { status: 200 });
+        },
+        resolveNumber: async () => ({
+          digits: '85261234567',
+          unresolvedLid: false,
+        }),
+      },
+    );
+    assert.equal(classifierCalls, 0);
+    assert.equal(out.classifier.reason, 'disabled');
+    assert.equal(out.decision.action, 'ignore');
+  });
+
+  it('fail-opens when the classifier HTTP endpoint is down', async () => {
+    const reasons = [];
+    const out = await processIncomingMessage(
+      {
+        type: 'chat',
+        body: '細佬幫我轉數快三千',
+        chatId: '852@c.us',
+        savedContact: true,
+      },
+      {
+        scoreClient: createStubClient('benign'),
+        rubric,
+        env: { SCAM_CLASSIFIER_ENABLED: 'true' },
+        classifierFetch: async () => {
+          throw new Error('ECONNREFUSED');
+        },
+        resolveNumber: async () => ({
+          digits: '85261234567',
+          unresolvedLid: false,
+        }),
+        archiveChat: async (reason) => reasons.push(reason),
+      },
+    );
+    assert.equal(out.classifier.hit, false);
+    assert.equal(out.classifier.ok, false);
     assert.equal(out.decision.action, 'ignore');
     assert.deepEqual(reasons, []);
   });

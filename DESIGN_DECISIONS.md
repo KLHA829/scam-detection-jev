@@ -12,6 +12,7 @@ This repository started empty (`README` title only). Product invariants (archive
 | Exclude **880–883, 888** from being treated as China | Avoids prefix mistakes around `86` / `88x` ITU codes. |
 | **LID**: resolve `@lid` before the foreign rule; never use LID digits as a phone | LID identifiers are not country codes. Unresolved LID skips the foreign rule only; scoring still runs. |
 | Tight **regex heuristic** (archive only) | Failover when LightJev is down or under-confident on copy-paste tropes. |
+| Optional **local zh/yue classifier** (archive overlay) | Fine-tuned `hfl/chinese-roberta-wwm-ext` on a GPU PC; Node POSTs `{text}` and fail-opens. |
 | Filters: `fromMe`, groups, notification types, official WhatsApp names, `isMe` | Avoids looping on your own chats and WhatsApp system accounts. |
 | Session in **`.wwebjs_auth`** via `LocalAuth` | Same operator workflow as a typical `whatsapp-web.js` bot. |
 | Optional **Docker** for WhatsApp Web Chromium | LightJev runs as a sibling Python process so the Node image stays small. |
@@ -29,6 +30,7 @@ This repository started empty (`README` title only). Product invariants (archive
 | `scoring-rubric.json` + `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` | Tune without code changes. |
 | In-memory **TTL cache** and **per-chat single-flight** | Dedupes retries and overlapping handlers. |
 | In-process **`stub-lightjev.js`** | `npm test` never downloads 2.4 GB of weights. |
+| Optional **RoBERTa classifier HTTP overlay** | Scores zh/yue DMs in parallel with LightJev. Default thresh **0.85** (not the eval’s 0.5) to drop weaker hard-negatives. Weights stay off git. |
 
 ## Why this rubric
 
@@ -45,6 +47,8 @@ LightJev-0.6B was trained on synthetic smart-home / catalog tasks. It is **not**
 - Image / voice / OCR.
 - Claiming that LightJev probabilities are calibrated frequencies.
 - Fine-tuning LightJev on scam DMs.
+- Shipping the RoBERTa checkpoint in git (too large; operators keep it on the training machine).
+- Using the classifier as a LightJev replacement (it is an overlay; LightJev still runs).
 - Live WhatsApp or live LightJev weights in CI.
 
 ## Rejected
@@ -56,7 +60,7 @@ LightJev-0.6B was trained on synthetic smart-home / catalog tasks. It is **not**
 | llama-cpp / GGUF **chat** classification and free-form JSON | LightJev scores declared candidates; it is not a chat completion API. |
 | Blocking on score alone | Safety invariant. |
 | CAPTCHA solving or scraping third-party sites | Rejected unless asked. |
-| Committing API keys or model weight files | `.env` gitignored; checkpoint downloaded at worker start. |
+| Committing API keys or model weight files | `.env` gitignored; LightJev checkpoint downloaded at worker start; classifier weights stay on the GPU PC. |
 
 ## Action matrix (implemented)
 
@@ -64,7 +68,9 @@ Live DM, after filters:
 
 1. `score >= ARCHIVE_THRESHOLD` (label `scam`) → archive `lightjev_score` (any sender).
 2. Else obvious heuristic → archive `obvious_scam`.
-3. Else unsaved **and** non-local dial → archive `foreign_number` (low or unknown).
-4. Else ignore.
+3. Else optional RAG overlay (if wired) → archive `rag_scam_match`.
+4. Else optional local classifier (`SCAM_CLASSIFIER_ENABLED`, zh/yue, `prob_scam >= SCAM_CLASSIFIER_THRESH`) → archive `local_classifier_scam`.
+5. Else unsaved **and** non-local dial → archive `foreign_number` (low or unknown).
+6. Else ignore.
 
-Saved contacts are exempt from (3) only. High score and heuristic still archive them. Unresolved `@lid` is treated as missing digits, so (3) does not fire.
+Saved contacts are exempt from (5) only. High score, heuristic, and classifier still archive them. Unresolved `@lid` is treated as missing digits, so (5) does not fire. Classifier HTTP failures never archive on their own.

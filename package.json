@@ -6,9 +6,10 @@
   "main": "whatsapp-bot.js",
   "scripts": {
     "start": "node whatsapp-bot.js",
-    "test": "node --test whatsapp-bot.test.js",
+    "test": "node --test",
     "stub": "node stub-lightjev.js",
-    "lightjev": "python lightjev_serve.py"
+    "lightjev": "python lightjev_serve.py",
+    "classifier": "python scripts/score_server.py"
   },
   "engines": {
     "node": ">=20"
