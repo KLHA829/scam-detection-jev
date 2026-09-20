@@ -89,12 +89,16 @@ Heuristic `sf_customs_link` archives. Rubric `parcel_customs` + `link_lure` + `i
 Tight regexes in `lib/heuristics.js` (disable with `HEURISTIC_ENABLED=false`):
 
 - 驗證碼 / OTP / verification code **and** 過期 / expire
+- OTP / 密碼 **and** 提供 / 轉發 / 發給我 (harvest)
+- 我係防騙／銀行／警察… **and** OTP harvest or money ask
 - 轉數快 / FPS **and** 立即/立刻 **and** 轉帳/transfer
 - WhatsApp + 官方/official + 封號/ban
 - USDT/bitcoin + wallet/錢包 + send/轉
 - 順豐 / SF Express + 清關/customs + `http`
 
 These set `archiveReason: 'obvious_scam'` even when the LightJev score is low.
+
+Warning-only copy (`防騙` / `小心` / `新聞` telling you **not** to send OTP or money) is suppressed and does **not** archive. Fake anti-scam bait that also asks for a password, OTP forward, or a transfer still archives.
 
 ## Tuning
 
