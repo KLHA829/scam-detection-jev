@@ -7,7 +7,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
 const log = require('./lib/log');
-const { OpenJevClient } = require('./lib/openjev-client');
+const { LightJevClient } = require('./lib/lightjev-client');
 const { loadRubric } = require('./lib/score-message');
 const { TtlCache } = require('./lib/cache');
 const {
@@ -31,7 +31,7 @@ function envFlag(name, defaultValue = true) {
 }
 
 function createScoreClient() {
-  return new OpenJevClient();
+  return new LightJevClient();
 }
 
 function createWhatsAppClient() {
@@ -170,11 +170,11 @@ async function main() {
   const cache = new TtlCache({ ttlMs: ttl });
   const client = createWhatsAppClient();
 
-  log.info('starting WhatsApp scam-risk bot (OpenJEV scoring, archive only)', {
+  log.info('starting WhatsApp scam-risk bot (LightJev scoring, archive only)', {
     baseURL: scoreClient.baseURL,
-    model: scoreClient.model,
     archiveThreshold: rubric.thresholds.archive,
     safeThreshold: rubric.thresholds.safe,
+    maxStateChars: rubric.maxStateChars,
   });
 
   attachHandlers(client, { scoreClient, rubric, cache });

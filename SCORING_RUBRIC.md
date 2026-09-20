@@ -1,8 +1,10 @@
 # Scoring rubric
 
-Classification is **not** a single SCAM / NOT_SCAM model label. OpenJEV answers ten independent **noul** (yes/no probability) questions on the message `state`. Code converts those probabilities into a 0–100 score.
+Classification is **not** a single SCAM / NOT_SCAM label. **LightJev** answers ten independent **boolean** questions on the message `state` (`candidates` must be `["false", "true"]` in that order). Code reads `P(true)` as `noul` and converts those probabilities into a 0–100 score.
 
 Machine-readable copy: [scoring-rubric.json](scoring-rubric.json). Weights and thresholds can also be overridden with `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` in `.env`.
+
+LightJev encodes each candidate as the full JSON payload `state` + `question` + `candidate` and **errors** if that exceeds **256 tokens**. Rubric instructions stay short; `maxStateChars` is **240**.
 
 ## Design goals
 
@@ -10,11 +12,11 @@ Machine-readable copy: [scoring-rubric.json](scoring-rubric.json). Weights and t
 - Prefer **fewer false archives** on normal chat (dinner plans, splitting a bill, sharing a link) over catching every weak hint.
 - Keep **urgency** and **links** weak on their own; they should not archive a saved friend.
 
-Probabilities from OpenJEV / Jev are **not calibrated**. Thresholds are operational, not scientific.
+LightJev probabilities are **not calibrated** (and the published 0.6B checkpoint is a synthetic-domain research model). Thresholds are operational, not scientific.
 
 ## Dimensions
 
-Each question is `type: noul`. The API returns `p = noul` in `[0, 1]`.
+Each question is stored as `type: noul` in JSON and sent to LightJev as `kind: "boolean"`. `p = probabilities[1]` (`true`).
 
 | id | What it looks for | Weight |
 |----|-------------------|--------|
@@ -29,7 +31,7 @@ Each question is `type: noul`. The API returns `p = noul` in `[0, 1]`.
 | `link_lure` | CTA + suspicious shortener / “click to unlock” | 6 |
 | `urgency` | 立即、limited time、否則封號 — **cannot archive alone** | 4 |
 
-Question wording (ZH/EN criteria) lives in `scoring-rubric.json`. One HTTP request sends **all** questions; Jev/OpenJEV evaluates them in parallel on the same `state`.
+The Node client posts **all** records in one `POST /predict`. The worker scores them in a single backbone batch (20 candidate paths: 10 questions × `{false, true}`).
 
 ## Mapping probabilities to points
 
@@ -55,10 +57,10 @@ score = min(100, raw + bonus)
 |-------|-----------------|----------------------|
 | `scam` | `score >= 42` (`ARCHIVE_THRESHOLD`) | Yes |
 | `not_scam` | `score <= 18` (`SAFE_THRESHOLD`) | No |
-| `unknown` | in between, **or** empty text, **or** OpenJEV failure | No (unless foreign-number / heuristic) |
+| `unknown` | in between, **or** empty text, **or** LightJev failure | No (unless foreign-number / heuristic) |
 
-Empty body: skip OpenJEV, `unknown`, `ok: true`.  
-Timeout / 5xx / 401 / 422 / invalid response: `unknown`, `ok: false`.
+Empty body: skip LightJev, `unknown`, `ok: true`.  
+Timeout / 5xx / 401 / 422 / invalid response / over-length input: `unknown`, `ok: false`.
 
 ## Worked examples
 
@@ -72,7 +74,7 @@ Expected: all `p` low → score ≈ 0 → `not_scam` → ignore (even if unsaved
 High `login_ato`, `banking`, `impersonation`, `money`, `urgency` → combo bonus → `scam` → archive.
 
 **Scam (EN):** “WhatsApp Official: your account will be banned. Click http://bit.ly/x and send the OTP.”  
-Heuristic `wa_official_ban` archives even if OpenJEV is low. Score would also be high from `impersonation` + `login_ato` + `link_lure` + `urgency`.
+Heuristic `wa_official_ban` archives even if LightJev is low. Score would also be high from `impersonation` + `login_ato` + `link_lure` + `urgency`.
 
 **Scam (parcel):** 「順豐包裹清關費未付 http://bit.ly/fee」  
 Heuristic `sf_customs_link` archives. Rubric `parcel_customs` + `link_lure` + `impersonation` also contribute.
@@ -92,8 +94,8 @@ Tight regexes in `lib/heuristics.js` (disable with `HEURISTIC_ENABLED=false`):
 - USDT/bitcoin + wallet/錢包 + send/轉
 - 順豐 / SF Express + 清關/customs + `http`
 
-These set `archiveReason: 'obvious_scam'` even when the OpenJEV score is low.
+These set `archiveReason: 'obvious_scam'` even when the LightJev score is low.
 
 ## Tuning
 
-Raise `ARCHIVE_THRESHOLD` if friends’ money talk is archived. Lower it if OTP lures slip through as `unknown` (and consider tightening heuristics rather than dropping the noise floor, which would false-positive more). Change weights in `scoring-rubric.json` without rewriting question text.
+Raise `ARCHIVE_THRESHOLD` if friends’ money talk is archived. Lower it if OTP lures slip through as `unknown` (and consider tightening heuristics rather than dropping the noise floor, which would false-positive more). Change weights in `scoring-rubric.json` without rewriting question text. Keep instructions short so LightJev does not reject the payload for length.
