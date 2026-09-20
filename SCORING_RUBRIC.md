@@ -82,17 +82,23 @@ Heuristic `sf_customs_link` archives. Rubric `parcel_customs` + `link_lure` + `i
 
 **Foreign clean DM:** unsaved `+1 415 …`, body “Hi” with low score → archive `foreign_number` (policy, not AI). Saved US number → ignore.
 
-## Heuristic backup (archive only)
+## Heuristic + RAG backup (archive only)
 
-Tight regexes in `lib/heuristics.js` (disable with `HEURISTIC_ENABLED=false`):
+Regexes in `lib/heuristics.js` (disable with `HEURISTIC_ENABLED=false`) now cover HK/CN tropes, not only the original tight triples:
 
-- 驗證碼 / OTP / verification code **and** 過期 / expire
-- 轉數快 / FPS **and** 立即/立刻 **and** 轉帳/transfer
-- WhatsApp + 官方/official + 封號/ban
-- USDT/bitcoin + wallet/錢包 + send/轉
-- 順豐 / SF Express + 清關/customs + `http`
+- 驗證碼 / 验证码 / 转移代码 / OTP harvest (expiry **or** “send it to me” / forward)
+- 轉數快 / 转数快 / FPS with urgency, 打到 / 過嚟, or OTP
+- WhatsApp + 官方/安全中心 + 封號/停用/验证; transfer-code / OTP forward
+- USDT/bitcoin + wallet/錢包/钱包 + send/轉/打到
+- 順豐 / 清关 / 关税 / 包裹 + link, 缴费, or USDT
+- 公安 / 警察 / 海关 / 入境处 / 廉署 + OTP, money, or secrecy
+- bank + 验证码 + link
+- job 保证金 / 兼职押金
+- 交易所/套利 crypto-romance copy
 
-These set `archiveReason: 'obvious_scam'` even when the OpenJEV score is low.
+Offline **RAG** (`lib/rag.js`, `RAG_ENABLED`, `RAG_THRESHOLD`, `data/scam-examples-zh-yue.jsonl`) archives as `rag_scam_match` when incoming text is close to a paraphrased template. This is **not** a LightJev fine-tune.
+
+These set `archiveReason: 'obvious_scam'` or `'rag_scam_match'` even when the OpenJEV score is low. They never block.
 
 ## Tuning
 

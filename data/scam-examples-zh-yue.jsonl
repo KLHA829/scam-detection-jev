@@ -1,0 +1,15 @@
+{"id":"hk_wa_otp_ask","lang":"yue","source":"PCPD public scam advisory paraphrase","text":"你個帳戶有D問題喎，等我幫你check吓！你而家send個驗證碼比我啦！","tags":["otp_harvest","account_hijack"]}
+{"id":"hk_fps_friend","lang":"yue","source":"HK media WhatsApp clone case paraphrase","text":"哥，在嗎？你轉數快有3300嗎？幫我付個款。","tags":["fps","impersonation_friend","urgent_money"]}
+{"id":"hk_fps_friend2","lang":"yue","source":"HK police WhatsApp scam prevention paraphrase","text":"嗨，我換咗號碼，而家急住要錢，可唔可以轉數快過嚟？唔好打電話，我開會。","tags":["fps","new_number","impersonation_friend"]}
+{"id":"hk_wa_phish_sms","lang":"yue","source":"ADCC WhatsApp phishing alert paraphrase","text":"【WhatsApp】檢測到你的帳戶涉及虛假註冊，請於24小時內點擊連結完成驗證，否則停用。","tags":["phishing_link","fake_official","urgency"]}
+{"id":"hk_police_impersonate","lang":"yue","source":"HK police phone scam guide paraphrase","text":"我係香港警察，你涉嫌洗黑錢案件，即刻用轉數快交保證金去指定戶口，同埋唔好同任何人講。","tags":["impersonation_authority","fps","secrecy"]}
+{"id":"cn_customs_parcel","lang":"zh","source":"Victoria Police Mandarin community scam advisory paraphrase","text":"您好，您的包裹被海关扣留，涉嫌违禁品，请立即缴纳罚款或转USDT，否则将逮捕或遣返。","tags":["customs","usdt","impersonation_authority"]}
+{"id":"cn_bank_otp_link","lang":"zh","source":"common CN bank phishing trope paraphrase","text":"【中国银行】您的账户异常，请立即点击链接验证并提供短信验证码。","tags":["banking","otp_harvest","phishing_link"]}
+{"id":"cn_wa_suspend","lang":"zh","source":"trade WhatsApp fake security center paraphrase","text":"您的WhatsApp账号因异地登录即将暂停72小时，请立即前往安全中心验证并发送转移代码给我。","tags":["fake_official","otp_harvest","urgency"]}
+{"id":"cn_usdt_rebate","lang":"zh","source":"common crypto rebate trope paraphrase","text":"老板先把USDT打到这个钱包，马上给你返利，验证码也发我。","tags":["usdt","wallet","otp_harvest"]}
+{"id":"cn_otp_forward","lang":"zh","source":"SPF WhatsApp OTP compromise advisory paraphrase","text":"验证码好像误发到你那边了，麻烦把刚刚收到的6位WhatsApp验证码转发给我。","tags":["otp_harvest","social_engineering"]}
+{"id":"cn_job_deposit","lang":"zh","source":"HK police part-time job scam paraphrase","text":"招聘兼职点赞，日结500，先交保证金300到指定账户即可开工。","tags":["prize_job","deposit"]}
+{"id":"yue_otp_expire","lang":"yue","source":"heuristic-aligned HK trope paraphrase","text":"你個驗證碼就快過期，即刻將OTP同轉數快轉賬資料send畀我處理。","tags":["otp_harvest","fps","urgency"]}
+{"id":"zh_sf_customs","lang":"zh","source":"SF/customs link trope paraphrase","text":"顺丰提示：您的包裹清关失败，请点击 https://example-fake-clearance.com 缴费并填写验证码。","tags":["parcel_customs","phishing_link"]}
+{"id":"yue_icac","lang":"yue","source":"authority impersonation paraphrase","text":"我係廉署調查員，你個銀行戶口要暫時凍結，請即轉去安全帳戶並提供OTP。","tags":["impersonation_authority","banking","otp_harvest"]}
+{"id":"zh_romance_crypto","lang":"zh","source":"romance/crypto trope paraphrase","text":"宝，先注册这个交易所，把钱充进去买币，我教你套利，今晚一起分红。","tags":["crypto_romance"]}

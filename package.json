@@ -6,7 +6,7 @@
   "main": "whatsapp-bot.js",
   "scripts": {
     "start": "node whatsapp-bot.js",
-    "test": "node --test whatsapp-bot.test.js",
+  "test": "node --test",
     "stub": "node stub-openjev.js"
   },
   "engines": {
