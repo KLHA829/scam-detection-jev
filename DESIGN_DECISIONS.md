@@ -30,7 +30,7 @@ This repository started empty (`README` title only). Product invariants (archive
 | `scoring-rubric.json` + `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` | Tune without code changes. |
 | In-memory **TTL cache** and **per-chat single-flight** | Dedupes retries and overlapping handlers. |
 | In-process **`stub-lightjev.js`** | `npm test` never downloads 2.4 GB of weights. |
-| Optional **RoBERTa classifier HTTP overlay** | Scores zh/yue DMs in parallel with LightJev. Default thresh **0.85** (not the eval’s 0.5) to drop weaker hard-negatives. Weights stay off git. |
+| Optional **RoBERTa classifier HTTP overlay** | Scores zh/yue DMs in parallel with LightJev. Default thresh **0.85**. Suppress news/self-OTP; archive on otp-forward / impersonation+money / new-number+no-call+money combos. Weights stay off git. |
 
 ## Why this rubric
 
@@ -69,7 +69,7 @@ Live DM, after filters:
 1. `score >= ARCHIVE_THRESHOLD` (label `scam`) → archive `lightjev_score` (any sender).
 2. Else obvious heuristic → archive `obvious_scam`.
 3. Else optional RAG overlay (if wired) → archive `rag_scam_match`.
-4. Else optional local classifier (`SCAM_CLASSIFIER_ENABLED`, zh/yue, `prob_scam >= SCAM_CLASSIFIER_THRESH`) → archive `local_classifier_scam`.
+4. Else optional local classifier (`SCAM_CLASSIFIER_ENABLED`, zh/yue): suppress news/self-OTP; else archive `local_classifier_scam` on a dangerous combo **or** `prob_scam >= 0.85`.
 5. Else unsaved **and** non-local dial → archive `foreign_number` (low or unknown).
 6. Else ignore.
 

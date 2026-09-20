@@ -98,9 +98,11 @@ These set `archiveReason: 'obvious_scam'` even when the LightJev score is low.
 
 ## Optional local zh/yue classifier (archive overlay)
 
-When `SCAM_CLASSIFIER_ENABLED=true`, CJK messages are POSTed to `SCAM_CLASSIFIER_URL` (`{"text":"..."}`). The bot archives `local_classifier_scam` if `prob_scam >= SCAM_CLASSIFIER_THRESH` (default **0.85**) **and** LightJev + heuristics did not already archive.
+When `SCAM_CLASSIFIER_ENABLED=true`, CJK messages are POSTed to `SCAM_CLASSIFIER_URL` (`{"text":"..."}`). After suppress rules (scam news / self-OTP), the bot archives `local_classifier_scam` if a dangerous combo fires **or** `prob_scam >= SCAM_CLASSIFIER_THRESH` (default **0.85**) **and** LightJev + heuristics did not already archive.
 
-This does **not** replace the rubric. LightJev still runs. HTTP errors, timeouts, and English-only text fail open (no archive from this path). Known remaining false positives at 0.85: benign FPS/PayMe, self-OTP, and messages *about* scams.
+Combos: OTP-forward ask; impersonation + money ask; new number + don’t-call + money. Optional worker `axes` OR with those text cues. Binary-only servers omit `axes`.
+
+This does **not** replace the rubric. LightJev still runs. HTTP errors fail open for the probability path. Remaining review-queue FPs: benign FPS/PayMe split bills with no suppress cue.
 
 ## Tuning
 

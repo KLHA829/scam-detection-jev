@@ -7,6 +7,10 @@ contains the fine-tuned `hfl/chinese-roberta-wwm-ext` checkpoint
 
 POST /v1/score  {"text":"..."} -> {"label","prob_scam","prob_not_scam"}
 GET  /healthz  (also /health)
+
+Optional: include `"axes": {"money","banking","otp_login","impersonation","urgency","link_lure"}`
+(0–1) for a multi-head checkpoint. This binary worker omits `axes`; the Node
+bot then falls back to text combos + `prob_scam`.
 """
 from __future__ import annotations
 

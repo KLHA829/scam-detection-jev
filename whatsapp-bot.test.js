@@ -721,6 +721,67 @@ describe('processIncomingMessage', () => {
     assert.equal(out.decision.action, 'ignore');
     assert.deepEqual(reasons, []);
   });
+
+  it('suppresses high-prob scam-news instead of archiving', async () => {
+    const reasons = [];
+    const out = await processIncomingMessage(
+      {
+        type: 'chat',
+        body: '新聞話而家好多假警察騙案，叫人轉保證金，大家小心啲。',
+        chatId: '852@c.us',
+        savedContact: true,
+      },
+      {
+        scoreClient: createStubClient('benign'),
+        rubric,
+        env: { SCAM_CLASSIFIER_ENABLED: 'true', SCAM_CLASSIFIER_THRESH: '0.85' },
+        classifierFetch: async () =>
+          new Response(JSON.stringify({ label: 'scam', prob_scam: 0.9934 }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        resolveNumber: async () => ({
+          digits: '85261234567',
+          unresolvedLid: false,
+        }),
+        archiveChat: async (reason) => reasons.push(reason),
+      },
+    );
+    assert.equal(out.classifier.suppressed, 'scam_news');
+    assert.equal(out.classifier.hit, false);
+    assert.equal(out.decision.action, 'ignore');
+    assert.deepEqual(reasons, []);
+  });
+
+  it('archives otp-forward combo even when the model probability is low', async () => {
+    const reasons = [];
+    const out = await processIncomingMessage(
+      {
+        type: 'chat',
+        body: '哈哈你啱啱收到個code係我搞錯，可唔可以copy過嚟畀我呀？唔該晒。',
+        chatId: '852@c.us',
+        savedContact: true,
+      },
+      {
+        scoreClient: createStubClient('benign'),
+        rubric,
+        env: { SCAM_CLASSIFIER_ENABLED: 'true', SCAM_CLASSIFIER_THRESH: '0.85' },
+        classifierFetch: async () =>
+          new Response(JSON.stringify({ label: 'not_scam', prob_scam: 0.0084 }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        resolveNumber: async () => ({
+          digits: '85261234567',
+          unresolvedLid: false,
+        }),
+        archiveChat: async (reason) => reasons.push(reason),
+      },
+    );
+    assert.equal(out.classifier.combo, 'otp_forward_ask');
+    assert.equal(out.decision.archiveReason, 'local_classifier_scam');
+    assert.deepEqual(reasons, ['local_classifier_scam']);
+  });
 });
 
 describe('startup foreign scan', () => {

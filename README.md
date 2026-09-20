@@ -96,13 +96,22 @@ If the scorer runs on another host, point `SCAM_CLASSIFIER_URL` at that host (th
 |----------|---------|---------|
 | `SCAM_CLASSIFIER_ENABLED` | `false` | Opt-in overlay. Unset / `false` / `0` → no HTTP call. |
 | `SCAM_CLASSIFIER_URL` | `http://127.0.0.1:8099/v1/score` | POST `{ "text": "..." }`. |
-| `SCAM_CLASSIFIER_THRESH` | `0.85` | Archive when `prob_scam` ≥ this. Bot-side; does not trust the worker `label`. |
-| `SCAM_CLASSIFIER_TIMEOUT_MS` | `3000` | Fail open on timeout. |
+| `SCAM_CLASSIFIER_THRESH` | `0.85` | High-prob archive when `prob_scam` ≥ this **and** the message is not suppressed. Bot-side; does not trust the worker `label`. |
+| `SCAM_CLASSIFIER_TIMEOUT_MS` | `3000` | Fail open on timeout for the probability path. |
+| `SCAM_CLASSIFIER_AXIS_THRESH` | `0.5` | If the worker returns `axes`, treat a dimension as on at this value. |
 | `SCAM_CLASSIFIER_MODEL` | `scripts/model` | Worker only. Folder with tokenizer + `pytorch_model.bin` / safetensors. |
 
 Only messages with CJK (zh/yue) characters are sent to the model. English-only DMs skip it.
 
-Default **0.85** is higher than the training eval’s 0.5 so a 36-case hard eval’s weaker false positives (e.g. a warning *about* OTP scams at ~0.58) stay below the archive line. Known remaining false positives at this threshold: benign FPS/PayMe bill-split, self-OTP in an official app, and news/chat *about* scams (those sit at ~0.96–0.99). Treat classifier archives as a review queue, same as LightJev.
+When the overlay is enabled, archive uses a **multi-signal** policy (still archive-only, still fail-open on HTTP errors for the probability path):
+
+1. **Suppress** (never archive from this overlay): news/chat *about* scams, or self-OTP (“I enter the code in the official app, don’t forward it”).
+2. **Dangerous combos** (archive even if `prob_scam` is low): `otp_forward_ask`, or impersonation **and** a money ask, or new-number **and** don’t-call **and** money.
+3. Else **`prob_scam >= SCAM_CLASSIFIER_THRESH`** (default **0.85**, not 0.5).
+
+If the HTTP JSON includes optional `axes` (`money`, `banking`, `otp_login`, `impersonation`, `urgency`, `link_lure`), those OR with the text cues. The binary checkpoint in `scripts/score_server.py` does not emit axes.
+
+Default **0.85** drops weaker hard-negatives (e.g. a warning *about* OTP scams at ~0.58). Suppress rules cover the remaining high-prob news / self-OTP cases from the 36-case hard eval. Benign FPS/PayMe bill-split can still score ~0.99 with no suppress cue — treat classifier archives as a review queue.
 
 `npm test` uses an in-process HTTP stub. It does **not** load the RoBERTa weights or need a GPU.
 
