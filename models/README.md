@@ -50,7 +50,3 @@ Worker 也會依序嘗試：
 | `JEVLIKE_DEVICE` | `cpu` | Pi / 沒有 CUDA 的機器用 CPU |
 
 檢查點只含 attention head（`state_dict` + `config`），不含 encoder 權重。
-
-## model_v2 後備
-
-`SCORER=model_v2`（或 `lightjev`）走 **原本 LightJev 0.6B 多維 rubric**，權重仍由 `python lightjev_serve.py` 從 Hub 拉 `rongxinzy/LightJev-0.6B-v0.1`（約 2.4 GB），不放在這個資料夾。

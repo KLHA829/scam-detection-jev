@@ -2,22 +2,19 @@
 
 Local **WhatsApp Web** bot that scores each 1:1 DM and **archives** high-risk chats.
 
-**Default primary scorer:** [jevlike](https://github.com/vinnylarouge/jevlike) with a frozen Hugging Face encoder `hfl/chinese-roberta-wwm-ext` and choice labels `not_scam` / `scam`. The fine-tuned head (`jevlike_hf_chinese_roberta_hn800.pt`, ~2.3 MB) is already on GitHub Release tag [`jevlike-hf-hn800`](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-hn800); the encoder (~400 MB) downloads from the Hub on first run. This is the path meant for a **Raspberry Pi** and other CPU machines.
-
-**Fallback:** `SCORER=model_v2` (alias `lightjev`) keeps the previous **LightJev** 0.6B multi-label rubric worker. Do not use that as the Pi default (~2.4 GB weights).
+**Primary (and only) scorer:** [jevlike](https://github.com/vinnylarouge/jevlike) with a frozen Hugging Face encoder `hfl/chinese-roberta-wwm-ext` and choice labels `not_scam` / `scam`. The fine-tuned head (`jevlike_hf_chinese_roberta_hn800.pt`, ~2.3 MB) is already on GitHub Release tag [`jevlike-hf-hn800`](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-hn800); the encoder (~400 MB) downloads from the Hub on first run. This is the path meant for a **Raspberry Pi** and other CPU machines. There is **no** LightJev / `SCORER=model_v2` fallback.
 
 It does **not** block contacts from the score. It does **not** call Scameter or any phone/URL registry.
 
-Eval note (does not block shipping): hn800 beats a local `model_v2` RoBERTa baseline on friend/family FPR (0% vs 10%) and trails on hk50 Acc (0.88 vs 0.96). Pi portability is the reason jevlike is primary.
+Eval note (does not block shipping): hn800 beats a local RoBERTa multi-label baseline on friend/family FPR (0% vs 10%) and trails on hk50 Acc (0.88 vs 0.96). Pi portability is the reason this deploy is jevlike-only.
 
 ## What it does
 
 1. Reads 1:1 message bodies (including saved contacts).
-2. **jevlike (default):** one forward pass over options `not_scam` / `scam`; `P(scam) × 100` is the 0–100 score.
-3. **model_v2:** maps each rubric dimension to a LightJev boolean record; aggregates `P(true)` into one 0–100 score.
-4. **Archives** when the score is at or above the archive threshold, when a tight regex heuristic fires, or when an **unsaved non-local** number messages you (HK `852` / CN `86` / TW `886` are local; `880–883` and `888` are not treated as China).
-5. Optional startup pass: first **10** sidebar 1:1 chats, **foreign-number archive only** (no scoring).
-6. Optional OpenAI-compatible LLM second pass (default **off**). Grey/high unless `LLM_REVIEW_ALL=1`.
+2. **jevlike:** one forward pass over options `not_scam` / `scam`; `P(scam) × 100` is the 0–100 score.
+3. **Archives** when the score is at or above the archive threshold, when a tight regex heuristic fires, or when an **unsaved non-local** number messages you (HK `852` / CN `86` / TW `886` are local; `880–883` and `888` are not treated as China).
+4. Optional startup pass: first **10** sidebar 1:1 chats, **foreign-number archive only** (no scoring).
+5. Optional OpenAI-compatible LLM second pass (default **off**). Grey/high unless `LLM_REVIEW_ALL=1`.
 
 Filters drop `fromMe`, groups, notification types, your own account, and official WhatsApp names. `@lid` chats are resolved to a real number before the foreign-number rule; LID digits are never used as a phone.
 
@@ -94,13 +91,6 @@ Scan the QR code. Session files stay in `.wwebjs_auth/` (gitignored).
 
 Set `JEVLIKE_DEVICE=cuda` only if you have a compatible NVIDIA GPU. CPU is the Pi default.
 
-### Scorer selection
-
-| `SCORER` | Meaning |
-|----------|---------|
-| `jevlike` (default) | HF-encoder jevlike worker (`python jevlike_serve.py`) |
-| `model_v2` or `lightjev` | Previous LightJev 0.6B rubric worker (`python lightjev_serve.py`) |
-
 ### jevlike
 
 | Variable | Default | Meaning |
@@ -116,28 +106,11 @@ Set `JEVLIKE_DEVICE=cuda` only if you have a compatible NVIDIA GPU. CPU is the P
 Offline scoring without weights:
 
 ```bash
-npm run stub:jevlike
+npm run stub
 # JEVLIKE_BASE_URL=http://127.0.0.1:8766 npm start
 ```
 
 Include `[stub:scam]` in a message body to force the stub’s high-risk preset.
-
-### model_v2 / LightJev fallback
-
-```bash
-python -m pip install -r requirements-lightjev.txt
-# terminal 1 — loads ~2.4 GB of LightJev-0.6B weights on first run
-python lightjev_serve.py
-# .env: SCORER=model_v2
-```
-
-| Variable | Default | Meaning |
-|----------|---------|---------|
-| `LIGHTJEV_BASE_URL` | `http://127.0.0.1:8765` | Worker root. Client posts `{records}` to `{base}/predict`. |
-| `LIGHTJEV_CHECKPOINT` | `rongxinzy/LightJev-0.6B-v0.1` | Hub id or local folder with `manifest.json`. |
-| `LIGHTJEV_DEVICE` | `cpu` | `cpu` or `cuda`. |
-
-For an HTTP stub of LightJev: `npm run stub`.
 
 ### Scoring knobs (no code change)
 
@@ -160,13 +133,13 @@ See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rub
 - `LLM_REVIEW_MODEL` (default `gpt-4o-mini`; use the model id your server expects)
 - `LLM_REVIEW_TIMEOUT_MS` (default `8000`)
 
-If the primary scorer times out, returns 5xx, or sends invalid JSON, the label is **`unknown`**. Unknown **does not archive** unless the foreign-number rule or heuristic fires.
+If the scorer times out, returns 5xx, or sends invalid JSON, the label is **`unknown`**. Unknown **does not archive** unless the foreign-number rule or heuristic fires.
 
 ## Second-pass review (grey / conflict / high / optional all)
 
 Primary scoring is unchanged. After it, obvious heuristics, optional local/RAG matchers, and the foreign-number rule, a **second pass** can run when `LLM_REVIEW_ENABLED=true` **or** `LLM_REVIEW_ALL=1`:
 
-1. **Non-score hard archive** (`obvious_scam`, `rag_scam_match`, `local_classifier`, `foreign_number`) → archive immediately. No LLM. Heuristic/RAG hits also skip the LLM even if the scorer already chose `jevlike_score` / `lightjev_score`.
+1. **Non-score hard archive** (`obvious_scam`, `rag_scam_match`, `local_classifier`, `foreign_number`) → archive immediately. No LLM. Heuristic/RAG hits also skip the LLM even if the scorer already chose `jevlike_score`.
 2. **Intent-gated suppress** — copy that only warns (`防騙` / `小心` / `新聞` / self-OTP) is **not** archived. Fake 「我係防騙協調中心…請提供密碼/轉帳」 is **not** suppressed, because it also solicits OTP, money, or impersonation+secrecy.
 3. **When `LLM_REVIEW_ALL=0` (default):** grey / conflict / high → redact → LLM:
    - score in grey band `LLM_REVIEW_GREY_MIN`–`LLM_REVIEW_GREY_MAX` (defaults **0.40–0.85**, score/100)
@@ -178,14 +151,14 @@ Primary scoring is unchanged. After it, obvious heuristics, optional local/RAG m
 5. Rule-based PII redaction (`lib/redact.js`, **no LLM**) replaces HK phones `[電話]`, bank/FPS/PayMe `[戶口]`, emails `[電郵]`, ID-like `[證件]`, easy names `[姓名]`, and strips URL paths to the domain. A local mapping may be kept in memory for logs; it is **never** sent to the LLM.
 6. OpenAI-compatible `POST …/v1/chat/completions` (`lib/llm-review.js`) must return JSON `{ label, confidence, signals, should_archive, reason }`.
 
-### Merge policy (LLM vs jevlike / model_v2)
+### Merge policy (LLM vs jevlike)
 
 `LLM_REVIEW_MERGE=bonsai` (default, same FP-aware Bonsai merge as before):
 
 | LLM | Primary | Result |
 |-----|---------|--------|
 | `scam` / `should_archive` | anything except hard-skip (already skipped) | archive `llm_review_scam` |
-| `not_scam` | score-only archive (`jevlike_score` / `lightjev_score`) | **release** to ignore |
+| `not_scam` | score-only archive (`jevlike_score`) | **release** to ignore |
 | `not_scam` | ignore | stay ignore |
 | `unknown` / timeout / 5xx | score archive | **keep** archive (fail toward scam on high) |
 | `unknown` / timeout / 5xx | ignore (grey, not already archived) | stay ignore (fail-open) |
@@ -221,7 +194,7 @@ Aliases if `LLM_REVIEW_API_URL` / `LLM_REVIEW_API_KEY` are unset: `OPENAI_BASE_U
 
 ## 第二輪覆核（灰帶／高分／可選全部）
 
-流程維持：**jevlike 或 model_v2／heuristic／本地分類／RAG** 先跑；**唔會為咗 LLM 拆走現有計分**。WhatsApp 仍然只係 archive，唔會 block 聯絡人。PII 一律先規則遮罩。
+流程維持：**jevlike／heuristic／本地分類／RAG** 先跑；**唔會為咗 LLM 拆走現有計分**。WhatsApp 仍然只係 archive，唔會 block 聯絡人。PII 一律先規則遮罩。
 
 - heuristic／RAG／外地號碼 hard archive → **立刻 archive，不呼叫 LLM**（`LLM_REVIEW_ALL=1` 都一樣）
 - 主模型高分 archive（分數/100 **高過** `LLM_REVIEW_GREY_MAX`，預設 0.85）→ **LLM 第二輪**（`LLM_REVIEW_ON_HIGH=true`，預設開）。LLM `not_scam` 可以 **放行** 分數誤報；`unknown`／失敗則 **維持 archive**
@@ -256,15 +229,13 @@ QR login still needs a terminal that can show the code (or inspect container log
 ## Layout
 
 - `whatsapp-bot.js` — WhatsApp Web client, QR, archive-only actions
-- `lib/scorer.js` — `SCORER=jevlike` (default) vs `model_v2`
+- `lib/scorer.js` — always builds a jevlike client (`createScoreClient`)
 - `lib/jevlike-client.js` — `{text}` → `{prob_scam}`
-- `lib/lightjev-client.js` — noul questions → LightJev boolean records (`SCORER=model_v2`)
 - `lib/redact.js` — rule-based PII redaction before any external LLM call
 - `lib/llm-review.js` — optional OpenAI-compatible second pass
 - `lib/scam-intent.js` — intent-gated suppress (warning vs OTP/money solicitation)
 - `jevlike_serve.py` — persistent HF-encoder jevlike worker (`POST /v1/score`)
-- `lightjev_serve.py` — LightJev 0.6B worker (`POST /predict`)
-- `stub-jevlike.js` / `stub-lightjev.js` — fixed probabilities for tests
+- `stub-jevlike.js` — fixed probabilities for tests
 - `models/README.md` — GitHub Release download for the `.pt` head
 - `scripts/download_jevlike_ckpt.sh` — pulls `jevlike-hf-hn800` via `/releases/download/…/jevlike_hf_chinese_roberta_hn800.pt`
 - [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) — kept / improved / deferred / rejected

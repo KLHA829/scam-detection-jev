@@ -7,7 +7,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
 const log = require('./lib/log');
-const { createScoreClient, resolveScorer } = require('./lib/scorer');
+const { createScoreClient } = require('./lib/scorer');
 const { loadRubric } = require('./lib/score-message');
 const { TtlCache } = require('./lib/cache');
 const {
@@ -163,19 +163,17 @@ function attachHandlers(client, deps) {
 async function main() {
   const rubricPath = process.env.RUBRIC_PATH || undefined;
   const rubric = loadRubric(rubricPath);
-  const scorer = resolveScorer();
   const scoreClient = createScoreClient();
   const llmReview = createLlmReviewConfig();
   const ttl = Number(process.env.SCORE_CACHE_TTL_MS || 900000);
   const cache = new TtlCache({ ttlMs: ttl });
   const client = createWhatsAppClient();
 
-  log.info('starting WhatsApp scam-risk bot (archive only)', {
-    scorer,
+  log.info('starting WhatsApp scam-risk bot (jevlike scoring, archive only)', {
+    scorer: 'jevlike',
     baseURL: scoreClient.baseURL,
     archiveThreshold: rubric.thresholds.archive,
     safeThreshold: rubric.thresholds.safe,
-    maxStateChars: rubric.maxStateChars,
     llmReviewEnabled: Boolean(llmReview.enabled),
     llmReviewAll: Boolean(llmReview.reviewAll),
     llmReviewMerge: llmReview.merge,
@@ -190,7 +188,6 @@ module.exports = {
   AUTH_PATH,
   envFlag,
   createScoreClient,
-  resolveScorer,
   createWhatsAppClient,
   pickSidebarOneToOne,
   runStartupForeignScan,

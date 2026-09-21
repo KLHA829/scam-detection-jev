@@ -7,10 +7,8 @@
   "scripts": {
     "start": "node whatsapp-bot.js",
     "test": "node --test && python3 -m unittest test_jevlike_serve.py",
-    "stub": "node stub-lightjev.js",
-    "stub:jevlike": "node stub-jevlike.js",
-    "jevlike": "python jevlike_serve.py",
-    "lightjev": "python lightjev_serve.py"
+    "stub": "node stub-jevlike.js",
+    "jevlike": "python jevlike_serve.py"
   },
   "engines": {
     "node": ">=20"
