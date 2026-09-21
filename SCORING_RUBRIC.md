@@ -20,11 +20,13 @@ jevlike probabilities are **not calibrated**. Thresholds are operational, not sc
 
 ## Labels and thresholds
 
-| Label | Rule (defaults) | Archives from score? |
-|-------|-----------------|----------------------|
-| `scam` | `score >= 42` (`ARCHIVE_THRESHOLD`) | Yes (`jevlike_score`) |
-| `not_scam` | `score <= 18` (`SAFE_THRESHOLD`) | No |
-| `unknown` | in between, **or** empty text, **or** jevlike failure | No (unless heuristic / RAG / local classifier) |
+| Label | Rule (defaults) | Archives from score? | Blocks an unsaved contact? |
+|-------|-----------------|----------------------|------------------------------|
+| `scam` | `score >= 42` (`ARCHIVE_THRESHOLD`) | Yes (`jevlike_score`) | Only if `score >= 80` (`BLOCK_THRESHOLD`) |
+| `not_scam` | `score <= 18` (`SAFE_THRESHOLD`) | No | No (unless an obvious-scam heuristic hits) |
+| `unknown` | in between, **or** empty text, **or** jevlike failure | No (unless heuristic / RAG / local classifier) | No from the score. A heuristic hit still blocks an unsaved contact. |
+
+Saved contacts are never auto-blocked. `BLOCK_ENABLED=false` turns the block column off.
 
 Empty body: skip the worker, `unknown`, `ok: true`.  
 Timeout / 5xx / 401 / 422 / invalid response: `unknown`, `ok: false`.
@@ -63,7 +65,7 @@ Tight regexes in `lib/heuristics.js` (disable with `HEURISTIC_ENABLED=false`):
 - USDT/bitcoin + wallet/錢包 + send/轉
 - 順豐 / SF Express + 清關/customs + `http`
 
-These set `archiveReason: 'obvious_scam'` even when the jevlike score is low.
+These set `archiveReason: 'obvious_scam'` even when the jevlike score is low. On an unsaved contact they also block, and the heuristic label is written into the contact name (`封鎖·索取驗證碼`, `封鎖·轉數快即轉`, …). A score-only block uses `封鎖·高分<n>`.
 
 Warning-only copy (`防騙` / `小心` / `新聞` telling you **not** to send OTP or money) is suppressed and does **not** archive. Fake anti-scam bait that also asks for a password, OTP forward, or a transfer still archives.
 

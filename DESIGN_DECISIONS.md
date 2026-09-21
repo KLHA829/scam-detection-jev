@@ -1,15 +1,15 @@
 # Design decisions
 
-This repository started empty (`README` title only). Product invariants (archive-only, LID, filters, heuristics) come from the original master prompt. Scoring is **HF-encoder jevlike only** (`not_scam` / `scam`). LightJev / `SCORER=model_v2` is gone. There is **no** foreign-number hard archive.
+This repository started empty (`README` title only). Product invariants (graded block, LID, filters, heuristics) come from the original master prompt plus a later block policy. Scoring is **HF-encoder jevlike only** (`not_scam` / `scam`). LightJev / `SCORER=model_v2` is gone. There is **no** foreign-number hard archive.
 
 ## Kept
 
 | Decision | Why |
 |----------|-----|
-| **Archive only** — never `contact.block()` from score or heuristic | Safety: a bad probability must not lock a real person out. Blocking is a separate product-owner policy. |
+| **Graded block** — `contact.block()` only for unsaved contacts, and only on an obvious-scam heuristic or jevlike score ≥ `BLOCK_THRESHOLD` (default 80) | Archive threshold 42 is too low to lock a person out. Saved contacts are never auto-blocked. The reason is saved as the WhatsApp contact name and in `blocks.jsonl`. |
 | Score **every** non-ignored live 1:1 body, including **saved contacts** | Saved ≠ safe; ATO and investment scams often arrive from hijacked contacts. |
 | **LID**: resolve `@lid` for logs / LLM context; never use LID digits as a phone | LID identifiers are not country codes. Unresolved LID still scores. |
-| Tight **regex heuristic** (archive only) | Failover when the scorer is down or under-confident on copy-paste tropes. Includes OTP harvest (`請提供密碼` / 發給我) so fake anti-scam bait still archives. |
+| Tight **regex heuristic** | Failover when the scorer is down or under-confident on copy-paste tropes. Includes OTP harvest (`請提供密碼` / 發給我) so fake anti-scam bait still archives. On an unsaved contact the same hit blocks. |
 | **Intent-gated suppress** | Warning/self-OTP language (`防騙`, `小心`, `新聞`) suppresses archive **only if** the DM does not also solicit OTP-forward, money transfer, or impersonation+secrecy. |
 | Filters: `fromMe`, groups, notification types, official WhatsApp names, `isMe` | Avoids looping on your own chats and WhatsApp system accounts. |
 | Session in **`.wwebjs_auth`** via `LocalAuth` | Same operator workflow as a typical `whatsapp-web.js` bot. |
@@ -37,7 +37,6 @@ Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high
 
 ## Deferred
 
-- Contact **block** policy (explicitly out of default scope).
 - Conversation-level / multi-message scoring.
 - Image / voice / OCR.
 - Claiming that jevlike probabilities are calibrated frequencies.
@@ -54,7 +53,7 @@ Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high
 | chinese-roberta multi-label `model_v2` server | Same: gone for this Pi/jevlike deploy. |
 | **Foreign-number / unsaved non-local hard archive** (`foreign_number`, `STARTUP_FOREIGN_SCAN`) | User request: remove the 外國號碼 archive rule. Clean low-score DMs from any country code are ignored. Score, heuristic, RAG, and optional LLM still apply. |
 | llama-cpp / GGUF **chat** as the primary classifier | jevlike is a frozen-encoder choice scorer, not a chat completion API. LLM review remains optional and separate. |
-| Blocking on score alone | Safety invariant. |
+| Blocking saved contacts, or blocking at `ARCHIVE_THRESHOLD` alone | A 42-score false positive must not lock a real person out. Unsaved contacts block only at `BLOCK_THRESHOLD` (default 80) or on an obvious-scam heuristic. |
 | CAPTCHA solving or scraping third-party sites | Rejected unless asked. |
 | Committing API keys or model weight files | `.env` gitignored; jevlike head via GitHub Release; encoder downloaded at worker start. |
 
@@ -68,4 +67,9 @@ Live DM, after filters:
 4. Else if LLM review is enabled and a **trigger** fires (grey band 0.40–0.85 of score/100, high score above `GREY_MAX`, scorer vs local conflict, short OTP-ish DM, money ask from unknown/new number, **or** `LLM_REVIEW_ALL=1`) → redact PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. `not_scam` **releases** a score-only archive unless `LLM_REVIEW_MERGE=archive_only`. LLM failure → keep a score archive; otherwise `unknown` and do not archive.
 5. Else ignore.
 
-High score and heuristic still archive saved contacts unless (3) applies. LLM `not_scam` can later **release** a score-only archive.
+After that, if the final action is still archive **and** the contact is unsaved:
+
+6. Obvious-scam heuristic, or jevlike score ≥ `BLOCK_THRESHOLD` (default 80, and the scorer did not fail) → **block**. Write `封鎖·<reason>` as the WhatsApp contact name, mute, archive, append `blocks.jsonl`.
+7. Otherwise leave the archive as archive. Grey scores, RAG-only hits, and `unknown` do not block.
+
+Saved contacts never take step 6. LLM `not_scam` can **release** a score-only archive before the block policy runs, so a released chat is not blocked. Heuristic hits skip the LLM and still block when the contact is unsaved.

@@ -19,6 +19,7 @@ const {
   resolveIncomingMessageLabel,
 } = require('./lib/decide-incoming');
 const { createLlmReviewConfig } = require('./lib/llm-review');
+const { blockAndRename } = require('./lib/wa-actions');
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
 
@@ -72,6 +73,14 @@ async function handleWaMessage(msg, { client, scoreClient, rubric, cache, llmRev
       archiveChat: async () => {
         await chat.archive();
       },
+      blockContact: (info) =>
+        blockAndRename({
+          client,
+          contact,
+          chat,
+          digits: info && info.digits,
+          contactName: info && info.contactName,
+        }),
     },
   );
 }
@@ -116,10 +125,11 @@ async function main() {
   const cache = new TtlCache({ ttlMs: ttl });
   const client = createWhatsAppClient();
 
-  log.info('starting WhatsApp scam-risk bot (jevlike scoring, archive only)', {
+  log.info('starting WhatsApp scam-risk bot (jevlike scoring, graded block)', {
     scorer: 'jevlike',
     baseURL: scoreClient.baseURL,
     archiveThreshold: rubric.thresholds.archive,
+    blockThreshold: rubric.thresholds.block,
     safeThreshold: rubric.thresholds.safe,
     llmReviewEnabled: Boolean(llmReview.enabled),
     llmReviewAll: Boolean(llmReview.reviewAll),
