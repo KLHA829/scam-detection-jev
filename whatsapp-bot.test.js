@@ -3,32 +3,24 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const {
-  extractDigits,
-  isLocalDial,
-  isNonLocalDial,
-} = require('./lib/foreign-number');
+const { extractDigits } = require('./lib/foreign-number');
 const { isLidId, lidUserPart, phoneFromLidMapping, resolveRealNumber } = require('./lib/lid');
 const { shouldIgnoreMessage, isOfficialWhatsAppName } = require('./lib/filters');
 const { matchObviousScam } = require('./lib/heuristics');
 const { decideIncomingAction, resolveIncomingMessageLabel } = require('./lib/decide-incoming');
 const {
   loadRubric,
-  applyNoiseFloor,
-  aggregateScores,
   labelFromScore,
   scoreMessage,
-  questionsFromRubric,
 } = require('./lib/score-message');
-const { LightJevClient, questionsToRecords, resultsToAnswers } = require('./lib/lightjev-client');
-const { processIncomingMessage, startupForeignArchive, pickSidebarOneToOne } = require('./lib/handle-incoming');
+const { JevlikeClient } = require('./lib/jevlike-client');
+const { processIncomingMessage } = require('./lib/handle-incoming');
 const { TtlCache, cacheKeyForMessage } = require('./lib/cache');
 const {
-  createStubClient,
-  createStubFetch,
+  createStubJevlikeClient,
+  createStubJevlikeFetch,
   PRESETS,
-  noulMapToAnswers,
-} = require('./stub-lightjev');
+} = require('./stub-jevlike');
 
 const rubric = loadRubric();
 
@@ -42,40 +34,10 @@ function scoreResult(overrides = {}) {
   };
 }
 
-describe('foreign-number', () => {
+describe('phone digits', () => {
   it('strips plus, spaces, and 00 prefix', () => {
     assert.equal(extractDigits('+852 6123 4567'), '85261234567');
     assert.equal(extractDigits('00886123456789'), '886123456789');
-  });
-
-  it('treats 852 / 86 / 886 as local', () => {
-    assert.equal(isLocalDial('85261234567'), true);
-    assert.equal(isLocalDial('+86 138 0000 0000'), true);
-    assert.equal(isLocalDial('886912345678'), true);
-    assert.equal(isNonLocalDial('85261234567'), false);
-  });
-
-  it('does not treat 886 as China-only; it is still local TW', () => {
-    assert.equal(isLocalDial('886233112345'), true);
-  });
-
-  it('excludes 880–883 and 888 from CN/local', () => {
-    assert.equal(isLocalDial('8801712345678'), false);
-    assert.equal(isLocalDial('881123456'), false);
-    assert.equal(isLocalDial('882123456'), false);
-    assert.equal(isLocalDial('883123456'), false);
-    assert.equal(isLocalDial('888123456'), false);
-    assert.equal(isNonLocalDial('8801712345678'), true);
-  });
-
-  it('treats US / UK as non-local', () => {
-    assert.equal(isNonLocalDial('14155550123'), true);
-    assert.equal(isNonLocalDial('447911123456'), true);
-  });
-
-  it('does not mark empty / missing as non-local (cannot apply foreign rule)', () => {
-    assert.equal(isNonLocalDial(''), false);
-    assert.equal(isNonLocalDial(null), false);
   });
 });
 
@@ -184,11 +146,11 @@ describe('decideIncomingAction matrix', () => {
     const high = scoreResult({ score: 50, label: 'scam' });
     assert.deepEqual(
       decideIncomingAction(high, '85261234567', true, { hit: false }),
-      { action: 'archive', archiveReason: 'lightjev_score' },
+      { action: 'archive', archiveReason: 'jevlike_score' },
     );
     assert.deepEqual(
       decideIncomingAction(high, '14155550123', false, { hit: true }),
-      { action: 'archive', archiveReason: 'lightjev_score' },
+      { action: 'archive', archiveReason: 'jevlike_score' },
     );
   });
 
@@ -200,11 +162,11 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('archives unsaved non-local on low score without heuristic', () => {
+  it('does not archive unsaved non-local numbers from score-or-heuristic alone', () => {
     const low = scoreResult({ score: 4, label: 'not_scam' });
     assert.deepEqual(
       decideIncomingAction(low, '14155550123', false, { hit: false }),
-      { action: 'archive', archiveReason: 'foreign_number' },
+      { action: 'ignore', archiveReason: null },
     );
   });
 
@@ -220,11 +182,11 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('archives unknown + unsaved non-local; ignores unknown local unsaved', () => {
+  it('ignores unknown for unsaved non-local and local unsaved', () => {
     const unknown = scoreResult({ score: 25, label: 'unknown', ok: false });
     assert.deepEqual(
       decideIncomingAction(unknown, '447911123456', false, { hit: false }),
-      { action: 'archive', archiveReason: 'foreign_number' },
+      { action: 'ignore', archiveReason: null },
     );
     assert.deepEqual(
       decideIncomingAction(unknown, '85261234567', false, { hit: false }),
@@ -232,7 +194,7 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('does not apply foreign rule when LID is unresolved (null digits)', () => {
+  it('ignores unknown when LID digits are missing', () => {
     const unknown = scoreResult({ score: 0, label: 'unknown', ok: false });
     assert.deepEqual(
       decideIncomingAction(unknown, null, false, { hit: false }),
@@ -271,7 +233,7 @@ describe('decideIncomingAction matrix', () => {
 });
 
 describe('resolveIncomingMessageLabel', () => {
-  it('promotes heuristic to scam without changing LightJev fail-closed unknown otherwise', () => {
+  it('promotes heuristic to scam without changing jevlike fail-closed unknown otherwise', () => {
     const promoted = resolveIncomingMessageLabel(
       scoreResult({ label: 'not_scam', score: 2 }),
       'WhatsApp 官方通知：否則封號',
@@ -288,13 +250,7 @@ describe('resolveIncomingMessageLabel', () => {
   });
 });
 
-describe('scoring aggregation', () => {
-  it('applies noise floor so weak probabilities contribute 0', () => {
-    assert.equal(applyNoiseFloor(0.2, 0.45), 0);
-    assert.equal(applyNoiseFloor(0.45, 0.45), 0);
-    assert.ok(Math.abs(applyNoiseFloor(1, 0.45) - 1) < 1e-9);
-  });
-
+describe('scoring labels', () => {
   it('labels using archive / safe thresholds', () => {
     assert.equal(labelFromScore(42, rubric.thresholds), 'scam');
     assert.equal(labelFromScore(18, rubric.thresholds), 'not_scam');
@@ -302,44 +258,15 @@ describe('scoring aggregation', () => {
     assert.equal(labelFromScore(99, rubric.thresholds, { ok: false }), 'unknown');
     assert.equal(labelFromScore(99, rubric.thresholds, { empty: true }), 'unknown');
   });
-
-  it('does not archive on urgency alone', () => {
-    const answers = noulMapToAnswers({
-      ...PRESETS.benign,
-      urgency: 1,
-    });
-    const agg = aggregateScores(answers, rubric);
-    const label = labelFromScore(agg.score, rubric.thresholds);
-    assert.ok(agg.score < rubric.thresholds.archive);
-    assert.equal(label, 'not_scam');
-  });
-
-  it('archives a clear OTP + bank + impersonation DM', () => {
-    const agg = aggregateScores(noulMapToAnswers(PRESETS.scam), rubric);
-    assert.ok(agg.score >= rubric.thresholds.archive);
-    assert.ok(agg.bonus === 12);
-    assert.equal(labelFromScore(agg.score, rubric.thresholds), 'scam');
-  });
-
-  it('builds one noul question per dimension', () => {
-    const q = questionsFromRubric(rubric);
-    assert.equal(Object.keys(q).length, rubric.dimensions.length);
-    assert.equal(q.money.type, 'noul');
-    assert.equal(q.login_ato.type, 'noul');
-  });
-
-  it('caps state length for LightJev 256-token inputs', () => {
-    assert.ok(rubric.maxStateChars <= 256);
-  });
 });
 
-describe('scoreMessage with stub LightJev', () => {
+describe('scoreMessage with stub jevlike', () => {
   it('skips empty text as unknown without calling the client', async () => {
     let called = 0;
     const client = {
-      async systemOne() {
+      async scoreText() {
         called += 1;
-        return {};
+        return { prob_scam: 0.9 };
       },
     };
     const result = await scoreMessage('   ', { client, rubric });
@@ -347,40 +274,43 @@ describe('scoreMessage with stub LightJev', () => {
     assert.equal(result.label, 'unknown');
     assert.equal(result.empty, true);
     assert.equal(result.ok, true);
+    assert.equal(result.scorer, 'jevlike');
   });
 
   it('returns stub benign as not_scam', async () => {
     const result = await scoreMessage('今晚飲茶？', {
-      client: createStubClient('benign'),
+      client: createStubJevlikeClient('benign'),
       rubric,
     });
     assert.equal(result.ok, true);
     assert.equal(result.label, 'not_scam');
+    assert.equal(result.scorer, 'jevlike');
   });
 
-  it('returns stub scam as scam with breakdown', async () => {
+  it('returns stub scam as scam', async () => {
     const result = await scoreMessage('[stub:scam] 請立即轉帳', {
-      client: createStubClient('scam'),
+      client: createStubJevlikeClient(),
       rubric,
     });
     assert.equal(result.label, 'scam');
-    assert.ok(result.breakdown.length === rubric.dimensions.length);
+    assert.equal(result.archiveReason, 'jevlike_score');
     assert.ok(result.score >= rubric.thresholds.archive);
   });
 
   it('fails closed on timeout / 5xx / invalid JSON', async () => {
     const timeoutClient = {
-      async systemOne() {
-        throw new Error('LightJev timeout');
+      async scoreText() {
+        throw new Error('jevlike timeout');
       },
     };
     const a = await scoreMessage('hello', { client: timeoutClient, rubric });
     assert.equal(a.label, 'unknown');
     assert.equal(a.ok, false);
+    assert.equal(a.reason, 'jevlike_error');
 
     const fetch500 = async () =>
       new Response('nope', { status: 500, headers: { 'content-type': 'text/plain' } });
-    const client500 = new LightJevClient({
+    const client500 = new JevlikeClient({
       baseURL: 'http://127.0.0.1:9',
       apiKey: 'test',
       fetchImpl: fetch500,
@@ -392,50 +322,13 @@ describe('scoreMessage with stub LightJev', () => {
 
     const badJson = async () =>
       new Response('{', { status: 200, headers: { 'content-type': 'application/json' } });
-    const clientBad = new LightJevClient({
-      baseURL: 'http://lightjev.test',
+    const clientBad = new JevlikeClient({
+      baseURL: 'http://jevlike.test',
       fetchImpl: badJson,
     });
     const c = await scoreMessage('hello', { client: clientBad, rubric });
     assert.equal(c.label, 'unknown');
     assert.equal(c.ok, false);
-  });
-
-  it('LightJevClient maps noul questions to boolean records and parses /predict', async () => {
-    const client = new LightJevClient({
-      baseURL: 'http://lightjev.test',
-      apiKey: 'stub',
-      fetchImpl: createStubFetch('scam'),
-    });
-    const answers = await client.systemOne({
-      state: 'x',
-      questions: questionsFromRubric(rubric),
-    });
-    assert.equal(answers.money.noul, PRESETS.scam.money);
-  });
-
-  it('maps boolean probabilities[1] to noul', () => {
-    const answers = resultsToAnswers([
-      {
-        id: 'money',
-        kind: 'boolean',
-        candidates: ['false', 'true'],
-        probabilities: [0.1, 0.9],
-        selected: 'true',
-        selected_index: 1,
-      },
-    ]);
-    assert.equal(answers.money.noul, 0.9);
-    assert.equal(answers.money.type, 'noul');
-  });
-
-  it('encodes noul rubric questions as LightJev boolean records', () => {
-    const records = questionsToRecords('hi', questionsFromRubric(rubric), 'm1');
-    assert.equal(records.length, rubric.dimensions.length);
-    assert.ok(records.every((row) => row.kind === 'boolean'));
-    assert.deepEqual(records[0].candidates, ['false', 'true']);
-    assert.equal(records[0].state, 'hi');
-    assert.equal(records[0].group_id, 'm1');
   });
 
   it('retries once on 429 then succeeds', async () => {
@@ -445,33 +338,16 @@ describe('scoreMessage with stub LightJev', () => {
       if (n === 1) {
         return new Response('slow down', { status: 429 });
       }
-      return new Response(
-        JSON.stringify({
-          results: [
-            {
-              id: 'money',
-              kind: 'boolean',
-              candidates: ['false', 'true'],
-              probabilities: [0.9, 0.1],
-              selected: 'false',
-              selected_index: 0,
-            },
-          ],
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
+      return createStubJevlikeFetch(PRESETS.scam)();
     };
-    const client = new LightJevClient({
-      baseURL: 'http://lightjev.test',
+    const client = new JevlikeClient({
+      baseURL: 'http://jevlike.test',
       fetchImpl,
       timeoutMs: 1000,
     });
-    const answers = await client.systemOne({
-      state: 'x',
-      questions: { money: { type: 'noul', instructions: 'q' } },
-    });
+    const out = await client.scoreText('x');
     assert.equal(n, 2);
-    assert.equal(answers.money.noul, 0.1);
+    assert.ok(out.prob_scam > 0.9);
   });
 });
 
@@ -501,7 +377,7 @@ describe('processIncomingMessage', () => {
       { isGroup: true, body: 'hi', chatId: 'g' },
       {
         scoreClient: {
-          async systemOne() {
+          async scoreText() {
             scored = true;
             return {};
           },
@@ -524,7 +400,7 @@ describe('processIncomingMessage', () => {
         messageId: 'm1',
       },
       {
-        scoreClient: createStubClient('scam'),
+        scoreClient: createStubJevlikeClient('scam'),
         rubric,
         resolveNumber: async () => ({
           digits: '85261234567',
@@ -537,8 +413,8 @@ describe('processIncomingMessage', () => {
     );
     assert.equal(out.ignored, false);
     assert.equal(out.decision.action, 'archive');
-    assert.equal(out.decision.archiveReason, 'lightjev_score');
-    assert.deepEqual(reasons, ['lightjev_score']);
+    assert.equal(out.decision.archiveReason, 'jevlike_score');
+    assert.deepEqual(reasons, ['jevlike_score']);
   });
 
   it('does not archive fail-closed unknown for local unsaved', async () => {
@@ -552,8 +428,8 @@ describe('processIncomingMessage', () => {
       },
       {
         scoreClient: {
-          async systemOne() {
-            throw new Error('LightJev timeout');
+          async scoreText() {
+            throw new Error('jevlike timeout');
           },
         },
         rubric,
@@ -568,62 +444,29 @@ describe('processIncomingMessage', () => {
     assert.equal(out.decision.action, 'ignore');
     assert.deepEqual(reasons, []);
   });
-});
 
-describe('startup foreign scan', () => {
-  it('takes the first 10 1:1 chats in sidebar order', () => {
-    const chats = [
-      { id: '1', isGroup: false },
-      { id: 'g', isGroup: true },
-      ...Array.from({ length: 12 }, (_, i) => ({ id: String(i + 2), isGroup: false })),
-    ];
-    const top = pickSidebarOneToOne(chats, 10);
-    assert.equal(top.length, 10);
-    assert.equal(top[0].id, '1');
-    assert.ok(top.every((c) => !c.isGroup));
-  });
-
-  it('archives only unsaved non-local, no scoring', async () => {
-    const archived = [];
-    const n = await startupForeignArchive(
-      [
-        {
-          chatId: 'a',
-          savedContact: false,
-          nonLocal: true,
-          unresolvedLid: false,
-          digits: '14155550123',
-        },
-        {
-          chatId: 'b',
-          savedContact: true,
-          nonLocal: true,
-          unresolvedLid: false,
-          digits: '14155550124',
-        },
-        {
-          chatId: 'c',
-          savedContact: false,
-          nonLocal: false,
-          unresolvedLid: false,
-          digits: '85261234567',
-        },
-        {
-          chatId: 'd',
-          savedContact: false,
-          nonLocal: true,
-          unresolvedLid: true,
-          digits: null,
-        },
-      ],
+  it('does not archive an unsaved non-local number on a clean low score', async () => {
+    const reasons = [];
+    const out = await processIncomingMessage(
       {
-        archiveChat: async (chat) => {
-          archived.push(chat.chatId);
-        },
-        logFn: { ok() {} },
+        type: 'chat',
+        body: 'Hi',
+        chatId: '14155550123@c.us',
+        savedContact: false,
+        messageId: 'foreign-hi',
+      },
+      {
+        scoreClient: createStubJevlikeClient('benign'),
+        rubric,
+        resolveNumber: async () => ({
+          digits: '14155550123',
+          unresolvedLid: false,
+        }),
+        archiveChat: async (reason) => reasons.push(reason),
       },
     );
-    assert.equal(n, 1);
-    assert.deepEqual(archived, ['a']);
+    assert.equal(out.decision.action, 'ignore');
+    assert.equal(out.decision.archiveReason, null);
+    assert.deepEqual(reasons, []);
   });
 });

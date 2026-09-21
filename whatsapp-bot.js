@@ -7,16 +7,13 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
 const log = require('./lib/log');
-const { LightJevClient } = require('./lib/lightjev-client');
+const { createScoreClient } = require('./lib/scorer');
 const { loadRubric } = require('./lib/score-message');
 const { TtlCache } = require('./lib/cache');
 const {
   processIncomingMessage,
-  startupForeignArchive,
-  pickSidebarOneToOne,
 } = require('./lib/handle-incoming');
 const { resolveRealNumber, isLidId } = require('./lib/lid');
-const { isNonLocalDial } = require('./lib/foreign-number');
 const {
   decideIncomingAction,
   resolveIncomingMessageLabel,
@@ -24,16 +21,6 @@ const {
 const { createLlmReviewConfig } = require('./lib/llm-review');
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
-
-function envFlag(name, defaultValue = true) {
-  const v = process.env[name];
-  if (v == null || v === '') return defaultValue;
-  return v !== '0' && String(v).toLowerCase() !== 'false';
-}
-
-function createScoreClient() {
-  return new LightJevClient();
-}
 
 function createWhatsAppClient() {
   const puppeteer = {
@@ -45,45 +32,6 @@ function createWhatsAppClient() {
   return new Client({
     authStrategy: new LocalAuth({ dataPath: AUTH_PATH }),
     puppeteer,
-  });
-}
-
-async function runStartupForeignScan(client) {
-  if (!envFlag('STARTUP_FOREIGN_SCAN', true)) {
-    log.info('startup foreign scan disabled');
-    return 0;
-  }
-  const chats = await client.getChats();
-  const top = pickSidebarOneToOne(chats, 10);
-  log.info(`startup foreign scan of ${top.length} 1:1 chats (no scoring)`);
-
-  const descriptors = [];
-  for (const chat of top) {
-    let contact;
-    try {
-      contact = await chat.getContact();
-    } catch (err) {
-      log.warn('startup getContact failed', { chatId: chat.id?._serialized, error: err.message });
-      continue;
-    }
-    if (contact.isMe) continue;
-    const savedContact = Boolean(contact.isMyContact);
-    const chatId = chat.id?._serialized || contact.id?._serialized;
-    const resolved = await resolveRealNumber(client, chatId, contact);
-    descriptors.push({
-      chatId,
-      chat,
-      savedContact,
-      digits: resolved.digits,
-      unresolvedLid: resolved.unresolvedLid,
-      nonLocal: !resolved.unresolvedLid && isNonLocalDial(resolved.digits),
-    });
-  }
-
-  return startupForeignArchive(descriptors, {
-    archiveChat: async (item) => {
-      await item.chat.archive();
-    },
   });
 }
 
@@ -142,13 +90,8 @@ function attachHandlers(client, deps) {
     log.error('auth failure', m);
   });
 
-  client.on('ready', async () => {
+  client.on('ready', () => {
     log.ok('WhatsApp client ready');
-    try {
-      await runStartupForeignScan(client);
-    } catch (err) {
-      log.error('startup foreign scan failed', { error: err.message });
-    }
   });
 
   client.on('message', async (msg) => {
@@ -173,12 +116,14 @@ async function main() {
   const cache = new TtlCache({ ttlMs: ttl });
   const client = createWhatsAppClient();
 
-  log.info('starting WhatsApp scam-risk bot (LightJev scoring, archive only)', {
+  log.info('starting WhatsApp scam-risk bot (jevlike scoring, archive only)', {
+    scorer: 'jevlike',
     baseURL: scoreClient.baseURL,
     archiveThreshold: rubric.thresholds.archive,
     safeThreshold: rubric.thresholds.safe,
-    maxStateChars: rubric.maxStateChars,
     llmReviewEnabled: Boolean(llmReview.enabled),
+    llmReviewAll: Boolean(llmReview.reviewAll),
+    llmReviewMerge: llmReview.merge,
     llmReviewModel: llmReview.enabled ? llmReview.model : null,
   });
 
@@ -188,11 +133,8 @@ async function main() {
 
 module.exports = {
   AUTH_PATH,
-  envFlag,
   createScoreClient,
   createWhatsAppClient,
-  pickSidebarOneToOne,
-  runStartupForeignScan,
   handleWaMessage,
   attachHandlers,
   decideIncomingAction,
