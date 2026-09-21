@@ -1,6 +1,6 @@
 # Design decisions
 
-This repository started empty (`README` title only). Product invariants (archive-only, foreign-dial, LID, filters, heuristics) come from the original master prompt. Scoring is **HF-encoder jevlike only** (`not_scam` / `scam`). LightJev / `SCORER=model_v2` is gone.
+This repository started empty (`README` title only). Product invariants (archive-only, LID, filters, heuristics) come from the original master prompt. Scoring is **HF-encoder jevlike only** (`not_scam` / `scam`). LightJev / `SCORER=model_v2` is gone. There is **no** foreign-number hard archive.
 
 ## Kept
 
@@ -8,16 +8,13 @@ This repository started empty (`README` title only). Product invariants (archive
 |----------|-----|
 | **Archive only** — never `contact.block()` from score or heuristic | Safety: a bad probability must not lock a real person out. Blocking is a separate product-owner policy. |
 | Score **every** non-ignored live 1:1 body, including **saved contacts** | Saved ≠ safe; ATO and investment scams often arrive from hijacked contacts. |
-| **Unsaved + non-local** archive when the message is clean or `unknown` | Complements text scoring for overseas spam DMs. Local = `852` / `86` / `886`. |
-| Exclude **880–883, 888** from being treated as China | Avoids prefix mistakes around `86` / `88x` ITU codes. |
-| **LID**: resolve `@lid` before the foreign rule; never use LID digits as a phone | LID identifiers are not country codes. Unresolved LID skips the foreign rule only; scoring still runs. |
+| **LID**: resolve `@lid` for logs / LLM context; never use LID digits as a phone | LID identifiers are not country codes. Unresolved LID still scores. |
 | Tight **regex heuristic** (archive only) | Failover when the scorer is down or under-confident on copy-paste tropes. Includes OTP harvest (`請提供密碼` / 發給我) so fake anti-scam bait still archives. |
 | **Intent-gated suppress** | Warning/self-OTP language (`防騙`, `小心`, `新聞`) suppresses archive **only if** the DM does not also solicit OTP-forward, money transfer, or impersonation+secrecy. |
 | Filters: `fromMe`, groups, notification types, official WhatsApp names, `isMe` | Avoids looping on your own chats and WhatsApp system accounts. |
 | Session in **`.wwebjs_auth`** via `LocalAuth` | Same operator workflow as a typical `whatsapp-web.js` bot. |
 | Optional **Docker** for WhatsApp Web Chromium | jevlike runs as a sibling Python process so the Node image stays small. |
 | Log prefixes `[SCAN]`, `[WARN]`, `[INFO]`, `[OK]`, `[ERROR]` plus score + breakdown | Operator can see why a chat was archived. |
-| Startup **top 10** 1:1 sidebar chats: foreign archive **without scoring** | Parity with the described old bot; env `STARTUP_FOREIGN_SCAN`. |
 | **Fail closed** to `unknown` on timeout / 5xx / invalid JSON | `unknown` alone does not archive. |
 
 ## Improved
@@ -36,7 +33,7 @@ This repository started empty (`README` title only). Product invariants (archive
 
 HK/TW/CN DM scams cluster on a few tropes: **FPS/轉數快 payment**, **OTP harvest**, **courier customs**, **government/WhatsApp impersonation**, **crypto deposit**. jevlike answers a single `not_scam` / `scam` choice; heuristics and optional LLM review still cover those tropes when the binary score is wrong.
 
-Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high `P(scam)`. That **misses** some mild lures (they stay `unknown` unless the heuristic or foreign rule fires). That is accepted so ordinary Cantonese chat is not swept into archive.
+Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high `P(scam)`. That **misses** some mild lures (they stay `unknown` unless the heuristic fires). That is accepted so ordinary Cantonese chat is not swept into archive.
 
 ## Deferred
 
@@ -55,6 +52,7 @@ Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high
 | Hosted TypeSafe Jev / OpenJEV `POST /v1/systemone` as the default | Replaced by local scoring; now jevlike only. |
 | LightJev 0.6B / `SCORER=model_v2` as a selectable fallback | User request: remove that path entirely. Not Pi-portable (~2.4 GB). |
 | chinese-roberta multi-label `model_v2` server | Same: gone for this Pi/jevlike deploy. |
+| **Foreign-number / unsaved non-local hard archive** (`foreign_number`, `STARTUP_FOREIGN_SCAN`) | User request: remove the 外國號碼 archive rule. Clean low-score DMs from any country code are ignored. Score, heuristic, RAG, and optional LLM still apply. |
 | llama-cpp / GGUF **chat** as the primary classifier | jevlike is a frozen-encoder choice scorer, not a chat completion API. LLM review remains optional and separate. |
 | Blocking on score alone | Safety invariant. |
 | CAPTCHA solving or scraping third-party sites | Rejected unless asked. |
@@ -66,9 +64,8 @@ Live DM, after filters:
 
 1. `score >= ARCHIVE_THRESHOLD` (label `scam`) → archive `jevlike_score` (any sender). If LLM review is enabled, this **score-only** archive still goes to the second pass when the score is in the grey band, (with `LLM_REVIEW_ON_HIGH`, default true) **score/100 > GREY_MAX**, or `LLM_REVIEW_ALL=1`.
 2. Else obvious heuristic (or optional local classifier / RAG) → archive `obvious_scam` / `local_classifier` / `rag_scam_match`. Skip LLM.
-3. Else unsaved **and** non-local dial → archive `foreign_number` (low or unknown). Skip LLM.
-4. Else if the text is a warning/self-OTP **without** OTP-forward, money-transfer ask, or impersonation+secrecy → **suppress** (ignore). Skip LLM.
-5. Else if LLM review is enabled and a **trigger** fires (grey band 0.40–0.85 of score/100, high score above `GREY_MAX`, scorer vs local conflict, short OTP-ish DM, money ask from unknown/new number, **or** `LLM_REVIEW_ALL=1`) → redact PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. `not_scam` **releases** a score-only archive unless `LLM_REVIEW_MERGE=archive_only`. LLM failure → keep a score archive; otherwise `unknown` and do not archive.
-6. Else ignore.
+3. Else if the text is a warning/self-OTP **without** OTP-forward, money-transfer ask, or impersonation+secrecy → **suppress** (ignore). Skip LLM.
+4. Else if LLM review is enabled and a **trigger** fires (grey band 0.40–0.85 of score/100, high score above `GREY_MAX`, scorer vs local conflict, short OTP-ish DM, money ask from unknown/new number, **or** `LLM_REVIEW_ALL=1`) → redact PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. `not_scam` **releases** a score-only archive unless `LLM_REVIEW_MERGE=archive_only`. LLM failure → keep a score archive; otherwise `unknown` and do not archive.
+5. Else ignore.
 
-Saved contacts are exempt from (3) only. High score and heuristic still archive them unless (4) applies. LLM `not_scam` can later **release** a score-only archive. Unresolved `@lid` is treated as missing digits, so (3) does not fire.
+High score and heuristic still archive saved contacts unless (3) applies. LLM `not_scam` can later **release** a score-only archive.

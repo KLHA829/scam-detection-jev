@@ -3,11 +3,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const {
-  extractDigits,
-  isLocalDial,
-  isNonLocalDial,
-} = require('./lib/foreign-number');
+const { extractDigits } = require('./lib/foreign-number');
 const { isLidId, lidUserPart, phoneFromLidMapping, resolveRealNumber } = require('./lib/lid');
 const { shouldIgnoreMessage, isOfficialWhatsAppName } = require('./lib/filters');
 const { matchObviousScam } = require('./lib/heuristics');
@@ -18,7 +14,7 @@ const {
   scoreMessage,
 } = require('./lib/score-message');
 const { JevlikeClient } = require('./lib/jevlike-client');
-const { processIncomingMessage, startupForeignArchive, pickSidebarOneToOne } = require('./lib/handle-incoming');
+const { processIncomingMessage } = require('./lib/handle-incoming');
 const { TtlCache, cacheKeyForMessage } = require('./lib/cache');
 const {
   createStubJevlikeClient,
@@ -38,40 +34,10 @@ function scoreResult(overrides = {}) {
   };
 }
 
-describe('foreign-number', () => {
+describe('phone digits', () => {
   it('strips plus, spaces, and 00 prefix', () => {
     assert.equal(extractDigits('+852 6123 4567'), '85261234567');
     assert.equal(extractDigits('00886123456789'), '886123456789');
-  });
-
-  it('treats 852 / 86 / 886 as local', () => {
-    assert.equal(isLocalDial('85261234567'), true);
-    assert.equal(isLocalDial('+86 138 0000 0000'), true);
-    assert.equal(isLocalDial('886912345678'), true);
-    assert.equal(isNonLocalDial('85261234567'), false);
-  });
-
-  it('does not treat 886 as China-only; it is still local TW', () => {
-    assert.equal(isLocalDial('886233112345'), true);
-  });
-
-  it('excludes 880–883 and 888 from CN/local', () => {
-    assert.equal(isLocalDial('8801712345678'), false);
-    assert.equal(isLocalDial('881123456'), false);
-    assert.equal(isLocalDial('882123456'), false);
-    assert.equal(isLocalDial('883123456'), false);
-    assert.equal(isLocalDial('888123456'), false);
-    assert.equal(isNonLocalDial('8801712345678'), true);
-  });
-
-  it('treats US / UK as non-local', () => {
-    assert.equal(isNonLocalDial('14155550123'), true);
-    assert.equal(isNonLocalDial('447911123456'), true);
-  });
-
-  it('does not mark empty / missing as non-local (cannot apply foreign rule)', () => {
-    assert.equal(isNonLocalDial(''), false);
-    assert.equal(isNonLocalDial(null), false);
   });
 });
 
@@ -196,11 +162,11 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('archives unsaved non-local on low score without heuristic', () => {
+  it('does not archive unsaved non-local numbers from score-or-heuristic alone', () => {
     const low = scoreResult({ score: 4, label: 'not_scam' });
     assert.deepEqual(
       decideIncomingAction(low, '14155550123', false, { hit: false }),
-      { action: 'archive', archiveReason: 'foreign_number' },
+      { action: 'ignore', archiveReason: null },
     );
   });
 
@@ -216,11 +182,11 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('archives unknown + unsaved non-local; ignores unknown local unsaved', () => {
+  it('ignores unknown for unsaved non-local and local unsaved', () => {
     const unknown = scoreResult({ score: 25, label: 'unknown', ok: false });
     assert.deepEqual(
       decideIncomingAction(unknown, '447911123456', false, { hit: false }),
-      { action: 'archive', archiveReason: 'foreign_number' },
+      { action: 'ignore', archiveReason: null },
     );
     assert.deepEqual(
       decideIncomingAction(unknown, '85261234567', false, { hit: false }),
@@ -228,7 +194,7 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('does not apply foreign rule when LID is unresolved (null digits)', () => {
+  it('ignores unknown when LID digits are missing', () => {
     const unknown = scoreResult({ score: 0, label: 'unknown', ok: false });
     assert.deepEqual(
       decideIncomingAction(unknown, null, false, { hit: false }),
@@ -478,62 +444,29 @@ describe('processIncomingMessage', () => {
     assert.equal(out.decision.action, 'ignore');
     assert.deepEqual(reasons, []);
   });
-});
 
-describe('startup foreign scan', () => {
-  it('takes the first 10 1:1 chats in sidebar order', () => {
-    const chats = [
-      { id: '1', isGroup: false },
-      { id: 'g', isGroup: true },
-      ...Array.from({ length: 12 }, (_, i) => ({ id: String(i + 2), isGroup: false })),
-    ];
-    const top = pickSidebarOneToOne(chats, 10);
-    assert.equal(top.length, 10);
-    assert.equal(top[0].id, '1');
-    assert.ok(top.every((c) => !c.isGroup));
-  });
-
-  it('archives only unsaved non-local, no scoring', async () => {
-    const archived = [];
-    const n = await startupForeignArchive(
-      [
-        {
-          chatId: 'a',
-          savedContact: false,
-          nonLocal: true,
-          unresolvedLid: false,
-          digits: '14155550123',
-        },
-        {
-          chatId: 'b',
-          savedContact: true,
-          nonLocal: true,
-          unresolvedLid: false,
-          digits: '14155550124',
-        },
-        {
-          chatId: 'c',
-          savedContact: false,
-          nonLocal: false,
-          unresolvedLid: false,
-          digits: '85261234567',
-        },
-        {
-          chatId: 'd',
-          savedContact: false,
-          nonLocal: true,
-          unresolvedLid: true,
-          digits: null,
-        },
-      ],
+  it('does not archive an unsaved non-local number on a clean low score', async () => {
+    const reasons = [];
+    const out = await processIncomingMessage(
       {
-        archiveChat: async (chat) => {
-          archived.push(chat.chatId);
-        },
-        logFn: { ok() {} },
+        type: 'chat',
+        body: 'Hi',
+        chatId: '14155550123@c.us',
+        savedContact: false,
+        messageId: 'foreign-hi',
+      },
+      {
+        scoreClient: createStubJevlikeClient('benign'),
+        rubric,
+        resolveNumber: async () => ({
+          digits: '14155550123',
+          unresolvedLid: false,
+        }),
+        archiveChat: async (reason) => reasons.push(reason),
       },
     );
-    assert.equal(n, 1);
-    assert.deepEqual(archived, ['a']);
+    assert.equal(out.decision.action, 'ignore');
+    assert.equal(out.decision.archiveReason, null);
+    assert.deepEqual(reasons, []);
   });
 });

@@ -16,7 +16,7 @@ Machine-readable copy: [scoring-rubric.json](scoring-rubric.json). Thresholds ca
 - Prefer **fewer false archives** on normal chat (dinner plans, splitting a bill, sharing a link) over catching every weak hint.
 - Keep **urgency** and **links** weak on their own; they should not archive a saved friend.
 
-jevlike probabilities are **not calibrated**. Thresholds are operational, not scientific. Heuristics, the foreign-number rule, and optional LLM review exist because a single binary score can be wrong on ordinary language.
+jevlike probabilities are **not calibrated**. Thresholds are operational, not scientific. Heuristics and optional LLM review exist because a single binary score can be wrong on ordinary language.
 
 ## Labels and thresholds
 
@@ -24,7 +24,7 @@ jevlike probabilities are **not calibrated**. Thresholds are operational, not sc
 |-------|-----------------|----------------------|
 | `scam` | `score >= 42` (`ARCHIVE_THRESHOLD`) | Yes (`jevlike_score`) |
 | `not_scam` | `score <= 18` (`SAFE_THRESHOLD`) | No |
-| `unknown` | in between, **or** empty text, **or** jevlike failure | No (unless foreign-number / heuristic) |
+| `unknown` | in between, **or** empty text, **or** jevlike failure | No (unless heuristic / RAG / local classifier) |
 
 Empty body: skip the worker, `unknown`, `ok: true`.  
 Timeout / 5xx / 401 / 422 / invalid response: `unknown`, `ok: false`.
@@ -32,7 +32,7 @@ Timeout / 5xx / 401 / 422 / invalid response: `unknown`, `ok: false`.
 ## Worked examples
 
 **Benign (EN):** “Want to grab dinner at 7?”  
-Expected: low `P(scam)` → `not_scam` → ignore (even if unsaved **local**).
+Expected: low `P(scam)` → `not_scam` → ignore (even if unsaved).
 
 **Benign (ZH):** 「今晚食飯嗎？我轉帳比你 AA。」  
 Money talk without OTP/impersonation should stay below 42. Heuristic does **not** match (no FPS+立即+轉帳 triple).
@@ -47,9 +47,9 @@ Heuristic `wa_official_ban` archives even if jevlike is low.
 Heuristic `sf_customs_link` archives.
 
 **Urgency only:** 「快啲覆我，立即。」  
-Should stay `not_scam` / `unknown`. Saved or local unsaved → ignore.
+Should stay `not_scam` / `unknown`. Saved or unsaved → ignore.
 
-**Foreign clean DM:** unsaved `+1 415 …`, body “Hi” with low score → archive `foreign_number` (policy, not AI). Saved US number → ignore.
+**Clean DM from any number:** unsaved `+1 415 …`, body “Hi” with low score → **ignore** (no foreign-number archive rule). High jevlike score or a heuristic still archives.
 
 ## Heuristic backup (archive only)
 
