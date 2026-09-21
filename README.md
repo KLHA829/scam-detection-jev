@@ -2,7 +2,7 @@
 
 Local **WhatsApp Web** bot that scores each 1:1 DM and **archives** high-risk chats.
 
-**Default primary scorer:** [jevlike](https://github.com/vinnylarouge/jevlike) with a frozen Hugging Face encoder `hfl/chinese-roberta-wwm-ext` and choice labels `not_scam` / `scam`. The fine-tuned head (`jevlike_hf_chinese_roberta_hn800.pt`, ~2.4 MB) comes from a GitHub Release; the encoder (~400 MB) downloads from the Hub on first run. This is the path meant for a **Raspberry Pi** and other CPU machines.
+**Default primary scorer:** [jevlike](https://github.com/vinnylarouge/jevlike) with a frozen Hugging Face encoder `hfl/chinese-roberta-wwm-ext` and choice labels `not_scam` / `scam`. The fine-tuned head (`jevlike_hf_chinese_roberta_hn800.pt`, ~2.3 MB) is already on GitHub Release tag [`jevlike-hf-hn800`](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-hn800); the encoder (~400 MB) downloads from the Hub on first run. This is the path meant for a **Raspberry Pi** and other CPU machines.
 
 **Fallback:** `SCORER=model_v2` (alias `lightjev`) keeps the previous **LightJev** 0.6B multi-label rubric worker. Do not use that as the Pi default (~2.4 GB weights).
 
@@ -42,8 +42,9 @@ python -m pip install -r requirements.txt
 
 npm install
 
-# 3) 從 GitHub Release 拉 ~2.4 MB 的微調頭
-#    資產名：jevlike_hf_chinese_roberta_hn800.pt
+# 3) 從已發布的 GitHub Release 拉 ~2.3 MB 的微調頭（不用再等上傳）
+#    tag: jevlike-hf-hn800
+#    https://github.com/KLHA829/scam-detection-jev/releases/download/jevlike-hf-hn800/jevlike_hf_chinese_roberta_hn800.pt
 #    私有 repo 需要 gh 已登入，或 GH_TOKEN / GITHUB_TOKEN
 scripts/download_jevlike_ckpt.sh
 
@@ -61,7 +62,7 @@ npm start
 
 - 編碼器不在 git。第一次啟動有下載體積與延遲；cache 通常在 `~/.cache/huggingface/`。
 - Pi 記憶體建議 4 GB+。`JEVLIKE_DEVICE=cpu` 為預設。
-- 權重走 **GitHub Release 資產**，不要把 `.pt` / encoder 丟進 git history。
+- 權重已在 Release **`jevlike-hf-hn800`**：https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-hn800 。不要把 `.pt` / encoder 丟進 git history。
 - 可選 LLM 覆核預設關閉（`LLM_REVIEW_ALL=0`、`LLM_REVIEW_ENABLED=false`）。
 
 詳細見 [models/README.md](models/README.md)。
@@ -78,6 +79,8 @@ python -m pip install --upgrade pip
 python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 python -m pip install -r requirements.txt
 npm install
+# Head checkpoint (~2.3 MB) is already on tag jevlike-hf-hn800:
+# https://github.com/KLHA829/scam-detection-jev/releases/download/jevlike-hf-hn800/jevlike_hf_chinese_roberta_hn800.pt
 scripts/download_jevlike_ckpt.sh
 
 # terminal 1 — first run downloads ~400 MB encoder weights
@@ -105,7 +108,7 @@ Set `JEVLIKE_DEVICE=cuda` only if you have a compatible NVIDIA GPU. CPU is the P
 | `JEVLIKE_BASE_URL` | `http://127.0.0.1:8766` | Worker root. Client posts `{text}` to `{base}/v1/score`. |
 | `JEVLIKE_API_KEY` | _(empty)_ | Optional Bearer token; must match the worker if set. |
 | `JEVLIKE_TIMEOUT_MS` | `30000` | Per-attempt HTTP timeout. |
-| `JEVLIKE_CKPT` | `models/jevlike_hf_chinese_roberta.pt` | Fine-tuned head (Release asset). |
+| `JEVLIKE_CKPT` | `models/jevlike_hf_chinese_roberta.pt` | Fine-tuned head. Already published at `…/releases/download/jevlike-hf-hn800/jevlike_hf_chinese_roberta_hn800.pt`. |
 | `JEVLIKE_ENCODER` | `hfl/chinese-roberta-wwm-ext` | Frozen encoder id (Hub download, not git). |
 | `JEVLIKE_DEVICE` | `cpu` | `cpu` or `cuda`. Worker only. |
 | `JEVLIKE_OPTIONS` | `not_scam,scam` | Choice labels; `P(scam)` becomes the score. |
@@ -263,7 +266,7 @@ QR login still needs a terminal that can show the code (or inspect container log
 - `lightjev_serve.py` — LightJev 0.6B worker (`POST /predict`)
 - `stub-jevlike.js` / `stub-lightjev.js` — fixed probabilities for tests
 - `models/README.md` — GitHub Release download for the `.pt` head
-- `scripts/download_jevlike_ckpt.sh` — `gh` / curl helper
+- `scripts/download_jevlike_ckpt.sh` — pulls `jevlike-hf-hn800` via `/releases/download/…/jevlike_hf_chinese_roberta_hn800.pt`
 - [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) — kept / improved / deferred / rejected
 
 ## Disclaimer

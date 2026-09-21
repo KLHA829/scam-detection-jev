@@ -24,6 +24,12 @@ DEFAULT_ENCODER = "hfl/chinese-roberta-wwm-ext"
 DEFAULT_OPTIONS = ("not_scam", "scam")
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8766
+RELEASE_TAG = "jevlike-hf-hn800"
+RELEASE_ASSET = "jevlike_hf_chinese_roberta_hn800.pt"
+RELEASE_DOWNLOAD_URL = (
+    "https://github.com/KLHA829/scam-detection-jev/releases/download/"
+    f"{RELEASE_TAG}/{RELEASE_ASSET}"
+)
 ENCODER_DOWNLOAD_NOTE = (
     "[WARN] First run downloads the frozen HF encoder "
     f"{DEFAULT_ENCODER} (~400 MB) into the Hugging Face cache. "
@@ -88,7 +94,7 @@ def resolve_checkpoint() -> Path:
         if not path.is_file():
             raise FileNotFoundError(
                 f"JEVLIKE_CKPT not found: {path}. "
-                "Download the GitHub Release asset (see models/README.md)."
+                f"Download {RELEASE_DOWNLOAD_URL} (see models/README.md)."
             )
         return path
     for candidate in CKPT_CANDIDATES:
@@ -96,8 +102,8 @@ def resolve_checkpoint() -> Path:
             return candidate
     tried = ", ".join(str(p) for p in CKPT_CANDIDATES)
     raise FileNotFoundError(
-        "jevlike checkpoint not found. Place "
-        "jevlike_hf_chinese_roberta_hn800.pt under models/ "
+        "jevlike checkpoint not found. Download "
+        f"{RELEASE_DOWNLOAD_URL} into models/ "
         f"(looked at: {tried}) or set JEVLIKE_CKPT. See models/README.md "
         "and scripts/download_jevlike_ckpt.sh."
     )

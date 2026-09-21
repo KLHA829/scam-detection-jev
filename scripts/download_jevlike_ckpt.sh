@@ -3,11 +3,17 @@
 # The frozen encoder (hfl/chinese-roberta-wwm-ext, ~400 MB) is NOT in this
 # asset; Hugging Face Hub supplies it the first time jevlike_serve.py starts.
 #
+# Canonical (already published — do not wait for another upload):
+#   Tag:    jevlike-hf-hn800
+#   Page:   https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-hn800
+#   Asset:  jevlike_hf_chinese_roberta_hn800.pt  (~2.3 MB)
+#   URL:    https://github.com/KLHA829/scam-detection-jev/releases/download/jevlike-hf-hn800/jevlike_hf_chinese_roberta_hn800.pt
+#
 # Usage:
 #   scripts/download_jevlike_ckpt.sh
-#   JEVLIKE_RELEASE_TAG=jevlike-hf-hn800 scripts/download_jevlike_ckpt.sh
 #
-# Private repo: `gh` must be logged in, or set GH_TOKEN / GITHUB_TOKEN.
+# Private repo: the /releases/download/ URL 404s without a browser session.
+# The script then uses `gh release download` or the GitHub API (GH_TOKEN).
 
 set -euo pipefail
 
@@ -18,8 +24,48 @@ ASSET="${JEVLIKE_RELEASE_ASSET:-jevlike_hf_chinese_roberta_hn800.pt}"
 DEST="${JEVLIKE_CKPT:-$ROOT/models/jevlike_hf_chinese_roberta.pt}"
 DIR="$(dirname "$DEST")"
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+DOWNLOAD_URL="${JEVLIKE_DOWNLOAD_URL:-https://github.com/${REPO}/releases/download/${TAG}/${ASSET}}"
+MIN_BYTES="${JEVLIKE_CKPT_MIN_BYTES:-1000000}"
 
 mkdir -p "$DIR"
+TMP="$DIR/.${ASSET}.partial"
+SRC="$DIR/$ASSET"
+
+looks_like_checkpoint() {
+  local path="$1"
+  [[ -f "$path" ]] || return 1
+  local size
+  size="$(wc -c < "$path" | tr -d ' ')"
+  if [[ "$size" -lt "$MIN_BYTES" ]]; then
+    echo "[WARN] $path is ${size} bytes (want >= ${MIN_BYTES}; likely an HTML login page)" >&2
+    return 1
+  fi
+  if head -c 256 "$path" | grep -qiE '<html|<!doctype'; then
+    echo "[WARN] $path looks like HTML, not a .pt checkpoint" >&2
+    return 1
+  fi
+  return 0
+}
+
+if [[ "${JEVLIKE_CKPT_FORCE:-0}" != "1" ]] && looks_like_checkpoint "$DEST"; then
+  echo "[OK] already have $DEST ($(ls -lh "$DEST" | awk '{print $5}'))"
+  exit 0
+fi
+
+download_direct() {
+  echo "[INFO] trying $DOWNLOAD_URL"
+  local hdr=(-sSL --fail --location --output "$TMP")
+  if [[ -n "$TOKEN" ]]; then
+    hdr+=(-H "Authorization: Bearer ${TOKEN}")
+    hdr+=(-H "Accept: application/octet-stream")
+  fi
+  if curl "${hdr[@]}" "$DOWNLOAD_URL" 2>/dev/null; then
+    mv -f "$TMP" "$SRC"
+    return 0
+  fi
+  rm -f "$TMP"
+  return 1
+}
 
 download_with_gh() {
   echo "[INFO] gh release download $TAG ($ASSET) from $REPO"
@@ -30,50 +76,55 @@ download_with_gh() {
     --clobber
 }
 
-asset_api_url() {
+download_with_api() {
   local api="https://api.github.com/repos/${REPO}/releases/tags/${TAG}"
+  echo "[INFO] GitHub API $api → asset $ASSET"
   local hdr=(-sS -H "Accept: application/vnd.github+json")
   if [[ -n "$TOKEN" ]]; then
     hdr+=(-H "Authorization: Bearer ${TOKEN}")
   fi
-  curl "${hdr[@]}" "$api" | python3 -c "
+  local asset_url
+  asset_url="$(
+    curl "${hdr[@]}" "$api" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 want = '''${ASSET}'''
-assets = data.get('assets') or []
-for row in assets:
+for row in data.get('assets') or []:
     if row.get('name') == want:
         print(row.get('url') or '')
         sys.exit(0)
 raise SystemExit('asset not found: ' + want)
 "
-}
-
-download_with_curl() {
-  local url
-  url="$(asset_api_url)"
-  if [[ -z "$url" ]]; then
-    echo "[ERROR] could not resolve asset URL for $ASSET in $TAG" >&2
+  )"
+  if [[ -z "$asset_url" ]]; then
+    echo "[ERROR] could not resolve asset API URL for $ASSET in $TAG" >&2
     return 1
   fi
-  echo "[INFO] curl asset $ASSET from $REPO@$TAG"
-  local hdr=(-sSL -H "Accept: application/octet-stream")
+  local dl=(-sSL --fail -H "Accept: application/octet-stream")
   if [[ -n "$TOKEN" ]]; then
-    hdr+=(-H "Authorization: Bearer ${TOKEN}")
+    dl+=(-H "Authorization: Bearer ${TOKEN}")
   fi
-  curl "${hdr[@]}" "$url" -o "$DIR/$ASSET"
+  curl "${dl[@]}" "$asset_url" -o "$TMP"
+  mv -f "$TMP" "$SRC"
 }
 
-if command -v gh >/dev/null 2>&1; then
-  download_with_gh
+ok=0
+if download_direct && looks_like_checkpoint "$SRC"; then
+  ok=1
 else
-  echo "[INFO] gh not found; using curl + GitHub API"
-  download_with_curl
+  echo "[INFO] browser URL needs a logged-in session on a private repo; falling back to gh / API"
+  rm -f "$TMP"
+  if command -v gh >/dev/null 2>&1 && download_with_gh && looks_like_checkpoint "$SRC"; then
+    ok=1
+  elif download_with_api && looks_like_checkpoint "$SRC"; then
+    ok=1
+  fi
 fi
 
-SRC="$DIR/$ASSET"
-if [[ ! -f "$SRC" ]]; then
-  echo "[ERROR] expected $SRC after download" >&2
+if [[ "$ok" -ne 1 ]]; then
+  echo "[ERROR] failed to download $ASSET from $DOWNLOAD_URL" >&2
+  echo "[ERROR] Release page: https://github.com/${REPO}/releases/tag/${TAG}" >&2
+  echo "[ERROR] For a private repo, run: gh auth login   (or set GH_TOKEN)" >&2
   exit 1
 fi
 
@@ -84,6 +135,6 @@ else
   echo "[OK] checkpoint at $DEST"
 fi
 
-ls -lh "$SRC" "$DEST" 2>/dev/null | uniq
+ls -lh "$SRC" "$DEST" 2>/dev/null | awk '!seen[$0]++'
 echo "[INFO] Set JEVLIKE_CKPT=$DEST (or keep the default models/ path)."
 echo "[INFO] First worker start still downloads ${JEVLIKE_ENCODER:-hfl/chinese-roberta-wwm-ext} from Hugging Face (~400 MB)."

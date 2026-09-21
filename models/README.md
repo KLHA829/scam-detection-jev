@@ -1,20 +1,25 @@
 # 模型權重（不進 git）
 
-此目錄放 **jevlike 微調頭**（約 2.4 MB）。凍結的 Hugging Face 編碼器 **不會** 放進 git，執行時由 Hub 下載。
+此目錄放 **jevlike 微調頭**（約 2.3 MB）。凍結的 Hugging Face 編碼器 **不會** 放進 git，執行時由 Hub 下載。
 
-This folder holds the **jevlike scorer head** only (~2.4 MB). The frozen encoder is **not** in git; `jevlike_serve.py` downloads it from Hugging Face Hub on first run.
+This folder holds the **jevlike scorer head** only (~2.3 MB). The frozen encoder is **not** in git; `jevlike_serve.py` downloads it from Hugging Face Hub on first run.
 
-## 下載檢查點 / Download the checkpoint
+## 已發布的 Release（不用再等上傳）
 
-GitHub Release 資產名稱（請保持一致）：
-
-`jevlike_hf_chinese_roberta_hn800.pt`
-
-Release tag：`jevlike-hf-hn800`
+| | |
+|--|--|
+| Tag | `jevlike-hf-hn800` |
+| 頁面 | https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-hn800 |
+| 資產 | `jevlike_hf_chinese_roberta_hn800.pt`（約 2.3 MB） |
+| 下載 URL | https://github.com/KLHA829/scam-detection-jev/releases/download/jevlike-hf-hn800/jevlike_hf_chinese_roberta_hn800.pt |
 
 ```bash
-# 需要 gh 已登入（私有 repo），或設定 GH_TOKEN / GITHUB_TOKEN
+# 建議用腳本（私有 repo 會自動改走 gh；公開時打下面那條 URL）
 scripts/download_jevlike_ckpt.sh
+
+# 或（需已登入 GitHub 的瀏覽器 / 公開 repo）：
+# curl -L -o models/jevlike_hf_chinese_roberta_hn800.pt \
+#   https://github.com/KLHA829/scam-detection-jev/releases/download/jevlike-hf-hn800/jevlike_hf_chinese_roberta_hn800.pt
 ```
 
 會放到：
@@ -22,7 +27,7 @@ scripts/download_jevlike_ckpt.sh
 - `models/jevlike_hf_chinese_roberta_hn800.pt`（Release 原檔名）
 - `models/jevlike_hf_chinese_roberta.pt`（程式預設路徑）
 
-或手動下載 Release 資產後放到上述其中一個路徑，或設：
+也可以設：
 
 ```bash
 JEVLIKE_CKPT=/path/to/hf_chinese_roberta_hn800.pt
