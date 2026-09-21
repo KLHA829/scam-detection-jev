@@ -1,0 +1,6 @@
+# Fallback scorer when SCORER=model_v2 / lightjev.
+# LightJev inference worker (typed candidate scoring — not llama-cpp / GGUF chat).
+# Install: python -m pip install -r requirements-lightjev.txt
+# Pin matches https://github.com/rongxinzy/LightJev/releases/tag/v0.1.1
+git+https://github.com/rongxinzy/LightJev.git@v0.1.1
+huggingface_hub>=0.23.0

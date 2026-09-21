@@ -1,5 +1,8 @@
-# LightJev inference worker (typed candidate scoring — not llama-cpp / GGUF chat).
-# Install: python -m pip install -r requirements.txt
-# Pin matches https://github.com/rongxinzy/LightJev/releases/tag/v0.1.1
-git+https://github.com/rongxinzy/LightJev.git@v0.1.1
+# Primary scorer: jevlike HF-encoder head (Raspberry Pi / CPU).
+# Install CPU torch FIRST, then this file:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements.txt
+# Pin is the jevlike commit used when wiring this worker.
+transformers>=4.45.0
 huggingface_hub>=0.23.0
+git+https://github.com/vinnylarouge/jevlike.git@94f5fd1b0b11d52bbdfdf4e0ee6aa96b568f8452

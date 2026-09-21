@@ -2,12 +2,14 @@
   "name": "scam-detection-jev",
   "version": "1.0.0",
   "private": true,
-  "description": "Local WhatsApp Web scam-risk bot using LightJev typed decisions (archive only).",
+  "description": "Local WhatsApp Web scam-risk bot using HF-encoder jevlike (archive only).",
   "main": "whatsapp-bot.js",
   "scripts": {
     "start": "node whatsapp-bot.js",
-    "test": "node --test",
+    "test": "node --test && python3 -m unittest test_jevlike_serve.py",
     "stub": "node stub-lightjev.js",
+    "stub:jevlike": "node stub-jevlike.js",
+    "jevlike": "python jevlike_serve.py",
     "lightjev": "python lightjev_serve.py"
   },
   "engines": {

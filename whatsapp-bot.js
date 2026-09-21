@@ -7,7 +7,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
 const log = require('./lib/log');
-const { LightJevClient } = require('./lib/lightjev-client');
+const { createScoreClient, resolveScorer } = require('./lib/scorer');
 const { loadRubric } = require('./lib/score-message');
 const { TtlCache } = require('./lib/cache');
 const {
@@ -29,10 +29,6 @@ function envFlag(name, defaultValue = true) {
   const v = process.env[name];
   if (v == null || v === '') return defaultValue;
   return v !== '0' && String(v).toLowerCase() !== 'false';
-}
-
-function createScoreClient() {
-  return new LightJevClient();
 }
 
 function createWhatsAppClient() {
@@ -167,18 +163,22 @@ function attachHandlers(client, deps) {
 async function main() {
   const rubricPath = process.env.RUBRIC_PATH || undefined;
   const rubric = loadRubric(rubricPath);
+  const scorer = resolveScorer();
   const scoreClient = createScoreClient();
   const llmReview = createLlmReviewConfig();
   const ttl = Number(process.env.SCORE_CACHE_TTL_MS || 900000);
   const cache = new TtlCache({ ttlMs: ttl });
   const client = createWhatsAppClient();
 
-  log.info('starting WhatsApp scam-risk bot (LightJev scoring, archive only)', {
+  log.info('starting WhatsApp scam-risk bot (archive only)', {
+    scorer,
     baseURL: scoreClient.baseURL,
     archiveThreshold: rubric.thresholds.archive,
     safeThreshold: rubric.thresholds.safe,
     maxStateChars: rubric.maxStateChars,
     llmReviewEnabled: Boolean(llmReview.enabled),
+    llmReviewAll: Boolean(llmReview.reviewAll),
+    llmReviewMerge: llmReview.merge,
     llmReviewModel: llmReview.enabled ? llmReview.model : null,
   });
 
@@ -190,6 +190,7 @@ module.exports = {
   AUTH_PATH,
   envFlag,
   createScoreClient,
+  resolveScorer,
   createWhatsAppClient,
   pickSidebarOneToOne,
   runStartupForeignScan,

@@ -1,6 +1,6 @@
 # Design decisions
 
-This repository started empty (`README` title only). Product invariants (archive-only, foreign-dial, LID, filters, heuristics) come from the original master prompt. Scoring now uses **LightJev**, not hosted OpenJEV / TypeSafe System One.
+This repository started empty (`README` title only). Product invariants (archive-only, foreign-dial, LID, filters, heuristics) come from the original master prompt. Scoring now defaults to **HF-encoder jevlike** (`not_scam` / `scam`). `SCORER=model_v2` keeps the previous **LightJev** rubric worker.
 
 ## Kept
 
@@ -11,11 +11,11 @@ This repository started empty (`README` title only). Product invariants (archive
 | **Unsaved + non-local** archive when the message is clean or `unknown` | Complements text scoring for overseas spam DMs. Local = `852` / `86` / `886`. |
 | Exclude **880–883, 888** from being treated as China | Avoids prefix mistakes around `86` / `88x` ITU codes. |
 | **LID**: resolve `@lid` before the foreign rule; never use LID digits as a phone | LID identifiers are not country codes. Unresolved LID skips the foreign rule only; scoring still runs. |
-| Tight **regex heuristic** (archive only) | Failover when LightJev is down or under-confident on copy-paste tropes. Includes OTP harvest (`請提供密碼` / 發給我) so fake anti-scam bait still archives. |
+| Tight **regex heuristic** (archive only) | Failover when the primary scorer is down or under-confident on copy-paste tropes. Includes OTP harvest (`請提供密碼` / 發給我) so fake anti-scam bait still archives. |
 | **Intent-gated suppress** | Warning/self-OTP language (`防騙`, `小心`, `新聞`) suppresses archive **only if** the DM does not also solicit OTP-forward, money transfer, or impersonation+secrecy. |
 | Filters: `fromMe`, groups, notification types, official WhatsApp names, `isMe` | Avoids looping on your own chats and WhatsApp system accounts. |
 | Session in **`.wwebjs_auth`** via `LocalAuth` | Same operator workflow as a typical `whatsapp-web.js` bot. |
-| Optional **Docker** for WhatsApp Web Chromium | LightJev runs as a sibling Python process so the Node image stays small. |
+| Optional **Docker** for WhatsApp Web Chromium | jevlike (or LightJev) runs as a sibling Python process so the Node image stays small. |
 | Log prefixes `[SCAN]`, `[WARN]`, `[INFO]`, `[OK]`, `[ERROR]` plus score + breakdown | Operator can see why a chat was archived. |
 | Startup **top 10** 1:1 sidebar chats: foreign archive **without scoring** | Parity with the described old bot; env `STARTUP_FOREIGN_SCAN`. |
 | **Fail closed** to `unknown` on timeout / 5xx / invalid JSON | `unknown` alone does not archive. |
@@ -24,14 +24,15 @@ This repository started empty (`README` title only). Product invariants (archive
 
 | Decision | Why |
 |----------|-----|
-| **LightJev boolean records** instead of TypeSafe noul HTTP | User request: score with LightJev’s finite-candidate API (`kind: boolean`, `candidates: ["false","true"]`). `P(true)` is the noul used by the existing rubric. |
-| Persistent **`lightjev_serve.py`** worker | Official `predict()` reloads the checkpoint every call. The worker calls `load_checkpoint()` once and batches all rubric questions in one backbone forward. |
-| Short questions + **240-char** state cap | LightJev **refuses** (does not truncate) inputs over 256 tokens per candidate. |
-| `scoring-rubric.json` + `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` | Tune without code changes. |
+| **HF-encoder jevlike as primary** (`SCORER=jevlike`) | User request: Pi-portable scoring. Frozen `hfl/chinese-roberta-wwm-ext` + ~2.4 MB head from a GitHub Release. `P(scam)×100` uses the same archive/safe thresholds. Encoder is Hub-downloaded, never git. |
+| **`SCORER=model_v2` keeps LightJev** | Previous 10-dimension boolean rubric path stays selectable. Not deleted. |
+| Persistent **`jevlike_serve.py` / `lightjev_serve.py`** workers | Official `predict()` / HF `from_pretrained` should not reload on every DM. |
+| Short questions + **240-char** state cap on LightJev | LightJev **refuses** (does not truncate) inputs over 256 tokens per candidate. jevlike uses a 2000-char cap; the collator truncates to the checkpoint `context_tokens`. |
+| `scoring-rubric.json` + `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` | Tune without code changes. Same numbers for jevlike’s 0–100 `P(scam)` map. |
 | In-memory **TTL cache** and **per-chat single-flight** | Dedupes retries and overlapping handlers. |
-| In-process **`stub-lightjev.js`** | `npm test` never downloads 2.4 GB of weights. |
+| In-process **`stub-jevlike.js` / `stub-lightjev.js`** | `npm test` never downloads encoder or 2.4 GB LightJev weights. |
 | **Rule-based PII redaction** before any external LLM | HK phones, FPS/PayMe/bank ids, emails, ID-like tokens, light names; URLs reduced to domain. Mapping stays local. |
-| **Optional OpenAI-compatible LLM review** on grey/conflict **and** high LightJev scores | Second pass is any Chat Completions API (OpenAI cloud, Ollama, vLLM, llama.cpp `llama-server`, …) — not a single vendor. API key is optional (Bearer only when set). Grey-band still fail-open to `unknown` (do not archive on timeout/5xx alone). High/score-only archives (`lightjev_score`) get an LLM second look when `LLM_REVIEW_ON_HIGH=true` (default once review is enabled). LLM `not_scam` **releases** those score FPs (friend/family meal repay, cab fare). LLM `unknown`/fail **keeps** the score archive. Heuristic / RAG / foreign-number archives stay absolute. PII is still redacted before the LLM. |
+| **Optional OpenAI-compatible LLM review** | Second pass is any Chat Completions API. Default **off**. `LLM_REVIEW_ALL=0` keeps grey/conflict/high triggers. `LLM_REVIEW_ALL=1` reviews every remaining DM after the scorer (hard archives still skip). Merge default `bonsai`: LLM scam archives; LLM not_scam **releases** score-only archives (`jevlike_score` / `lightjev_score`); unknown/fail keeps primary. `archive_only` never releases. PII is still redacted. |
 
 ## Why this rubric
 
@@ -60,17 +61,17 @@ LightJev-0.6B was trained on synthetic smart-home / catalog tasks. It is **not**
 | llama-cpp / GGUF **chat** classification and free-form JSON | LightJev scores declared candidates; it is not a chat completion API. |
 | Blocking on score alone | Safety invariant. |
 | CAPTCHA solving or scraping third-party sites | Rejected unless asked. |
-| Committing API keys or model weight files | `.env` gitignored; checkpoint downloaded at worker start. |
+| Committing API keys or model weight files | `.env` gitignored; jevlike head via GitHub Release; encoder and LightJev checkpoints downloaded at worker start. |
 
 ## Action matrix (implemented)
 
 Live DM, after filters:
 
-1. `score >= ARCHIVE_THRESHOLD` (label `scam`) → archive `lightjev_score` (any sender). If LLM review is enabled, this **score-only** archive still goes to the second pass when the score is in the grey band or (with `LLM_REVIEW_ON_HIGH`, default true) **score/100 > GREY_MAX**.
+1. `score >= ARCHIVE_THRESHOLD` (label `scam`) → archive `jevlike_score` or `lightjev_score` (any sender). If LLM review is enabled, this **score-only** archive still goes to the second pass when the score is in the grey band, (with `LLM_REVIEW_ON_HIGH`, default true) **score/100 > GREY_MAX**, or `LLM_REVIEW_ALL=1`.
 2. Else obvious heuristic (or optional local classifier / RAG) → archive `obvious_scam` / `local_classifier` / `rag_scam_match`. Skip LLM.
 3. Else unsaved **and** non-local dial → archive `foreign_number` (low or unknown). Skip LLM.
 4. Else if the text is a warning/self-OTP **without** OTP-forward, money-transfer ask, or impersonation+secrecy → **suppress** (ignore). Skip LLM.
-5. Else if LLM review is enabled and a **trigger** fires (grey band 0.40–0.85 of score/100, high score above `GREY_MAX`, LightJev vs local conflict, short OTP-ish DM, money ask from unknown/new number) → redact PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. `not_scam` **releases** a score-only archive. LLM failure → keep a score archive; otherwise `unknown` and do not archive.
+5. Else if LLM review is enabled and a **trigger** fires (grey band 0.40–0.85 of score/100, high score above `GREY_MAX`, scorer vs local conflict, short OTP-ish DM, money ask from unknown/new number, **or** `LLM_REVIEW_ALL=1`) → redact PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. `not_scam` **releases** a score-only archive unless `LLM_REVIEW_MERGE=archive_only`. LLM failure → keep a score archive; otherwise `unknown` and do not archive.
 6. Else ignore.
 
 Saved contacts are exempt from (3) only. High score and heuristic still archive them unless (4) applies. LLM `not_scam` can later **release** a score-only archive. Unresolved `@lid` is treated as missing digits, so (3) does not fire.

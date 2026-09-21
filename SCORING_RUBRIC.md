@@ -1,10 +1,12 @@
 # Scoring rubric
 
-Classification is **not** a single SCAM / NOT_SCAM label. **LightJev** answers ten independent **boolean** questions on the message `state` (`candidates` must be `["false", "true"]` in that order). Code reads `P(true)` as `noul` and converts those probabilities into a 0–100 score.
+**Default scorer (`SCORER=jevlike`):** a single choice menu `not_scam` / `scam`. `score = P(scam) × 100`, then the same `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` labels as below. There is no per-dimension breakdown from jevlike.
+
+**Fallback (`SCORER=model_v2`):** classification is **not** a single SCAM / NOT_SCAM label. **LightJev** answers ten independent **boolean** questions on the message `state` (`candidates` must be `["false", "true"]` in that order). Code reads `P(true)` as `noul` and converts those probabilities into a 0–100 score.
 
 Machine-readable copy: [scoring-rubric.json](scoring-rubric.json). Weights and thresholds can also be overridden with `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` in `.env`.
 
-LightJev encodes each candidate as the full JSON payload `state` + `question` + `candidate` and **errors** if that exceeds **256 tokens**. Rubric instructions stay short; `maxStateChars` is **240**.
+LightJev encodes each candidate as the full JSON payload `state` + `question` + `candidate` and **errors** if that exceeds **256 tokens**. Rubric instructions stay short; `maxStateChars` is **240**. jevlike does not use this 256-token cap.
 
 ## Design goals
 
