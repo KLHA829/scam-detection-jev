@@ -1,10 +1,10 @@
 # scam-detection-jev
 
-Local **WhatsApp Web** bot that scores each 1:1 DM and **archives** high-risk chats.
+Local **WhatsApp Web** bot that scores each 1:1 DM, **archives** risky chats, and **blocks** unsaved high-risk contacts.
 
 **Primary (and only) scorer:** [jevlike](https://github.com/vinnylarouge/jevlike) with a frozen Hugging Face encoder `hfl/chinese-roberta-wwm-ext` and choice labels `not_scam` / `scam`. The fine-tuned head (`jevlike_hf_chinese_roberta_hn800.pt`, ~2.3 MB) is already on GitHub Release tag [`jevlike-hf-hn800`](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-hn800); the encoder (~400 MB) downloads from the Hub on first run. This is the path meant for a **Raspberry Pi** and other CPU machines. There is **no** LightJev / `SCORER=model_v2` fallback.
 
-It does **not** block contacts from the score. It does **not** call Scameter or any phone/URL registry.
+**Blocking** is separate from archive. Unsaved contacts are blocked when a tight scam regex hits, or when the jevlike score is at or above `BLOCK_THRESHOLD` (default **80**, above the archive line of 42). The reason is written onto the WhatsApp contact name (`封鎖·索取驗證碼`, `封鎖·高分96`, …) and appended to `blocks.jsonl` (number, score, reason, time). Saved contacts are never auto-blocked. Grey scores and scorer failures do not block. It does **not** call Scameter or any phone/URL registry.
 
 Eval note (does not block shipping): hn800 beats a local RoBERTa multi-label baseline on friend/family FPR (0% vs 10%) and trails on hk50 Acc (0.88 vs 0.96). Pi portability is the reason this deploy is jevlike-only.
 
@@ -13,6 +13,7 @@ Eval note (does not block shipping): hn800 beats a local RoBERTa multi-label bas
 1. Reads 1:1 message bodies (including saved contacts).
 2. **jevlike:** one forward pass over options `not_scam` / `scam`; `P(scam) × 100` is the 0–100 score.
 3. **Archives** when the score is at or above the archive threshold, or when a tight regex heuristic fires.
+4. **Blocks** an unsaved contact in those same cases only when the heuristic fired, or the score is at or above `BLOCK_THRESHOLD`. Also mutes the chat. Saved contacts stay archive-only.
 4. Optional OpenAI-compatible LLM second pass (default **off**). Grey/high unless `LLM_REVIEW_ALL=1`.
 
 Filters drop `fromMe`, groups, notification types, your own account, and official WhatsApp names. `@lid` chats are resolved to a real number for logs and LLM context; LID digits are never used as a phone.
@@ -116,6 +117,8 @@ Include `[stub:scam]` in a message body to force the stub’s high-risk preset.
 See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rubric.json).
 
 - `ARCHIVE_THRESHOLD` (default `42`) — label `scam` / archive from score
+- `BLOCK_THRESHOLD` (default `80`) — block an **unsaved** contact from score. Heuristic hits block unsaved contacts even below this.
+- `BLOCK_ENABLED` (default `true`) — `false` restores archive-only
 - `SAFE_THRESHOLD` (default `18`) — label `not_scam`
 - `HEURISTIC_ENABLED` (default `true`)
 - `SCORE_CACHE_TTL_MS` (default `900000`)
@@ -192,7 +195,7 @@ Aliases if `LLM_REVIEW_API_URL` / `LLM_REVIEW_API_KEY` are unset: `OPENAI_BASE_U
 
 ## 第二輪覆核（灰帶／高分／可選全部）
 
-流程維持：**jevlike／heuristic／本地分類／RAG** 先跑；**唔會為咗 LLM 拆走現有計分**。WhatsApp 仍然只係 archive，唔會 block 聯絡人。PII 一律先規則遮罩。
+流程維持：**jevlike／heuristic／本地分類／RAG** 先跑；**唔會為咗 LLM 拆走現有計分**。已儲存聯絡人只會 archive。未儲存聯絡人先會 block：正則中咗明顯騙局，或者分數達到 `BLOCK_THRESHOLD`（預設 80）。封鎖原因會寫入 WhatsApp 聯絡人名（`封鎖·…`），並追加到 `blocks.jsonl`。灰帶同分數失敗唔會 block。LLM 若把高分放行，就唔會 block。PII 一律先規則遮罩。
 
 - heuristic／RAG hard archive → **立刻 archive，不呼叫 LLM**（`LLM_REVIEW_ALL=1` 都一樣）
 - 主模型高分 archive（分數/100 **高過** `LLM_REVIEW_GREY_MAX`，預設 0.85）→ **LLM 第二輪**（`LLM_REVIEW_ON_HIGH=true`，預設開）。LLM `not_scam` 可以 **放行** 分數誤報；`unknown`／失敗則 **維持 archive**
@@ -226,7 +229,7 @@ QR login still needs a terminal that can show the code (or inspect container log
 
 ## Layout
 
-- `whatsapp-bot.js` — WhatsApp Web client, QR, archive-only actions
+- `whatsapp-bot.js` — WhatsApp Web client, QR, archive and graded block
 - `lib/scorer.js` — always builds a jevlike client (`createScoreClient`)
 - `lib/jevlike-client.js` — `{text}` → `{prob_scam}`
 - `lib/redact.js` — rule-based PII redaction before any external LLM call
@@ -240,4 +243,4 @@ QR login still needs a terminal that can show the code (or inspect container log
 
 ## Disclaimer
 
-This is a personal archive helper. WhatsApp Web automation can violate WhatsApp’s terms and may get the session logged out. Do not use it on other people’s accounts. Scores are **un-calibrated model probabilities** — review every archive before you treat it as a scam.
+This is a personal filter. WhatsApp Web automation can violate WhatsApp’s terms and may get the session logged out. Do not use it on other people’s accounts. Scores are **un-calibrated model probabilities**. Saved contacts are not auto-blocked; unsaved blocks still need a look at `blocks.jsonl` before you treat the name as final.

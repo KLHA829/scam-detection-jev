@@ -8,6 +8,7 @@ const { isLidId, lidUserPart, phoneFromLidMapping, resolveRealNumber } = require
 const { shouldIgnoreMessage, isOfficialWhatsAppName } = require('./lib/filters');
 const { matchObviousScam } = require('./lib/heuristics');
 const { decideIncomingAction, resolveIncomingMessageLabel } = require('./lib/decide-incoming');
+const { applyBlockPolicy } = require('./lib/block-policy');
 const {
   loadRubric,
   labelFromScore,
@@ -202,11 +203,18 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('never returns block', () => {
+  it('primary action stays archive; unsaved high-risk is blocked afterwards', () => {
     const high = scoreResult({ score: 99, label: 'scam' });
-    const d = decideIncomingAction(high, '14155550123', false, { hit: true });
+    const heuristic = { hit: true, id: 'otp_harvest', archiveReason: 'obvious_scam' };
+    const d = decideIncomingAction(high, '14155550123', false, heuristic);
     assert.equal(d.action, 'archive');
-    assert.notEqual(d.action, 'block');
+    const blocked = applyBlockPolicy(d, {
+      savedContact: false,
+      scoreResult: high,
+      heuristic,
+    });
+    assert.equal(blocked.action, 'block');
+    assert.equal(blocked.contactName, '封鎖·索取驗證碼');
   });
 
   it('archives optional RAG / local-classifier hits after heuristics', () => {

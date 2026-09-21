@@ -3,6 +3,7 @@ node_modules/
 .wwebjs_cache/
 .env
 *.log
+blocks.jsonl
 .DS_Store
 session/
 chrome-data/
