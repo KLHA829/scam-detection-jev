@@ -26,6 +26,7 @@ This repository started empty (`README` title only). Product invariants (graded 
 | `scoring-rubric.json` + `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` | Tune without code changes. Same numbers for jevlike’s 0–100 `P(scam)` map. |
 | In-memory **TTL cache** and **per-chat single-flight** | Dedupes retries and overlapping handlers. |
 | **Paced WhatsApp writes** | Rename, block, mute, and archive run one chat at a time, with `WA_ACTION_GAP_MS` (default 3s) between each call. |
+| **Thread window for grey or short messages** | Score the current body, then the last `CONTEXT_TURNS` inbound bodies (default 4, memory only). Use the higher score unless the current sentence is longer than `CONTEXT_BENIGN_MIN_CHARS` and at or below the safe threshold. |
 | In-process **`stub-jevlike.js`** | `npm test` never downloads the encoder. |
 | **Rule-based PII redaction** before any external LLM | HK phones, FPS/PayMe/bank ids, emails, ID-like tokens, light names; URLs reduced to domain. Mapping stays local. |
 | **Optional OpenAI-compatible LLM review** | Second pass is any Chat Completions API. Default **off**. `LLM_REVIEW_ALL=0` keeps grey/conflict/high triggers. `LLM_REVIEW_ALL=1` reviews every remaining DM after the scorer (hard archives still skip). Merge default `bonsai`: LLM scam archives; LLM not_scam **releases** score-only archives (`jevlike_score`); unknown/fail keeps primary. `archive_only` never releases. PII is still redacted. |
