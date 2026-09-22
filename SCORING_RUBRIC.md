@@ -64,8 +64,10 @@ Tight regexes in `lib/heuristics.js` (disable with `HEURISTIC_ENABLED=false`):
 - WhatsApp + 官方/official + 封號/ban
 - USDT/bitcoin + wallet/錢包 + send/轉
 - 順豐 / SF Express + 清關/customs + `http`
+- Lookalike hostname: a hostname label **is** the brand (`whatsapp`, `hsbc`, `sf-express`, …), or the site name is that brand plus a hyphen (`whatsapp-secure`, `sf-express-hk`), or the site name is one character off a brand of at least 6 letters (`whatspp`). A longer word that merely contains the brand (`bestwhatsapp.com`, `whatsapp-tips.medium.com`) does not match, and neither does a short near-miss (`hsb.com`). Allowlisted suffixes: `whatsapp.com`, `wa.me`, `sf-express.com`, `hsbc.com`, `hsbc.com.hk`, `hangseng.com`, `payme.hsbc.com.hk`.
+- Short link (`bit.ly`, `tinyurl.com`, `t.co`, `cutt.ly`, `rb.gy`, `is.gd`, `t.cn`, `dwz.cn`, `url.cn`, `youtu.be`, with or without `https://`) **and** an OTP ask, impersonation, or an urgent transfer into an account. A short link alone, or with ordinary bill-splitting, does not match.
 
-These set `archiveReason: 'obvious_scam'` even when the jevlike score is low. On an unsaved contact they also block, and the heuristic label is written into the contact name (`封鎖·索取驗證碼`, `封鎖·轉數快即轉`, …). A score-only block uses `封鎖·高分<n>`.
+These set `archiveReason: 'obvious_scam'` even when the jevlike score is low. On an unsaved contact they also block, but only when **this message** matches. A high score or a regex hit that appears only after joining earlier messages can archive; it does not block. The heuristic label is written into the contact name (`封鎖·索取驗證碼`, `封鎖·轉數快即轉`, …). A score-only block uses `封鎖·高分<n>` and also requires this message's own score to reach `BLOCK_THRESHOLD`.
 
 Warning-only copy (`防騙` / `小心` / `新聞` telling you **not** to send OTP or money) is suppressed and does **not** archive. Fake anti-scam bait that also asks for a password, OTP forward, or a transfer still archives.
 

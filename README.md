@@ -122,6 +122,8 @@ See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rub
 - `BLOCK_THRESHOLD` (default `80`) — block an **unsaved** contact from score. Heuristic hits block unsaved contacts even below this.
 - `BLOCK_ENABLED` (default `true`) — `false` restores archive-only
 - `WA_ACTION_GAP_MS` (default `3000`) — minimum gap between WhatsApp account changes (rename, block, mute, archive). Chats are changed one at a time.
+- `CONTEXT_TURNS` (default `4`) — score the current message, and also the last N inbound messages when that window scores higher. `1` disables the window.
+- `CONTEXT_BENIGN_MIN_CHARS` (default `24`) — a longer message at or below `SAFE_THRESHOLD` keeps its own score
 - `SAFE_THRESHOLD` (default `18`) — label `not_scam`
 - `HEURISTIC_ENABLED` (default `true`)
 - `SCORE_CACHE_TTL_MS` (default `900000`)

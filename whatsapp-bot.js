@@ -21,6 +21,7 @@ const {
 const { createLlmReviewConfig } = require('./lib/llm-review');
 const { blockAndRename } = require('./lib/wa-actions');
 const { createActionPacer } = require('./lib/action-pacer');
+const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-context');
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
 
@@ -37,7 +38,7 @@ function createWhatsAppClient() {
   });
 }
 
-async function handleWaMessage(msg, { client, pacer, scoreClient, rubric, cache, llmReview }) {
+async function handleWaMessage(msg, { client, pacer, threadContext, scoreClient, rubric, cache, llmReview }) {
   let chat;
   let contact;
   try {
@@ -69,6 +70,7 @@ async function handleWaMessage(msg, { client, pacer, scoreClient, rubric, cache,
       rubric,
       cache,
       llmReview,
+      threadContext,
       resolveNumber: () =>
         resolveRealNumber(client, isLidId(chatId) ? chatId : contactId || chatId, contact),
       archiveChat: async () => {
@@ -128,6 +130,7 @@ async function main() {
   const ttl = Number(process.env.SCORE_CACHE_TTL_MS || 900000);
   const cache = new TtlCache({ ttlMs: ttl });
   const pacer = createActionPacer();
+  const threadContext = createThreadContext({ turns: contextTurnsFromEnv() });
   const client = createWhatsAppClient();
 
   log.info('starting WhatsApp scam-risk bot (jevlike scoring, graded block)', {
@@ -137,13 +140,14 @@ async function main() {
     blockThreshold: rubric.thresholds.block,
     safeThreshold: rubric.thresholds.safe,
     waActionGapMs: pacer.gapMs,
+    contextTurns: threadContext.turns,
     llmReviewEnabled: Boolean(llmReview.enabled),
     llmReviewAll: Boolean(llmReview.reviewAll),
     llmReviewMerge: llmReview.merge,
     llmReviewModel: llmReview.enabled ? llmReview.model : null,
   });
 
-  attachHandlers(client, { scoreClient, rubric, cache, llmReview, pacer });
+  attachHandlers(client, { scoreClient, rubric, cache, llmReview, pacer, threadContext });
   await client.initialize();
 }
 
