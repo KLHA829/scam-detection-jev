@@ -21,7 +21,6 @@ const {
 const { createLlmReviewConfig } = require('./lib/llm-review');
 const { blockAndRename } = require('./lib/wa-actions');
 const { createActionPacer } = require('./lib/action-pacer');
-const { defaultBlockLogPath } = require('./lib/block-log');
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
 
@@ -76,15 +75,7 @@ async function handleWaMessage(msg, { client, pacer, scoreClient, rubric, cache,
         await chat.archive();
       },
       exclusive: (fn) => pacer.exclusive(fn),
-      paceAction: (info) =>
-        pacer.evaluate({
-          action: info && info.action,
-          chatId: info && info.chatId,
-          digits: info && info.digits,
-          alreadyBlocked: Boolean(contact.isBlocked),
-        }),
       pauseAction: () => pacer.pause(),
-      noteAction: (info) => pacer.note(info),
       blockContact: (info) =>
         blockAndRename({
           client,
@@ -136,7 +127,7 @@ async function main() {
   const llmReview = createLlmReviewConfig();
   const ttl = Number(process.env.SCORE_CACHE_TTL_MS || 900000);
   const cache = new TtlCache({ ttlMs: ttl });
-  const pacer = createActionPacer({ logPath: defaultBlockLogPath() });
+  const pacer = createActionPacer();
   const client = createWhatsAppClient();
 
   log.info('starting WhatsApp scam-risk bot (jevlike scoring, graded block)', {
@@ -146,7 +137,6 @@ async function main() {
     blockThreshold: rubric.thresholds.block,
     safeThreshold: rubric.thresholds.safe,
     waActionGapMs: pacer.gapMs,
-    blockMaxPerHour: pacer.maxPerHour,
     llmReviewEnabled: Boolean(llmReview.enabled),
     llmReviewAll: Boolean(llmReview.reviewAll),
     llmReviewMerge: llmReview.merge,
