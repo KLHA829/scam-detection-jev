@@ -20,6 +20,7 @@ const {
 } = require('./lib/decide-incoming');
 const { createLlmReviewConfig } = require('./lib/llm-review');
 const { blockAndRename } = require('./lib/wa-actions');
+const { createActionPacer } = require('./lib/action-pacer');
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
 
@@ -36,7 +37,7 @@ function createWhatsAppClient() {
   });
 }
 
-async function handleWaMessage(msg, { client, scoreClient, rubric, cache, llmReview }) {
+async function handleWaMessage(msg, { client, pacer, scoreClient, rubric, cache, llmReview }) {
   let chat;
   let contact;
   try {
@@ -73,6 +74,8 @@ async function handleWaMessage(msg, { client, scoreClient, rubric, cache, llmRev
       archiveChat: async () => {
         await chat.archive();
       },
+      exclusive: (fn) => pacer.exclusive(fn),
+      pauseAction: () => pacer.pause(),
       blockContact: (info) =>
         blockAndRename({
           client,
@@ -80,6 +83,7 @@ async function handleWaMessage(msg, { client, scoreClient, rubric, cache, llmRev
           chat,
           digits: info && info.digits,
           contactName: info && info.contactName,
+          pause: () => pacer.pause(),
         }),
     },
   );
@@ -123,6 +127,7 @@ async function main() {
   const llmReview = createLlmReviewConfig();
   const ttl = Number(process.env.SCORE_CACHE_TTL_MS || 900000);
   const cache = new TtlCache({ ttlMs: ttl });
+  const pacer = createActionPacer();
   const client = createWhatsAppClient();
 
   log.info('starting WhatsApp scam-risk bot (jevlike scoring, graded block)', {
@@ -131,13 +136,14 @@ async function main() {
     archiveThreshold: rubric.thresholds.archive,
     blockThreshold: rubric.thresholds.block,
     safeThreshold: rubric.thresholds.safe,
+    waActionGapMs: pacer.gapMs,
     llmReviewEnabled: Boolean(llmReview.enabled),
     llmReviewAll: Boolean(llmReview.reviewAll),
     llmReviewMerge: llmReview.merge,
     llmReviewModel: llmReview.enabled ? llmReview.model : null,
   });
 
-  attachHandlers(client, { scoreClient, rubric, cache, llmReview });
+  attachHandlers(client, { scoreClient, rubric, cache, llmReview, pacer });
   await client.initialize();
 }
 
