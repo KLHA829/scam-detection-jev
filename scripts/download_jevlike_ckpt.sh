@@ -24,6 +24,9 @@ ASSET="${JEVLIKE_RELEASE_ASSET:-jevlike_hf_chinese_roberta_hn800.pt}"
 DEST="${JEVLIKE_CKPT:-$ROOT/models/jevlike_hf_chinese_roberta.pt}"
 DIR="$(dirname "$DEST")"
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+# Windows ships `python`, not `python3` (a Windows venv has only python.exe), so the
+# API fallback cannot assume the POSIX name.
+PY="$(command -v python3 || command -v python || true)"
 DOWNLOAD_URL="${JEVLIKE_DOWNLOAD_URL:-https://github.com/${REPO}/releases/download/${TAG}/${ASSET}}"
 MIN_BYTES="${JEVLIKE_CKPT_MIN_BYTES:-1000000}"
 
@@ -69,11 +72,18 @@ download_direct() {
 
 download_with_gh() {
   echo "[INFO] gh release download $TAG ($ASSET) from $REPO"
-  gh release download "$TAG" \
-    --repo "$REPO" \
-    --pattern "$ASSET" \
-    --dir "$DIR" \
-    --clobber
+  # Run from $DIR with a relative --dir. gh is a native binary on Windows and does
+  # not translate MSYS paths: given /c/Users/... it writes to C:\c\Users\... instead
+  # — silently, exit 0 — so the checkpoint lands outside the repo and the caller's
+  # existence check fails. A relative --dir sidesteps path translation entirely.
+  (
+    cd "$DIR" || exit 1
+    gh release download "$TAG" \
+      --repo "$REPO" \
+      --pattern "$ASSET" \
+      --dir . \
+      --clobber
+  )
 }
 
 download_with_api() {
@@ -84,8 +94,12 @@ download_with_api() {
     hdr+=(-H "Authorization: Bearer ${TOKEN}")
   fi
   local asset_url
+  if [[ -z "$PY" ]]; then
+    echo "[ERROR] no python3/python on PATH; cannot parse the release API response" >&2
+    return 1
+  fi
   asset_url="$(
-    curl "${hdr[@]}" "$api" | python3 -c "
+    curl "${hdr[@]}" "$api" | "$PY" -c "
 import json, sys
 data = json.load(sys.stdin)
 want = '''${ASSET}'''
