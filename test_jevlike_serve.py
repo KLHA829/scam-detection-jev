@@ -34,12 +34,12 @@ class ScamProbabilityTests(unittest.TestCase):
         self.assertEqual(serve.parse_options(" not_scam, scam "), ("not_scam", "scam"))
 
     def test_published_release_download_url(self):
-        self.assertEqual(serve.RELEASE_TAG, "jevlike-hf-hn800")
-        self.assertEqual(serve.RELEASE_ASSET, "jevlike_hf_chinese_roberta_hn800.pt")
+        self.assertEqual(serve.RELEASE_TAG, "jevlike-hf-r1")
+        self.assertEqual(serve.RELEASE_ASSET, "jevlike_hf_chinese_roberta_r1.pt")
         self.assertEqual(
             serve.RELEASE_DOWNLOAD_URL,
             "https://github.com/KLHA829/scam-detection-jev/releases/download/"
-            "jevlike-hf-hn800/jevlike_hf_chinese_roberta_hn800.pt",
+            "jevlike-hf-r1/jevlike_hf_chinese_roberta_r1.pt",
         )
 
 

@@ -4,10 +4,10 @@
 # asset; Hugging Face Hub supplies it the first time jevlike_serve.py starts.
 #
 # Canonical (already published — do not wait for another upload):
-#   Tag:    jevlike-hf-hn800
-#   Page:   https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-hn800
-#   Asset:  jevlike_hf_chinese_roberta_hn800.pt  (~2.3 MB)
-#   URL:    https://github.com/KLHA829/scam-detection-jev/releases/download/jevlike-hf-hn800/jevlike_hf_chinese_roberta_hn800.pt
+#   Tag:    jevlike-hf-r1
+#   Page:   https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1
+#   Asset:  jevlike_hf_chinese_roberta_r1.pt  (~2.3 MB)
+#   URL:    https://github.com/KLHA829/scam-detection-jev/releases/download/jevlike-hf-r1/jevlike_hf_chinese_roberta_r1.pt
 #
 # Usage:
 #   scripts/download_jevlike_ckpt.sh
@@ -19,8 +19,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="${JEVLIKE_RELEASE_REPO:-KLHA829/scam-detection-jev}"
-TAG="${JEVLIKE_RELEASE_TAG:-jevlike-hf-hn800}"
-ASSET="${JEVLIKE_RELEASE_ASSET:-jevlike_hf_chinese_roberta_hn800.pt}"
+TAG="${JEVLIKE_RELEASE_TAG:-jevlike-hf-r1}"
+ASSET="${JEVLIKE_RELEASE_ASSET:-jevlike_hf_chinese_roberta_r1.pt}"
 DEST="${JEVLIKE_CKPT:-$ROOT/models/jevlike_hf_chinese_roberta.pt}"
 DIR="$(dirname "$DEST")"
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
