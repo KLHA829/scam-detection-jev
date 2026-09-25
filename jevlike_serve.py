@@ -24,8 +24,8 @@ DEFAULT_ENCODER = "hfl/chinese-roberta-wwm-ext"
 DEFAULT_OPTIONS = ("not_scam", "scam")
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8766
-RELEASE_TAG = "jevlike-hf-hn800"
-RELEASE_ASSET = "jevlike_hf_chinese_roberta_hn800.pt"
+RELEASE_TAG = "jevlike-hf-r1"
+RELEASE_ASSET = "jevlike_hf_chinese_roberta_r1.pt"
 RELEASE_DOWNLOAD_URL = (
     "https://github.com/KLHA829/scam-detection-jev/releases/download/"
     f"{RELEASE_TAG}/{RELEASE_ASSET}"
@@ -37,8 +37,11 @@ ENCODER_DOWNLOAD_NOTE = (
 )
 
 CKPT_CANDIDATES = (
+    # r1 first: the head published on the jevlike-hf-r1 release. The plain filename
+    # is what scripts/download_jevlike_ckpt.sh writes to; hf_chinese_roberta_hn800.pt
+    # is the older baseline kept only as a fallback name.
+    ROOT / "models" / "jevlike_hf_chinese_roberta_r1.pt",
     ROOT / "models" / "jevlike_hf_chinese_roberta.pt",
-    ROOT / "models" / "jevlike_hf_chinese_roberta_hn800.pt",
     ROOT / "models" / "hf_chinese_roberta_hn800.pt",
 )
 
