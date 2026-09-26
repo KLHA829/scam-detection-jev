@@ -40,7 +40,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 - `python jevlike_serve.py` (or `npm run jevlike`) in terminal 1, then `npm start` in terminal 2.
 - `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — run the bot against fixed probabilities.
 
-## Current state (update with the date when it changes) — 2026-09-25
+## Current state (update with the date when it changes) — 2026-09-26
 
 - **Deployed head is `r1`**: `models/jevlike_hf_chinese_roberta_r1.pt`, published on release tag
   [`jevlike-hf-r1`](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1). On a 366-row real
@@ -55,8 +55,9 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   runs the real pipeline offline (`--llm dry` needs no key) to measure it.
 - High-recall heads (`r4`, `r5` in `jevlike-lab/runs/`) are **wrong for this product**: at score 42 they wrongly
   flag 34-41% of innocents.
-- `lib/redact.js` over-masks in at least two places: `我係收數公司` -> `我係[姓名]`, and `如非本人操作` ->
-  `如非本人[姓名]` (the second corrupts a scam keyword before the LLM sees it).
+- `lib/redact.js` name masking is surname-gated: a run after `我係`/`本人` is masked only when it starts with a
+  listed HK surname or `阿`, so `我係收數公司` and `如非本人操作` are no longer corrupted before the LLM sees them.
+  Known gaps: compound surnames (`我係歐陽文`) are not masked; a role tail after a surname (`我係張經理`) still masks.
 
 ## Landmines
 
