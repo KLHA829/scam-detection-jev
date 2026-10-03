@@ -33,14 +33,12 @@ scripts/download_jevlike_ckpt.sh
 JEVLIKE_CKPT=/path/to/jevlike_hf_chinese_roberta_r1.pt
 ```
 
-Worker 也會依序嘗試：
+Worker 載入順序：
 
-1. `$JEVLIKE_CKPT` / `$JEVLIKE_CHECKPOINT`
-2. `models/jevlike_hf_chinese_roberta_r1.pt`（現行 head）
-3. `models/jevlike_hf_chinese_roberta.pt`
-4. `models/hf_chinese_roberta_hn800.pt`
+1. `$JEVLIKE_CKPT` / `$JEVLIKE_CHECKPOINT`（若已設；檔案不存在會直接報錯）
+2. 否則只載入 `models/jevlike_hf_chinese_roberta_r1.pt`（現行 head）；缺檔會報錯，**不會**自動改用舊 head
 
-`models/jevlike_hf_chinese_roberta_hn800.pt` 係**舊 baseline**（tag `jevlike-hf-hn800`，誤封 23.0%）。現行 `r1` head 喺同一個 366 條真 HK 測試集上誤封 9.6%（archive 線）／5.3%（block 線），代價係召回由 0.575 跌到 0.508。
+`models/jevlike_hf_chinese_roberta_hn800.pt` 係**舊 baseline**（tag `jevlike-hf-hn800`，誤封 23.0%），須以 `JEVLIKE_CKPT` 明確指定才會載入。現行 `r1` head 喺同一個 366 條真 HK 測試集上誤封 9.6%（archive 線）／5.3%（block 線），代價係召回由 0.575 跌到 0.508。
 
 **不要** 把 `hfl/chinese-roberta-wwm-ext` 編碼器（約 400 MB）commit 進 repo。第一次跑 `python jevlike_serve.py` 會寫入 Hugging Face cache（通常 `~/.cache/huggingface/`），Raspberry Pi 上可能要數分鐘。
 
