@@ -57,7 +57,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   flag 34-41% of innocents.
 - `lib/redact.js` name masking is surname-gated: a run after `我係`/`本人` is masked only when it starts with a
   listed HK surname or `阿`, so `我係收數公司` and `如非本人操作` are no longer corrupted before the LLM sees them.
-  Known gaps: compound surnames (`我係歐陽文`) are not masked; a role tail after a surname (`我係張經理`) still masks.
+  Compound surnames (e.g. `我係歐陽文`) and role tails after a single-char surname (e.g. `我係張經理`) are handled in `NAME_TOKEN`.
 
 ## Landmines
 
