@@ -36,14 +36,9 @@ ENCODER_DOWNLOAD_NOTE = (
     "On a Raspberry Pi this can take several minutes and needs disk + RAM."
 )
 
-CKPT_CANDIDATES = (
-    # r1 first: the head published on the jevlike-hf-r1 release. The plain filename
-    # is what scripts/download_jevlike_ckpt.sh writes to; hf_chinese_roberta_hn800.pt
-    # is the older baseline kept only as a fallback name.
-    ROOT / "models" / "jevlike_hf_chinese_roberta_r1.pt",
-    ROOT / "models" / "jevlike_hf_chinese_roberta.pt",
-    ROOT / "models" / "hf_chinese_roberta_hn800.pt",
-)
+# Precision-first head published on jevlike-hf-r1. Without JEVLIKE_CKPT we load
+# only this file — never older heads such as hf_chinese_roberta_hn800.pt.
+DEFAULT_CKPT = ROOT / "models" / "jevlike_hf_chinese_roberta_r1.pt"
 
 DEVICE = os.environ.get("JEVLIKE_DEVICE", "cpu")
 HOST = os.environ.get("JEVLIKE_HOST", DEFAULT_HOST)
@@ -100,14 +95,12 @@ def resolve_checkpoint() -> Path:
                 f"Download {RELEASE_DOWNLOAD_URL} (see models/README.md)."
             )
         return path
-    for candidate in CKPT_CANDIDATES:
-        if candidate.is_file():
-            return candidate
-    tried = ", ".join(str(p) for p in CKPT_CANDIDATES)
+    if DEFAULT_CKPT.is_file():
+        return DEFAULT_CKPT
     raise FileNotFoundError(
-        "jevlike checkpoint not found. Download "
+        f"jevlike r1 checkpoint not found: {DEFAULT_CKPT}. Download "
         f"{RELEASE_DOWNLOAD_URL} into models/ "
-        f"(looked at: {tried}) or set JEVLIKE_CKPT. See models/README.md "
+        "or set JEVLIKE_CKPT. See models/README.md "
         "and scripts/download_jevlike_ckpt.sh."
     )
 

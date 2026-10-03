@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Mapping helpers for jevlike_serve.py (no torch / no encoder download)."""
 
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 import jevlike_serve as serve
 
@@ -41,6 +45,56 @@ class ScamProbabilityTests(unittest.TestCase):
             "https://github.com/KLHA829/scam-detection-jev/releases/download/"
             "jevlike-hf-r1/jevlike_hf_chinese_roberta_r1.pt",
         )
+
+
+class ResolveCheckpointTests(unittest.TestCase):
+    def setUp(self):
+        self._saved_env = {
+            "JEVLIKE_CKPT": os.environ.pop("JEVLIKE_CKPT", None),
+            "JEVLIKE_CHECKPOINT": os.environ.pop("JEVLIKE_CHECKPOINT", None),
+        }
+
+    def tearDown(self):
+        for key, value in self._saved_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    def test_explicit_env_uses_path(self):
+        with tempfile.NamedTemporaryFile(delete=False) as handle:
+            path = Path(handle.name)
+        try:
+            os.environ["JEVLIKE_CKPT"] = str(path)
+            self.assertEqual(serve.resolve_checkpoint(), path)
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_explicit_env_missing_fails(self):
+        os.environ["JEVLIKE_CKPT"] = "/tmp/jevlike-missing-test.ckpt"
+        with self.assertRaises(FileNotFoundError) as ctx:
+            serve.resolve_checkpoint()
+        self.assertIn("JEVLIKE_CKPT not found", str(ctx.exception))
+
+    def test_default_r1_only_no_hn800_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            r1 = root / "jevlike_hf_chinese_roberta_r1.pt"
+            hn800 = root / "hf_chinese_roberta_hn800.pt"
+            hn800.write_bytes(b"not-a-real-checkpoint")
+            with patch.object(serve, "DEFAULT_CKPT", r1):
+                with self.assertRaises(FileNotFoundError) as ctx:
+                    serve.resolve_checkpoint()
+                msg = str(ctx.exception)
+                self.assertIn("r1 checkpoint not found", msg)
+                self.assertIn(str(r1), msg)
+
+    def test_default_loads_r1_when_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r1 = Path(tmp) / "jevlike_hf_chinese_roberta_r1.pt"
+            r1.write_bytes(b"stub")
+            with patch.object(serve, "DEFAULT_CKPT", r1):
+                self.assertEqual(serve.resolve_checkpoint(), r1)
 
 
 if __name__ == "__main__":
