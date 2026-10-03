@@ -77,45 +77,41 @@ class ResolveCheckpointTests(unittest.TestCase):
         self.assertIn("JEVLIKE_CKPT not found", str(ctx.exception))
 
     def test_default_r1_only_no_legacy_fallback(self):
-        """Missing r1 must error even when old default walk targets exist under models/."""
-        models_dir = serve.ROOT / "models"
-        models_dir.mkdir(parents=True, exist_ok=True)
-        r1 = serve.DEFAULT_CKPT
-        legacy_plain = models_dir / "jevlike_hf_chinese_roberta.pt"
-        legacy_hn800 = models_dir / "hf_chinese_roberta_hn800.pt"
-        touched: list[Path] = []
-        backups: dict[Path, bytes] = {}
-
-        def hide(path: Path) -> None:
-            if path.is_file():
-                backups[path] = path.read_bytes()
-                path.unlink()
-
-        def restore() -> None:
-            for path in touched:
-                path.unlink(missing_ok=True)
-            for path, data in backups.items():
-                path.write_bytes(data)
-
-        try:
-            hide(r1)
-            hide(legacy_plain)
-            hide(legacy_hn800)
+        """Missing r1 must error even when legacy heads exist under ROOT/models/."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            models_dir = root / "models"
+            models_dir.mkdir()
+            r1 = models_dir / "jevlike_hf_chinese_roberta_r1.pt"
+            legacy_plain = models_dir / "jevlike_hf_chinese_roberta.pt"
+            legacy_hn800 = models_dir / "hf_chinese_roberta_hn800.pt"
             legacy_plain.write_bytes(b"legacy-plain-stub")
             legacy_hn800.write_bytes(b"legacy-hn800-stub")
-            touched.extend((legacy_plain, legacy_hn800))
 
             self.assertFalse(r1.is_file())
             self.assertTrue(legacy_plain.is_file())
             self.assertTrue(legacy_hn800.is_file())
+            # Pre-fix candidate walk (ROOT/models/*) would return the plain legacy head.
+            self.assertEqual(
+                next(
+                    (
+                        p
+                        for p in (r1, legacy_plain, legacy_hn800)
+                        if p.is_file()
+                    ),
+                    None,
+                ),
+                legacy_plain,
+            )
 
-            with self.assertRaises(FileNotFoundError) as ctx:
-                serve.resolve_checkpoint()
-            msg = str(ctx.exception)
-            self.assertIn("r1 checkpoint not found", msg)
-            self.assertIn(str(r1), msg)
-        finally:
-            restore()
+            with patch.object(serve, "ROOT", root), patch.object(
+                serve, "DEFAULT_CKPT", r1
+            ):
+                with self.assertRaises(FileNotFoundError) as ctx:
+                    serve.resolve_checkpoint()
+                msg = str(ctx.exception)
+                self.assertIn("r1 checkpoint not found", msg)
+                self.assertIn(str(r1), msg)
 
     def test_default_loads_r1_when_present(self):
         with tempfile.TemporaryDirectory() as tmp:
