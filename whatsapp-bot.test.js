@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 
 const { extractDigits } = require('./lib/foreign-number');
 const { isLidId, lidUserPart, phoneFromLidMapping, resolveRealNumber } = require('./lib/lid');
-const { shouldIgnoreMessage, isOfficialWhatsAppName } = require('./lib/filters');
+const { shouldIgnoreMessage, isOfficialWhatsAppId } = require('./lib/filters');
 const { matchObviousScam } = require('./lib/heuristics');
 const { decideIncomingAction, resolveIncomingMessageLabel } = require('./lib/decide-incoming');
 const { applyBlockPolicy } = require('./lib/block-policy');
@@ -78,26 +78,49 @@ describe('LID handling', () => {
 });
 
 describe('filters', () => {
-  it('ignores fromMe, groups, notifications, isMe, and official WhatsApp names', () => {
+  it('ignores fromMe, groups, notifications, isMe, and official WhatsApp chats', () => {
     assert.equal(shouldIgnoreMessage({ fromMe: true }).ignore, true);
     assert.equal(shouldIgnoreMessage({ isGroup: true }).ignore, true);
     assert.equal(shouldIgnoreMessage({ isMe: true }).ignore, true);
     assert.equal(shouldIgnoreMessage({ type: 'notification' }).ignore, true);
     assert.equal(shouldIgnoreMessage({ type: 'e2e_notification' }).reason, 'notification');
     assert.equal(
-      shouldIgnoreMessage({ contactName: 'WhatsApp' }).reason,
+      shouldIgnoreMessage({ chatId: 'status@broadcast' }).reason,
       'official_whatsapp',
     );
     assert.equal(
-      shouldIgnoreMessage({ pushName: 'WhatsApp Business' }).reason,
+      shouldIgnoreMessage({ chatId: '0@c.us' }).reason,
       'official_whatsapp',
     );
     assert.equal(
-      shouldIgnoreMessage({ contactName: 'WhatsApp 官方' }).reason,
+      shouldIgnoreMessage({ from: '0@s.whatsapp.net' }).reason,
       'official_whatsapp',
     );
-    assert.equal(isOfficialWhatsAppName('Alice'), false);
+    assert.equal(isOfficialWhatsAppId('85260000000@c.us'), false);
+    assert.equal(
+      shouldIgnoreMessage({
+        type: 'chat',
+        pushName: 'WhatsApp Security',
+        contactName: 'WhatsApp',
+        chatId: '85260000000@c.us',
+      }).ignore,
+      false,
+    );
     assert.equal(shouldIgnoreMessage({ type: 'chat' }).ignore, false);
+  });
+});
+
+describe('loadRubric env', () => {
+  it('keeps the rubric lines when a threshold is not a number', () => {
+    const tuned = loadRubric(undefined, {
+      ARCHIVE_THRESHOLD: 'nope',
+      SAFE_THRESHOLD: 'nope',
+      BLOCK_THRESHOLD: 'nope',
+    });
+    assert.equal(tuned.thresholds.archive, 42);
+    assert.equal(tuned.thresholds.safe, 18);
+    assert.equal(tuned.thresholds.block, 80);
+    assert.equal(labelFromScore(96, tuned.thresholds), 'scam');
   });
 });
 

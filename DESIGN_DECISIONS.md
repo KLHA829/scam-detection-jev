@@ -25,11 +25,11 @@ This repository started empty (`README` title only). Product invariants (graded 
 | Persistent **`jevlike_serve.py`** worker | HF `from_pretrained` should not reload on every DM. |
 | `scoring-rubric.json` + `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` | Tune without code changes. Same numbers for jevlike’s 0–100 `P(scam)` map. |
 | In-memory **TTL cache** and **per-chat single-flight** | Dedupes retries and overlapping handlers. |
-| **Paced WhatsApp writes** | Rename, block, mute, and archive run one chat at a time, with `WA_ACTION_GAP_MS` (default 3s) between each call. |
+| **Paced WhatsApp writes** | Block, rename, mute, and archive run one chat at a time, with `WA_ACTION_GAP_MS` (default 3s) between each call. A failed block does not save the contact. |
 | **Thread window for grey or short messages** | Score the current body, then the last `CONTEXT_TURNS` inbound bodies (default 4, memory only). Use the higher score unless the current sentence is longer than `CONTEXT_BENIGN_MIN_CHARS` and at or below the safe threshold. Blocking still uses only this message: a window score or a regex that appears only in earlier text can archive, and does not block. |
 | In-process **`stub-jevlike.js`** | `npm test` never downloads the encoder. |
-| **Rule-based PII redaction** before any external LLM | HK phones, FPS/PayMe/bank ids, emails, ID-like tokens, light names; URLs reduced to domain. Mapping stays local. |
-| **Optional OpenAI-compatible LLM review** | Second pass is any Chat Completions API. Default **off**. `LLM_REVIEW_ALL=0` keeps grey/conflict/high triggers. `LLM_REVIEW_ALL=1` reviews every remaining DM after the scorer (hard archives still skip). Merge default `bonsai`: LLM scam archives; LLM not_scam **releases** score-only archives (`jevlike_score`); unknown/fail keeps primary. `archive_only` never releases. PII is still redacted. |
+| **jevlike PII head** before any external LLM | `POST /v1/mask` returns character spans from the separate mask head. The bot writes `XXX`. A missing head or a failed mask skips the LLM call. |
+| **Optional OpenAI-compatible LLM review** | Second pass is any Chat Completions API. Default **off**. `LLM_REVIEW_ALL=0` keeps grey/conflict/high triggers. `LLM_REVIEW_ALL=1` reviews every remaining DM after the scorer (hard archives still skip). Merge default `bonsai`: LLM scam archives; LLM not_scam **releases** score-only archives (`jevlike_score`); unknown/fail keeps primary. `archive_only` never releases. PII is still masked by the jevlike head. |
 
 ## Why this scorer
 
@@ -43,7 +43,7 @@ Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high
 - Image / voice / OCR.
 - Claiming that jevlike probabilities are calibrated frequencies.
 - Live WhatsApp or live encoder weights in CI.
-- Using an LLM to redact PII (rule-based only).
+- Using an LLM to redact PII. Desensitisation is the jevlike mask head.
 
 ## Rejected
 
@@ -66,7 +66,7 @@ Live DM, after filters:
 1. `score >= ARCHIVE_THRESHOLD` (label `scam`) → archive `jevlike_score` (any sender). If LLM review is enabled, this **score-only** archive still goes to the second pass when the score is in the grey band, (with `LLM_REVIEW_ON_HIGH`, default true) **score/100 > GREY_MAX**, or `LLM_REVIEW_ALL=1`.
 2. Else obvious heuristic (or optional local classifier / RAG) → archive `obvious_scam` / `local_classifier` / `rag_scam_match`. Skip LLM.
 3. Else if the text is a warning/self-OTP **without** OTP-forward, money-transfer ask, or impersonation+secrecy → **suppress** (ignore). Skip LLM.
-4. Else if LLM review is enabled and a **trigger** fires (grey band 0.40–0.85 of score/100, high score above `GREY_MAX`, scorer vs local conflict, short OTP-ish DM, money ask from unknown/new number, **or** `LLM_REVIEW_ALL=1`) → redact PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. `not_scam` **releases** a score-only archive unless `LLM_REVIEW_MERGE=archive_only`. LLM failure → keep a score archive; otherwise `unknown` and do not archive.
+4. Else if LLM review is enabled and a **trigger** fires (grey band 0.40–0.85 of score/100, high score above `GREY_MAX`, scorer vs local conflict, short OTP-ish DM, money ask from unknown/new number, **or** `LLM_REVIEW_ALL=1`) → mask PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. `not_scam` **releases** a score-only archive unless `LLM_REVIEW_MERGE=archive_only`. LLM failure → keep a score archive; otherwise `unknown` and do not archive.
 5. Else ignore.
 
 After that, if the final action is still archive **and** the contact is unsaved:
@@ -76,4 +76,4 @@ After that, if the final action is still archive **and** the contact is unsaved:
 
 Saved contacts never take step 6. LLM `not_scam` can **release** a score-only archive before the block policy runs, so a released chat is not blocked. Heuristic hits skip the LLM and still block when the contact is unsaved.
 
-`CONTEXT_LLM_ENABLED` (default off) replaces step 4. The worker's `POST /v1/mask` returns identifier character spans (not the r1 scam head). The bot substitutes `XXX`, runs `redactPii` again, and sends the latest `CONTEXT_LLM_MESSAGES` inbound bodies (default 10, current message included). Older messages fall off the front. The model may answer `archive`, `block`, or `no_action`. `block` does not lock anyone out by itself. `no_action` can release a score-only archive below the block line, and cannot release a block-line score. Heuristic archives still skip the call. Mask failure and an unusable reply leave the primary decision unchanged.
+`CONTEXT_LLM_ENABLED` (default off) replaces step 4. The worker's `POST /v1/mask` returns spans from the PII head (not the r1 scam head, and not the identifier rules). The bot substitutes `XXX` and sends the latest `CONTEXT_LLM_MESSAGES` inbound bodies (default 10, current message included). Older messages fall off the front. The model may answer `archive`, `block`, or `no_action`. `block` does not lock anyone out by itself. `no_action` can release a score-only archive below the block line, and cannot release a block-line score. Heuristic archives still skip the call. A missing head, a failed mask, and an unusable reply leave the primary decision unchanged. The single-message second pass uses the same mask.

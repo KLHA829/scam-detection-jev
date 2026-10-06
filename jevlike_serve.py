@@ -10,10 +10,11 @@ POST /predict   same body (or {"context","options"})
 POST /v1/mask   {"messages":["..."]} -> {messages:[{spans:[{start,end,label}]}]}
 GET  /health
 
-/v1/mask does not use the scam choice head. That head's token attention
-points at lure words (驗證碼, 轉帳), which a later model still needs, and it
-was not trained to find phone numbers. Spans are identifier ranges. The
-caller replaces them; this response never echoes the source text.
+/v1/mask does not use the scam choice head. Spans come only from the
+separate PII AttentionHead. Without that checkpoint the route returns 503
+and the bot does not send the text. find_mask_spans remains the training
+label helper; it is not applied to this response. The caller replaces the
+spans; this response never echoes the source text.
 """
 from __future__ import annotations
 
@@ -367,7 +368,7 @@ def merge_mask_spans(spans: list[dict]) -> list[dict]:
 
 
 def find_mask_spans(text: str) -> list[dict]:
-    """Character ranges to replace before any external model sees the text."""
+    """Training-label ranges. Live /v1/mask does not call this."""
     body = "" if text is None else str(text)
     if not body:
         return []
@@ -399,7 +400,7 @@ def maybe_load_mask_head() -> None:
         return
     path = resolve_mask_checkpoint()
     if path is None:
-        print("[INFO] no pii mask head; /v1/mask uses identifier rules only", flush=True)
+        print("[INFO] no pii mask head; /v1/mask refuses until one is loaded", flush=True)
         return
     import torch
     from jevlike.model import AttentionHead
@@ -485,23 +486,17 @@ def model_mask_spans(text: str) -> list[dict]:
 def mask_payload(messages: list) -> dict:
     if len(messages) > _MASK_MESSAGE_CAP:
         raise ValueError("at most 10 messages")
+    if _MASK_HEAD is None:
+        raise RuntimeError("pii mask head is not loaded")
     rows = []
-    used_model = _MASK_HEAD is not None
     for item in messages:
         if not isinstance(item, str):
             raise ValueError("message must be a string")
-        spans = find_mask_spans(item)
-        if used_model:
-            try:
-                spans = merge_mask_spans(spans + model_mask_spans(item))
-            except Exception as exc:  # noqa: BLE001
-                print(f"[WARN] pii mask head failed open to rules: {exc}", file=sys.stderr)
-                used_model = False
-        rows.append({"spans": spans})
+        rows.append({"spans": model_mask_spans(item)})
     return {
         "ok": True,
         "model": "jevlike",
-        "method": "jevlike_pii_head+rules" if _MASK_HEAD is not None else "identifier_spans",
+        "method": "jevlike_pii_head",
         "messages": rows,
     }
 
@@ -577,6 +572,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, mask_payload(messages))
             except ValueError as exc:
                 self._send(422, {"error": str(exc)})
+            except RuntimeError:
+                self._send(503, {"error": "pii mask head is not loaded"})
+            except Exception:
+                traceback.print_exc()
+                self._send(500, {"error": "mask failed"})
             return
         text = payload.get("text") or payload.get("message") or payload.get("context") or ""
         options = payload.get("options")

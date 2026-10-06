@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Mapping helpers for jevlike_serve.py (no torch / no encoder download)."""
 
-import json
 import os
 import tempfile
 import unittest
@@ -188,14 +187,9 @@ class MaskSpanTests(unittest.TestCase):
         self.assertNotIn("evil.example", secret)
         self.assertEqual(spans[0]["replacement"], " XXX")
 
-    def test_payload_does_not_echo_source_text(self):
-        text = "我係陳大文，電話 +852 6123 4567"
-        payload = serve.mask_payload([text])
-        raw = json.dumps(payload, ensure_ascii=False)
-        self.assertNotIn("6123", raw)
-        self.assertNotIn("陳大文", raw)
-        self.assertNotIn(text, raw)
-        self.assertEqual(payload["method"], "identifier_spans")
+    def test_payload_requires_the_mask_head(self):
+        with self.assertRaises(RuntimeError):
+            serve.mask_payload(["我係陳大文，電話 +852 6123 4567"])
 
     def test_rejects_more_than_ten_messages(self):
         with self.assertRaises(ValueError):
