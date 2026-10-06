@@ -18,7 +18,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 | `lib/thread-context.js` | current body plus last `CONTEXT_TURNS` inbound bodies |
 | `lib/redact.js` | rule-based PII redaction — the only thing between raw text and any external API |
 | `lib/mask-spans.js`, `POST /v1/mask` | identifier spans; the bot replaces them with `XXX` before the context LLM |
-| `lib/context-llm.js` | optional first-10-message review (`CONTEXT_LLM_ENABLED`, default off) |
+| `lib/context-llm.js` | optional review of the latest inbound messages (`CONTEXT_LLM_ENABLED`, default off) |
 | `lib/llm-review.js` | optional second pass (OpenAI-compatible Chat Completions) + merge policy |
 | `lib/block-policy.js`, `lib/wa-actions.js`, `lib/action-pacer.js` | graded block, paced WhatsApp writes |
 | `stub-jevlike.js` | fixed probabilities for offline tests |
@@ -30,7 +30,8 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 - Scorer timeout / 5xx / invalid JSON → `unknown`, and `unknown` alone never archives (fail closed).
 - **Every** outbound LLM call goes through `redactPii` first; the local placeholder mapping is never sent.
   The context-LLM path also applies `/v1/mask` spans as `XXX` before that redaction.
-- Context LLM (`CONTEXT_LLM_ENABLED`, default off) may archive from the first 10 inbound messages.
+- Context LLM (`CONTEXT_LLM_ENABLED`, default off) may archive from the latest inbound messages
+  (`CONTEXT_LLM_MESSAGES`, default 10). The current message is always included.
   It does not block on its own: saved contacts stay unblockable, and an unsaved contact is blocked
   only by the existing heuristic or score ≥ `BLOCK_THRESHOLD`. Mask failure or a bad model reply
   does not archive. Heuristic hard archives still skip it.
@@ -63,8 +64,9 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 - High-recall heads (`r4`, `r5` in `jevlike-lab/runs/`) are **wrong for this product**: at score 42 they wrongly
   flag 34-41% of innocents.
 - Optional `CONTEXT_LLM_ENABLED` (default off) asks the local worker `POST /v1/mask` which characters
-  to hide, replaces those spans with `XXX`, runs `redactPii` again, then sends the first 10 inbound
-  messages to the same OpenAI-compatible chat API. A context-model `block` does not override the graded block gate.
+  to hide, replaces those spans with `XXX`, runs `redactPii` again, then sends the latest inbound
+  messages (default 10, current message included) to the same OpenAI-compatible chat API.
+  A context-model `block` does not override the graded block gate.
 - PII masking is a **separate** jevlike `AttentionHead` (`scripts/train_pii_mask.py` →
   `models/jevlike_hf_pii_mask.pt`, gitignored). It is initialised from the r1 head and trained with
   token-level labels, not the stock whole-message scam loss. The scam checkpoint is not overwritten.

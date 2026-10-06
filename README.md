@@ -158,9 +158,9 @@ See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rub
 - `LLM_REVIEW_API_KEY` or `OPENAI_API_KEY` — **optional**; omit for local servers with no auth; when set, sent as `Authorization: Bearer …`
 - `LLM_REVIEW_MODEL` (default `gpt-4o-mini`; use the model id your server expects)
 - `LLM_REVIEW_TIMEOUT_MS` (default `8000`)
-- `CONTEXT_LLM_ENABLED` (default `false`) — replace the single-message second pass with a first-10-message review. The local worker returns identifier spans (`POST /v1/mask`); the bot writes `XXX`, runs `redactPii` again, then asks the chat model for `archive` / `block` / `no_action`. A model `block` still has to pass the graded block gate. Mask or model failure does not archive.
+- `CONTEXT_LLM_ENABLED` (default `false`) — replace the single-message second pass with a review of the latest inbound messages. The local worker returns identifier spans (`POST /v1/mask`); the bot writes `XXX`, runs `redactPii` again, then asks the chat model for `archive` / `block` / `no_action`. A model `block` still has to pass the graded block gate. Mask or model failure does not archive.
 - `JEVLIKE_MASK_CKPT` — optional second jevlike head trained to mark personal-data characters (`python scripts/train_pii_mask.py`). It does not replace the scam scorer. Absent file means identifier rules only. See [models/README.md](models/README.md).
-- `CONTEXT_LLM_MESSAGES` (default `10`, capped at 10) — how many opening inbound messages are sent
+- `CONTEXT_LLM_MESSAGES` (default `10`, capped at 10) — how many of the latest inbound messages are sent. The message that just arrived is always included.
 
 If the scorer times out, returns 5xx, or sends invalid JSON, the label is **`unknown`**. Unknown **does not archive** unless a heuristic (or optional RAG / local classifier) fires.
 

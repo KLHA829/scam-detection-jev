@@ -22,7 +22,7 @@ const { createLlmReviewConfig } = require('./lib/llm-review');
 const {
   contextLlmEnabled,
   contextLlmMessageLimit,
-  createOpeningContext,
+  createRecentContext,
 } = require('./lib/context-llm');
 const { blockAndRename } = require('./lib/wa-actions');
 const { createActionPacer } = require('./lib/action-pacer');
@@ -43,7 +43,7 @@ function createWhatsAppClient() {
   });
 }
 
-async function handleWaMessage(msg, { client, pacer, threadContext, openingContext, scoreClient, rubric, cache, llmReview }) {
+async function handleWaMessage(msg, { client, pacer, threadContext, recentContext, scoreClient, rubric, cache, llmReview }) {
   let chat;
   let contact;
   try {
@@ -76,7 +76,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, openingConte
       cache,
       llmReview,
       threadContext,
-      openingContext,
+      recentContext,
       resolveNumber: () =>
         resolveRealNumber(client, isLidId(chatId) ? chatId : contactId || chatId, contact),
       archiveChat: async () => {
@@ -138,8 +138,8 @@ async function main() {
   const cache = new TtlCache({ ttlMs: ttl });
   const pacer = createActionPacer();
   const threadContext = createThreadContext({ turns: contextTurnsFromEnv() });
-  const openingContext = contextOn
-    ? createOpeningContext({ limit: contextLlmMessageLimit() })
+  const recentContext = contextOn
+    ? createRecentContext({ limit: contextLlmMessageLimit() })
     : null;
   const client = createWhatsAppClient();
 
@@ -156,7 +156,7 @@ async function main() {
     llmReviewMerge: llmReview.merge,
     llmReviewModel: llmReview.enabled ? llmReview.model : null,
     contextLlmEnabled: contextOn,
-    contextLlmMessages: openingContext ? openingContext.limit : 0,
+    contextLlmMessages: recentContext ? recentContext.limit : 0,
   });
 
   attachHandlers(client, {
@@ -166,7 +166,7 @@ async function main() {
     llmReview,
     pacer,
     threadContext,
-    openingContext,
+    recentContext,
   });
   await client.initialize();
 }
