@@ -64,9 +64,13 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   flag 34-41% of innocents.
 - Optional `CONTEXT_LLM_ENABLED` (default off) asks the local worker `POST /v1/mask` which characters
   to hide, replaces those spans with `XXX`, runs `redactPii` again, then sends the first 10 inbound
-  messages to the same OpenAI-compatible chat API. The r1 head is not the masker: it has no PII
-  labels, and its attention sits on lure words the later model still needs. A model `block` does not
-  override the graded block gate.
+  messages to the same OpenAI-compatible chat API. A context-model `block` does not override the graded block gate.
+- PII masking is a **separate** jevlike `AttentionHead` (`scripts/train_pii_mask.py` →
+  `models/jevlike_hf_pii_mask.pt`, gitignored). It is initialised from the r1 head and trained with
+  token-level labels, not the stock whole-message scam loss. The scam checkpoint is not overwritten.
+  On a synthetic held-out split the char F1 was 1.0; that is not the 366-row HK set. The head picks up
+  `我叫` / Chinese-numeral phones the rules miss, and can miss a single wordpiece like `123456`. Rules
+  stay in the union, and lure words such as `驗證碼` are stripped back out of the model mask.
 - `lib/redact.js` name masking is surname-gated: a run after `我係`/`本人` is masked only when it starts with a
   listed HK surname or `阿`, so `我係收數公司` and `如非本人操作` are no longer corrupted before the LLM sees them.
   Compound surnames (e.g. `我係歐陽文`) and role tails after a single-char surname (e.g. `我係張經理`) are handled in `NAME_TOKEN`.

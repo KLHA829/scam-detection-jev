@@ -61,6 +61,11 @@ _ENCODER_ID = None
 _OPTIONS: tuple[str, ...] = DEFAULT_OPTIONS
 _DEVICE = None
 _SCORE_LOCK = threading.Lock()
+_MASK_HEAD = None
+_MASK_THRESHOLD = 0.5
+_MASK_CFG: dict | None = None
+_MASK_PATH: Path | None = None
+DEFAULT_MASK_CKPT = ROOT / "models" / "jevlike_hf_pii_mask.pt"
 
 
 def parse_options(raw: str | None) -> tuple[str, ...]:
@@ -162,6 +167,10 @@ def load_runtime() -> None:
         f"rank={config.get('rank')}",
         flush=True,
     )
+    try:
+        maybe_load_mask_head()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[WARN] pii mask head not loaded: {exc}", file=sys.stderr, flush=True)
 
 
 def score_text(text: str, options: tuple[str, ...] | None = None) -> dict:
@@ -371,18 +380,128 @@ def find_mask_spans(text: str) -> list[dict]:
     return merge_mask_spans(spans)
 
 
+def resolve_mask_checkpoint() -> Path | None:
+    spec = os.environ.get("JEVLIKE_MASK_CKPT", "").strip()
+    if spec:
+        path = Path(spec).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(f"JEVLIKE_MASK_CKPT not found: {path}")
+        return path
+    if DEFAULT_MASK_CKPT.is_file():
+        return DEFAULT_MASK_CKPT
+    return None
+
+
+def maybe_load_mask_head() -> None:
+    """Load the PII AttentionHead onto the scorer's frozen encoder. Optional."""
+    global _MASK_HEAD, _MASK_THRESHOLD, _MASK_CFG, _MASK_PATH
+    if _MODEL is None:
+        return
+    path = resolve_mask_checkpoint()
+    if path is None:
+        print("[INFO] no pii mask head; /v1/mask uses identifier rules only", flush=True)
+        return
+    import torch
+    from jevlike.model import AttentionHead
+
+    from pii_mask_head import head_state_from_checkpoint
+
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    config = payload.get("config") or {}
+    if config.get("task") != "pii_mask":
+        raise ValueError(f"{path} is not a pii_mask checkpoint")
+    hidden = int(_MODEL.encoder.config.hidden_size)
+    rank = int(config.get("rank") or 32)
+    head = AttentionHead(hidden, rank)
+    head.load_state_dict(head_state_from_checkpoint(payload["state_dict"]), strict=True)
+    head.to(_DEVICE).eval()
+    _MASK_HEAD = head
+    _MASK_THRESHOLD = float(config.get("mask_threshold", 0.5))
+    _MASK_CFG = config
+    _MASK_PATH = path
+    print(
+        f"[OK] pii mask head loaded checkpoint={path} threshold={_MASK_THRESHOLD} rank={rank}",
+        flush=True,
+    )
+
+
+def model_mask_spans(text: str) -> list[dict]:
+    """Character spans from the fine-tuned mask head. Empty when it is not loaded."""
+    if _MASK_HEAD is None or _MODEL is None or _COLLATOR is None or _DEVICE is None:
+        return []
+    import torch
+
+    from pii_mask_head import (
+        MASK_OPTION,
+        KEEP_OPTION,
+        flags_from_offsets,
+        mask_option_logits,
+        pool_token_hidden,
+        spans_from_flags,
+    )
+
+    tokenizer = _COLLATOR.tokenizer
+    limit = 96
+    if _MASK_CFG and _MASK_CFG.get("context_tokens"):
+        limit = int(_MASK_CFG["context_tokens"])
+    mask_option = (_MASK_CFG or {}).get("mask_option") or MASK_OPTION
+    keep_option = (_MASK_CFG or {}).get("keep_option") or KEEP_OPTION
+    encoded = tokenizer(
+        text,
+        truncation=True,
+        max_length=limit,
+        add_special_tokens=True,
+        return_offsets_mapping=True,
+        return_tensors="pt",
+    )
+    options = tokenizer(
+        [mask_option, keep_option],
+        truncation=True,
+        max_length=16,
+        add_special_tokens=True,
+        return_tensors="pt",
+        padding=True,
+    )
+    encoded = {key: value.to(_DEVICE) for key, value in encoded.items()}
+    options = {key: value.to(_DEVICE) for key, value in options.items()}
+    with _SCORE_LOCK:
+        with torch.no_grad():
+            context_hidden = _MODEL.encoder(
+                input_ids=encoded["input_ids"],
+                attention_mask=encoded["attention_mask"],
+            ).last_hidden_state
+            option_hidden = _MODEL.encoder(
+                input_ids=options["input_ids"],
+                attention_mask=options["attention_mask"],
+            ).last_hidden_state
+            pooled = pool_token_hidden(option_hidden, options["attention_mask"].bool())
+            logits = mask_option_logits(_MASK_HEAD, context_hidden, pooled)
+            probs = torch.sigmoid(logits)[0].detach().cpu().tolist()
+    offsets = encoded["offset_mapping"][0].detach().cpu().tolist()
+    flags = flags_from_offsets(text, offsets, probs, _MASK_THRESHOLD)
+    return spans_from_flags(text, flags)
+
+
 def mask_payload(messages: list) -> dict:
     if len(messages) > _MASK_MESSAGE_CAP:
         raise ValueError("at most 10 messages")
     rows = []
+    used_model = _MASK_HEAD is not None
     for item in messages:
         if not isinstance(item, str):
             raise ValueError("message must be a string")
-        rows.append({"spans": find_mask_spans(item)})
+        spans = find_mask_spans(item)
+        if used_model:
+            try:
+                spans = merge_mask_spans(spans + model_mask_spans(item))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[WARN] pii mask head failed open to rules: {exc}", file=sys.stderr)
+                used_model = False
+        rows.append({"spans": spans})
     return {
         "ok": True,
         "model": "jevlike",
-        "method": "identifier_spans",
+        "method": "jevlike_pii_head+rules" if _MASK_HEAD is not None else "identifier_spans",
         "messages": rows,
     }
 
@@ -421,6 +540,8 @@ class Handler(BaseHTTPRequestHandler):
                 "device": None if _DEVICE is None else str(_DEVICE),
                 "options": list(_OPTIONS),
                 "context_tokens": None if _CONFIG is None else _CONFIG.get("context_tokens"),
+                "pii_mask": _MASK_HEAD is not None,
+                "pii_mask_threshold": _MASK_THRESHOLD if _MASK_HEAD is not None else None,
             },
         )
 
