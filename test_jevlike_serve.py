@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Mapping helpers for jevlike_serve.py (no torch / no encoder download)."""
 
+import json
 import os
 import tempfile
 import unittest
@@ -119,6 +120,52 @@ class ResolveCheckpointTests(unittest.TestCase):
             r1.write_bytes(b"stub")
             with patch.object(serve, "DEFAULT_CKPT", r1):
                 self.assertEqual(serve.resolve_checkpoint(), r1)
+
+
+class MaskSpanTests(unittest.TestCase):
+    def test_masks_phone_name_and_otp_keeps_lure_words(self):
+        text = "我係陳大文，電話 +852 6123 4567，驗證碼 123456"
+        spans = serve.find_mask_spans(text)
+        covered = []
+        for span in spans:
+            covered.append(text[span["start"] : span["end"]])
+        self.assertIn("+852 6123 4567", covered)
+        self.assertIn("陳大文", covered)
+        self.assertIn("123456", covered)
+        self.assertNotIn("驗證碼", "".join(covered))
+        self.assertNotIn("我係", "".join(covered))
+
+    def test_does_not_mask_org_or_role_or_year(self):
+        for text in ("我係收數公司", "我係張經理", "如非本人操作", "今晚2026年見"):
+            covered = "".join(
+                text[span["start"] : span["end"]] for span in serve.find_mask_spans(text)
+            )
+            self.assertNotIn("收數", covered)
+            self.assertNotIn("張經理", covered)
+            self.assertNotIn("操作", covered)
+            self.assertNotIn("2026", covered)
+
+    def test_url_span_is_the_path_not_the_host(self):
+        text = "睇 https://evil.example/secret?x=1"
+        spans = [span for span in serve.find_mask_spans(text) if span["label"] == "url"]
+        self.assertEqual(len(spans), 1)
+        secret = text[spans[0]["start"] : spans[0]["end"]]
+        self.assertIn("/secret", secret)
+        self.assertNotIn("evil.example", secret)
+        self.assertEqual(spans[0]["replacement"], " XXX")
+
+    def test_payload_does_not_echo_source_text(self):
+        text = "我係陳大文，電話 +852 6123 4567"
+        payload = serve.mask_payload([text])
+        raw = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("6123", raw)
+        self.assertNotIn("陳大文", raw)
+        self.assertNotIn(text, raw)
+        self.assertEqual(payload["method"], "identifier_spans")
+
+    def test_rejects_more_than_ten_messages(self):
+        with self.assertRaises(ValueError):
+            serve.mask_payload(["x"] * 11)
 
 
 if __name__ == "__main__":

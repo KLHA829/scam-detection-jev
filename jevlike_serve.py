@@ -7,12 +7,19 @@ The encoder is NOT shipped in git.
 
 POST /v1/score  {"text":"..."} -> {prob_scam, prob_not_scam, label, score}
 POST /predict   same body (or {"context","options"})
+POST /v1/mask   {"messages":["..."]} -> {messages:[{spans:[{start,end,label}]}]}
 GET  /health
+
+/v1/mask does not use the scam choice head. That head's token attention
+points at lure words (驗證碼, 轉帳), which a later model still needs, and it
+was not trained to find phone numbers. Spans are identifier ranges. The
+caller replaces them; this response never echoes the source text.
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import threading
 import traceback
@@ -198,6 +205,188 @@ def score_text(text: str, options: tuple[str, ...] | None = None) -> dict:
     }
 
 
+_SURNAME = (
+    "陳李黃張劉周吳鄭王何梁馬羅蔡楊許謝郭洪曾邱廖賴徐朱葉沈韓馮鄧曹彭鍾蔣蕭潘譚汪陸蘇盧唐孫魏方石余姚戴宋范杜丁傅江夏高林胡袁于董程呂阮莊簡連康雷畢翁游伍古屈甄聶湯岑霍龍莫嚴龔區丘韋麥尹駱黎尤"
+)
+_ORG_TAIL = "會|公司|中心|銀行|部門|職員|客戶|集團|機構|協會|基金|學校|醫院|警署|政府"
+_COMPOUND = "歐陽|司馬|上官|諸葛|令狐|皇甫|慕容|司徒|軒轅"
+_ROLE = "經理|主任|董事|總監|監事|專員|助理|顧問|律師|醫生|老師|警官|隊長|組長|文員|店長|小姐|先生|太太"
+_NAME_TOKEN = (
+    f"(?:(?:{_COMPOUND})[\\u4e00-\\u9fff]{{1,2}}"
+    f"|[{_SURNAME}](?!{_ORG_TAIL})(?!{_ROLE})[\\u4e00-\\u9fff]{{1,2}}"
+    f"|阿[\\u4e00-\\u9fff])"
+)
+_NAME_RE = re.compile(
+    "(我[係是]|本人)"
+    "(?!防騙|防骗|反詐|反诈|銀行|银行|警察|公安|官方|協調|协调|客服|職員|职员|新聞|新闻|政府|入境|海關|海关|順豐|顺丰|whatsapp)"
+    f"({_NAME_TOKEN})"
+)
+_MASK_RULES: tuple[tuple[str, re.Pattern[str], int], ...] = (
+    ("email", re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I), False),
+    ("id", re.compile(r"\b[A-Z]{1,2}\d{6}\s*\(?[\dA]\)?\b", re.I), False),
+    ("id", re.compile(r"\b\d{17}[\dXx]\b"), False),
+    ("phone", re.compile(r"(?:\+|00)?852[\s-]*[45679]\d{3}[\s-]?\d{4}\b"), False),
+    ("phone", re.compile(r"(?<![0-9])[45679]\d{3}[\s-]?\d{4}(?![0-9])"), False),
+    ("phone", re.compile(r"(?<![0-9])(?:\+?\d[\d\s-]{7,20}\d)(?![0-9])"), False),
+    ("account", re.compile(r"(?<![0-9])(?:\d[ -]?){12,18}\d(?![0-9])"), False),
+    (
+        "account",
+        re.compile(
+            r"(?:戶口|户口|帳號|账号|帳戶|账户|卡號|卡号|a/c(?:\s*no\.?)?|account(?:\s*(?:no\.?|number))?)"
+            r"\s*[:：#]?\s*([\d\s-]{6,24})",
+            re.I,
+        ),
+        1,
+    ),
+    (
+        "account",
+        re.compile(
+            r"(?:\bpayme\b|轉數快|转数快|\bfps\b)"
+            r"(?:\s*(?:id|號碼|号码|戶口|户口|帳號|账号))?\s*[:：#]?\s*([A-Z0-9._+-]{4,32})",
+            re.I,
+        ),
+        1,
+    ),
+)
+_OTP_NEAR = re.compile(
+    r"(?:驗證碼|验证码|一次性密碼|一次性密码|密碼|密码|\bcode\b|\botp\b)[^\d]{0,16}(\d{4,8})(?![0-9])",
+    re.I,
+)
+_OTP_BARE = re.compile(r"(?<![0-9])\d{6,8}(?![0-9])")
+_URL_RE = re.compile(r"https?://[^\s<>\"'）)】]+", re.I)
+_WWW_RE = re.compile(r"\bwww\.[^\s<>\"'）)】]+", re.I)
+_SHORT_RE = re.compile(r"\b((?:wa\.me|t\.me|bit\.ly|tinyurl\.com)/)(\S+)", re.I)
+_MASK_MESSAGE_CAP = 10
+
+
+def _spans_from_regex(
+    text: str,
+    pattern: re.Pattern[str],
+    label: str,
+    group: int = 0,
+) -> list[dict]:
+    spans = []
+    for match in pattern.finditer(text):
+        if group:
+            if match.group(group) is None:
+                continue
+            start, end = match.start(group), match.end(group)
+        else:
+            start, end = match.start(), match.end()
+        if end > start:
+            spans.append({"start": start, "end": end, "label": label})
+    return spans
+
+
+def _otp_spans(text: str) -> list[dict]:
+    return _spans_from_regex(text, _OTP_NEAR, "otp", 1) + _spans_from_regex(
+        text, _OTP_BARE, "otp", 0
+    )
+
+
+def _url_spans(text: str) -> list[dict]:
+    from urllib.parse import urlparse
+
+    spans = []
+    for pattern in (_URL_RE, _WWW_RE):
+        for match in pattern.finditer(text):
+            raw = match.group(0)
+            parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+            host = parsed.netloc
+            if not host:
+                spans.append({"start": match.start(), "end": match.end(), "label": "url"})
+                continue
+            host_at = raw.lower().find(host.lower())
+            if host_at < 0:
+                continue
+            secret_at = host_at + len(host)
+            if secret_at < len(raw):
+                spans.append(
+                    {
+                        "start": match.start() + secret_at,
+                        "end": match.end(),
+                        "label": "url",
+                        "replacement": " XXX",
+                    }
+                )
+    for match in _SHORT_RE.finditer(text):
+        prefix, secret = match.group(1), match.group(2)
+        if secret:
+            start = match.start() + len(prefix)
+            spans.append({"start": start, "end": start + len(secret), "label": "url"})
+    return spans
+
+
+def _name_spans(text: str) -> list[dict]:
+    spans = []
+    for match in _NAME_RE.finditer(text):
+        name = match.group(2) or ""
+        prefix = match.group(1) or ""
+        if name:
+            start = match.start() + len(prefix)
+            spans.append({"start": start, "end": start + len(name), "label": "name"})
+    return spans
+
+
+def merge_mask_spans(spans: list[dict]) -> list[dict]:
+    ordered = sorted(
+        (
+            span
+            for span in spans
+            if isinstance(span, dict)
+            and isinstance(span.get("start"), int)
+            and isinstance(span.get("end"), int)
+            and span["end"] > span["start"]
+        ),
+        key=lambda span: (span["start"], -(span["end"] - span["start"])),
+    )
+    merged: list[dict] = []
+    for span in ordered:
+        if merged and span["start"] < merged[-1]["end"]:
+            if span["end"] > merged[-1]["end"]:
+                merged[-1]["end"] = span["end"]
+            continue
+        item = {
+            "start": span["start"],
+            "end": span["end"],
+            "label": span.get("label") or "pii",
+        }
+        if span.get("replacement"):
+            item["replacement"] = span["replacement"]
+        merged.append(item)
+    return merged
+
+
+def find_mask_spans(text: str) -> list[dict]:
+    """Character ranges to replace before any external model sees the text."""
+    body = "" if text is None else str(text)
+    if not body:
+        return []
+    spans: list[dict] = []
+    for label, pattern, group in _MASK_RULES:
+        spans.extend(_spans_from_regex(body, pattern, label, group))
+    spans.extend(_otp_spans(body))
+    spans.extend(_url_spans(body))
+    spans.extend(_name_spans(body))
+    return merge_mask_spans(spans)
+
+
+def mask_payload(messages: list) -> dict:
+    if len(messages) > _MASK_MESSAGE_CAP:
+        raise ValueError("at most 10 messages")
+    rows = []
+    for item in messages:
+        if not isinstance(item, str):
+            raise ValueError("message must be a string")
+        rows.append({"spans": find_mask_spans(item)})
+    return {
+        "ok": True,
+        "model": "jevlike",
+        "method": "identifier_spans",
+        "messages": rows,
+    }
+
+
 def authorized(handler: BaseHTTPRequestHandler) -> bool:
     if not API_KEY:
         return True
@@ -240,7 +429,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(401, {"error": "unauthorized"})
             return
         path = self.path.split("?", 1)[0]
-        if path not in ("/predict", "/v1/score", "/score"):
+        if path not in ("/predict", "/v1/score", "/score", "/v1/mask"):
             self._send(404, {"error": "not found"})
             return
         length = int(self.headers.get("content-length") or 0)
@@ -255,6 +444,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not isinstance(payload, dict):
             self._send(422, {"error": "body must be an object"})
+            return
+        if path == "/v1/mask":
+            messages = payload.get("messages")
+            if messages is None and isinstance(payload.get("text"), str):
+                messages = [payload["text"]]
+            if not isinstance(messages, list):
+                self._send(422, {"error": "messages must be a list"})
+                return
+            try:
+                self._send(200, mask_payload(messages))
+            except ValueError as exc:
+                self._send(422, {"error": str(exc)})
             return
         text = payload.get("text") or payload.get("message") or payload.get("context") or ""
         options = payload.get("options")

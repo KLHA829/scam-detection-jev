@@ -19,6 +19,11 @@ const {
   resolveIncomingMessageLabel,
 } = require('./lib/decide-incoming');
 const { createLlmReviewConfig } = require('./lib/llm-review');
+const {
+  contextLlmEnabled,
+  contextLlmMessageLimit,
+  createOpeningContext,
+} = require('./lib/context-llm');
 const { blockAndRename } = require('./lib/wa-actions');
 const { createActionPacer } = require('./lib/action-pacer');
 const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-context');
@@ -38,7 +43,7 @@ function createWhatsAppClient() {
   });
 }
 
-async function handleWaMessage(msg, { client, pacer, threadContext, scoreClient, rubric, cache, llmReview }) {
+async function handleWaMessage(msg, { client, pacer, threadContext, openingContext, scoreClient, rubric, cache, llmReview }) {
   let chat;
   let contact;
   try {
@@ -71,6 +76,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, scoreClient,
       cache,
       llmReview,
       threadContext,
+      openingContext,
       resolveNumber: () =>
         resolveRealNumber(client, isLidId(chatId) ? chatId : contactId || chatId, contact),
       archiveChat: async () => {
@@ -127,10 +133,14 @@ async function main() {
   const rubric = loadRubric(rubricPath);
   const scoreClient = createScoreClient();
   const llmReview = createLlmReviewConfig();
+  const contextOn = contextLlmEnabled();
   const ttl = Number(process.env.SCORE_CACHE_TTL_MS || 900000);
   const cache = new TtlCache({ ttlMs: ttl });
   const pacer = createActionPacer();
   const threadContext = createThreadContext({ turns: contextTurnsFromEnv() });
+  const openingContext = contextOn
+    ? createOpeningContext({ limit: contextLlmMessageLimit() })
+    : null;
   const client = createWhatsAppClient();
 
   log.info('starting WhatsApp scam-risk bot (jevlike scoring, graded block)', {
@@ -145,9 +155,19 @@ async function main() {
     llmReviewAll: Boolean(llmReview.reviewAll),
     llmReviewMerge: llmReview.merge,
     llmReviewModel: llmReview.enabled ? llmReview.model : null,
+    contextLlmEnabled: contextOn,
+    contextLlmMessages: openingContext ? openingContext.limit : 0,
   });
 
-  attachHandlers(client, { scoreClient, rubric, cache, llmReview, pacer, threadContext });
+  attachHandlers(client, {
+    scoreClient,
+    rubric,
+    cache,
+    llmReview,
+    pacer,
+    threadContext,
+    openingContext,
+  });
   await client.initialize();
 }
 

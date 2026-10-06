@@ -75,3 +75,5 @@ After that, if the final action is still archive **and** the contact is unsaved:
 7. Otherwise leave the archive as archive. Grey scores, RAG-only hits, and `unknown` do not block.
 
 Saved contacts never take step 6. LLM `not_scam` can **release** a score-only archive before the block policy runs, so a released chat is not blocked. Heuristic hits skip the LLM and still block when the contact is unsaved.
+
+`CONTEXT_LLM_ENABLED` (default off) replaces step 4. The worker's `POST /v1/mask` returns identifier character spans (not the r1 scam head). The bot substitutes `XXX`, runs `redactPii` again, and sends the first `CONTEXT_LLM_MESSAGES` inbound bodies (default 10). The model may answer `archive`, `block`, or `no_action`. `block` does not lock anyone out by itself. `no_action` can release a score-only archive below the block line, and cannot release a block-line score. Heuristic archives still skip the call. Mask failure and an unusable reply leave the primary decision unchanged.
