@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('http');
+const { findMaskSpans } = require('./lib/mask-spans');
 
 const PRESETS = {
   benign: 0.04,
@@ -49,7 +50,16 @@ function payloadFromProb(probScam, extra = {}) {
 function createStubJevlikeClient(presetOrFn = 'benign') {
   const client = {
     scorer: 'jevlike',
-    async scoreText(text) {
+    async maskMessages(messages) {
+    const list = Array.isArray(messages) ? messages : [];
+    return {
+      ok: true,
+      model: 'stub-jevlike',
+      method: 'identifier_spans',
+      messages: list.map((text) => ({ spans: findMaskSpans(text) })),
+    };
+  },
+  async scoreText(text) {
       if (typeof presetOrFn === 'function') {
         const value = presetOrFn(text);
         const p = typeof value === 'number' ? value : PRESETS[value] ?? 0;
@@ -83,6 +93,33 @@ function startStubServer({ port = 8766, preset = 'benign' } = {}) {
     if (req.method === 'GET' && (url.pathname === '/health' || url.pathname === '/healthz')) {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ ok: true, model: 'stub-jevlike' }));
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/v1/mask') {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      let payload = {};
+      try {
+        payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+      } catch {
+        res.writeHead(422, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'invalid json' }));
+        return;
+      }
+      const messages = Array.isArray(payload.messages)
+        ? payload.messages
+        : typeof payload.text === 'string'
+          ? [payload.text]
+          : null;
+      if (!messages || messages.length > 10 || messages.some((item) => typeof item !== 'string')) {
+        res.writeHead(422, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'messages must be a list of at most 10 strings' }));
+        return;
+      }
+      const client = createStubJevlikeClient(preset);
+      const json = await client.maskMessages(messages);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(json));
       return;
     }
     if (
