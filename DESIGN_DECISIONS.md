@@ -6,7 +6,7 @@ This repository started empty (`README` title only). Product invariants (graded 
 
 | Decision | Why |
 |----------|-----|
-| **Graded block** — `contact.block()` only for unsaved contacts, and only on an obvious-scam heuristic or jevlike score ≥ `BLOCK_THRESHOLD` (default 80) | Archive threshold 42 is too low to lock a person out. Saved contacts are never auto-blocked. The reason is saved as the WhatsApp contact name and in `blocks.jsonl`. |
+| **Graded block** — `contact.block()` only for unsaved contacts, and only on an obvious-scam heuristic in the current message | A score, including one at `BLOCK_THRESHOLD` (80), only archives. A current-message warning (`小心` / `防騙`) with no OTP ask, money ask, or impersonation plus secrecy beats the heuristic. Saved contacts are never auto-blocked. The reason is saved as the WhatsApp contact name and in `blocks.jsonl`. |
 | Score **every** non-ignored live 1:1 body, including **saved contacts** | Saved ≠ safe; ATO and investment scams often arrive from hijacked contacts. |
 | **LID**: resolve `@lid` for logs / LLM context; never use LID digits as a phone | LID identifiers are not country codes. Unresolved LID still scores. |
 | Tight **regex heuristic** | Failover when the scorer is down or under-confident on copy-paste tropes. Includes OTP harvest (`請提供密碼` / 發給我) so fake anti-scam bait still archives. On an unsaved contact the same hit blocks. |
@@ -56,7 +56,7 @@ Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high
 | chinese-roberta multi-label `model_v2` server | Same: gone for this Pi/jevlike deploy. |
 | **Foreign-number / unsaved non-local hard archive** (`foreign_number`, `STARTUP_FOREIGN_SCAN`) | User request: remove the 外國號碼 archive rule. Clean low-score DMs from any country code are ignored. Score, heuristic, RAG, and optional LLM still apply. |
 | llama-cpp / GGUF **chat** as the primary classifier | jevlike is a frozen-encoder choice scorer, not a chat completion API. LLM review remains optional and separate. |
-| Blocking saved contacts, or blocking at `ARCHIVE_THRESHOLD` alone | A 42-score false positive must not lock a real person out. Unsaved contacts block only at `BLOCK_THRESHOLD` (default 80) or on an obvious-scam heuristic. |
+| Blocking saved contacts, or blocking from a jevlike score alone | A score false positive must not lock a real person out. Unsaved contacts block only on a current-message obvious-scam heuristic that the warning gate did not clear. |
 | CAPTCHA solving or scraping third-party sites | Rejected unless asked. |
 | Committing API keys or model weight files | `.env` gitignored; jevlike head via GitHub Release; encoder downloaded at worker start. |
 
@@ -72,8 +72,8 @@ Live DM, after filters:
 
 After that, if the final action is still archive **and** the contact is unsaved:
 
-6. Obvious-scam heuristic, or jevlike score ≥ `BLOCK_THRESHOLD` (default 80, and the scorer did not fail) → **block**. Write `封鎖·<reason>` as the WhatsApp contact name, mute, archive, append `blocks.jsonl`.
-7. Otherwise leave the archive as archive. Grey scores, RAG-only hits, and `unknown` do not block.
+6. Current-message obvious-scam heuristic, and the current message is not a pure `小心` / `防騙` warning → **block**. Write `封鎖·<reason>` as the WhatsApp contact name, mute, archive, append `blocks.jsonl`. A score at or above `BLOCK_THRESHOLD` stays an archive.
+7. Otherwise leave the archive as archive. Scores, RAG-only hits, and `unknown` do not block.
 
 Saved contacts never take step 6. LLM `not_scam` can **release** a score-only archive before the block policy runs, so a released chat is not blocked. Heuristic hits skip the LLM and still block when the contact is unsaved.
 

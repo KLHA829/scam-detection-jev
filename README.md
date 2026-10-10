@@ -4,7 +4,7 @@ Local **WhatsApp Web** bot that scores each 1:1 DM, **archives** risky chats, an
 
 **Primary (and only) scorer:** [jevlike](https://github.com/vinnylarouge/jevlike) with a frozen Hugging Face encoder `hfl/chinese-roberta-wwm-ext` and choice labels `not_scam` / `scam`. The fine-tuned head (`jevlike_hf_chinese_roberta_r1.pt`, ~2.3 MB) is already on GitHub Release tag [`jevlike-hf-r1`](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1); the encoder (~400 MB) downloads from the Hub on first run. This is the path meant for a **Raspberry Pi** and other CPU machines. There is **no** LightJev / `SCORER=model_v2` fallback.
 
-**Blocking** is separate from archive. Unsaved contacts are blocked when a tight scam regex hits, or when the jevlike score is at or above `BLOCK_THRESHOLD` (default **80**, above the archive line of 42). The reason is written onto the WhatsApp contact name (`封鎖·索取驗證碼`, `封鎖·高分96`, …) and appended to `blocks.jsonl` (number, score, reason, time). Saved contacts are never auto-blocked. Grey scores and scorer failures do not block. It does **not** call Scameter or any phone/URL registry.
+**Blocking** is separate from archive. Unsaved contacts are blocked only when a tight scam regex hits on the current message, and that message is not a pure warning (`小心` / `防騙` with no OTP ask, money ask, or impersonation plus secrecy). A jevlike score, including one at or above `BLOCK_THRESHOLD` (default **80**), only archives. The reason is written onto the WhatsApp contact name (`封鎖·索取驗證碼`, …) and appended to `blocks.jsonl` (number, score, reason, time). Saved contacts are never auto-blocked. Grey scores and scorer failures do not block. It does **not** call Scameter or any phone/URL registry.
 
 Eval note (does not block shipping): measured on a 366-message real HK set (179 scam / 187 innocent), the current head wrongly flags 18/187 innocents (9.6%) at the archive line and 10/187 (5.3%) at the block line; the older `hn800` head flagged 43/187 (23.0%) and 38/187 (20.3%) on the same set. 187 innocents is a small sample, so read those rates as a point estimate rather than a guarantee. Pi portability is the reason this deploy is jevlike-only.
 
@@ -13,7 +13,7 @@ Eval note (does not block shipping): measured on a 366-message real HK set (179 
 1. Reads 1:1 message bodies (including saved contacts).
 2. **jevlike:** one forward pass over options `not_scam` / `scam`; `P(scam) × 100` is the 0–100 score.
 3. **Archives** when the score is at or above the archive threshold, or when a tight regex heuristic fires.
-4. **Blocks** an unsaved contact in those same cases only when the heuristic fired, or the score is at or above `BLOCK_THRESHOLD`. Also mutes the chat. Saved contacts stay archive-only.
+4. **Blocks** an unsaved contact only when the current message's heuristic fired and the warning gate did not clear it. Also mutes the chat. A high score stays archive-only. Saved contacts stay archive-only.
 4. Optional OpenAI-compatible LLM second pass (default **off**). Grey/high unless `LLM_REVIEW_ALL=1`.
 
 Filters drop `fromMe`, groups, notification types, your own account, and official WhatsApp names. `@lid` chats are resolved to a real number for logs and LLM context; LID digits are never used as a phone.
@@ -148,7 +148,7 @@ Until you answer, handling stays automatic. `OPERATOR_MODE=auto` or `OPERATOR_MO
 See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rubric.json).
 
 - `ARCHIVE_THRESHOLD` (default `42`) — label `scam` / archive from score
-- `BLOCK_THRESHOLD` (default `80`) — block an **unsaved** contact from score. Heuristic hits block unsaved contacts even below this.
+- `BLOCK_THRESHOLD` (default `80`) — still the line context review will not release. A score at this line archives and does **not** block. Heuristic hits block unsaved contacts.
 - `BLOCK_ENABLED` (default `true`) — `false` restores archive-only
 - `WA_ACTION_GAP_MS` (default `3000`) — minimum gap between WhatsApp account changes (block, rename, mute, archive). Chats are changed one at a time. Rename runs only after a successful block.
 - `CONTEXT_TURNS` (default `4`) — score the current message, and also the last N inbound messages when that window scores higher. `1` disables the window.
@@ -232,7 +232,7 @@ Aliases if `LLM_REVIEW_API_URL` / `LLM_REVIEW_API_KEY` are unset: `OPENAI_BASE_U
 
 ## 第二輪覆核（灰帶／高分／可選全部）
 
-流程維持：**jevlike／heuristic／本地分類／RAG** 先跑；**唔會為咗 LLM 拆走現有計分**。已儲存聯絡人只會 archive。未儲存聯絡人先會 block：正則中咗明顯騙局，或者分數達到 `BLOCK_THRESHOLD`（預設 80）。封鎖原因會寫入 WhatsApp 聯絡人名（`封鎖·…`），並追加到 `blocks.jsonl`。灰帶同分數失敗唔會 block。LLM 若把高分放行，就唔會 block。對外 LLM 之前用 jevlike 脱敏頭把個人資料換成 `XXX`；頭未載入就唔送。純警告先會抑制；明顯騙局正則中咗就唔會因為句入面有「詐騙」而被抑制。
+流程維持：**jevlike／heuristic／本地分類／RAG** 先跑；**唔會為咗 LLM 拆走現有計分**。已儲存聯絡人只會 archive。未儲存聯絡人先會 block：當前句正則中咗明顯騙局，而且唔係純「小心／防騙」警告。分數達到 `BLOCK_THRESHOLD`（預設 80）只會封存，唔會封鎖。封鎖原因會寫入 WhatsApp 聯絡人名（`封鎖·…`），並追加到 `blocks.jsonl`。灰帶同分數失敗唔會 block。LLM 若把高分放行，就唔會 block。對外 LLM 之前用 jevlike 脱敏頭把個人資料換成 `XXX`；頭未載入就唔送。純警告會壓過硬正則；假冒兼索取驗證碼、轉帳，或者假冒加保密，仍然封鎖。
 
 - heuristic／RAG hard archive → **立刻 archive，不呼叫 LLM**（`LLM_REVIEW_ALL=1` 都一樣）
 - 主模型高分 archive（分數/100 **高過** `LLM_REVIEW_GREY_MAX`，預設 0.85）→ **LLM 第二輪**（`LLM_REVIEW_ON_HIGH=true`，預設開）。LLM `not_scam` 可以 **放行** 分數誤報；`unknown`／失敗則 **維持 archive**
