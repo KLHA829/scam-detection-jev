@@ -48,7 +48,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 ## Commands
 
 - `npm test` — offline: in-process stub, no live WhatsApp, no encoder download (JS half + Python half via
-  `scripts/run-py-tests.js`).
+  `scripts/run-py-tests.js`). GitHub Actions (`.github/workflows/test.yml`) runs this on pull requests and on `main`.
 - `python jevlike_serve.py` (or `npm run jevlike`) in terminal 1, then `npm start` in terminal 2.
 - `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — run the bot against fixed probabilities.
 

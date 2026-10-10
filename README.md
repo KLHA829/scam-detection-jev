@@ -244,7 +244,7 @@ Aliases if `LLM_REVIEW_API_URL` / `LLM_REVIEW_API_KEY` are unset: `OPENAI_BASE_U
 
 ## Tests
 
-`npm test` is **offline**: in-process stub probabilities, no live WhatsApp, no encoder download.
+`npm test` is **offline**: in-process stub probabilities, no live WhatsApp, no encoder download. GitHub Actions runs it on every pull request and on pushes to `main`.
 
 ```bash
 npm test
