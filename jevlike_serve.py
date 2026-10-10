@@ -231,11 +231,32 @@ _NAME_RE = re.compile(
     "(?!防騙|防骗|反詐|反诈|銀行|银行|警察|公安|官方|協調|协调|客服|職員|职员|新聞|新闻|政府|入境|海關|海关|順豐|顺丰|whatsapp)"
     f"({_NAME_TOKEN})"
 )
+# ASCII edges, matching JavaScript \b. re.ASCII would also shrink \d and \s.
+_W_BEFORE = r"(?<![A-Za-z0-9_])"
+_W_AFTER = r"(?![A-Za-z0-9_])"
 _MASK_RULES: tuple[tuple[str, re.Pattern[str], int], ...] = (
-    ("email", re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I), False),
-    ("id", re.compile(r"\b[A-Z]{1,2}\d{6}\s*\(?[\dA]\)?\b", re.I), False),
-    ("id", re.compile(r"\b\d{17}[\dXx]\b"), False),
-    ("phone", re.compile(r"(?:\+|00)?852[\s-]*[45679]\d{3}[\s-]?\d{4}\b"), False),
+    (
+        "email",
+        re.compile(
+            _W_BEFORE + r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}" + _W_AFTER,
+            re.I,
+        ),
+        False,
+    ),
+    (
+        "id",
+        re.compile(
+            _W_BEFORE + r"[A-Z]{1,2}\d{6}\s*\(?[\dA]\)?" + _W_AFTER,
+            re.I,
+        ),
+        False,
+    ),
+    ("id", re.compile(_W_BEFORE + r"\d{17}[\dXx]" + _W_AFTER), False),
+    (
+        "phone",
+        re.compile(r"(?:\+|00)?852[\s-]*[45679]\d{3}[\s-]?\d{4}" + _W_AFTER),
+        False,
+    ),
     ("phone", re.compile(r"(?<![0-9])[45679]\d{3}[\s-]?\d{4}(?![0-9])"), False),
     ("phone", re.compile(r"(?<![0-9])(?:\+?\d[\d\s-]{7,20}\d)(?![0-9])"), False),
     ("account", re.compile(r"(?<![0-9])(?:\d[ -]?){12,18}\d(?![0-9])"), False),
@@ -251,7 +272,7 @@ _MASK_RULES: tuple[tuple[str, re.Pattern[str], int], ...] = (
     (
         "account",
         re.compile(
-            r"(?:\bpayme\b|轉數快|转数快|\bfps\b)"
+            rf"(?:{_W_BEFORE}payme{_W_AFTER}|轉數快|转数快|{_W_BEFORE}fps{_W_AFTER})"
             r"(?:\s*(?:id|號碼|号码|戶口|户口|帳號|账号))?\s*[:：#]?\s*([A-Z0-9._+-]{4,32})",
             re.I,
         ),
@@ -259,13 +280,17 @@ _MASK_RULES: tuple[tuple[str, re.Pattern[str], int], ...] = (
     ),
 )
 _OTP_NEAR = re.compile(
-    r"(?:驗證碼|验证码|一次性密碼|一次性密码|密碼|密码|\bcode\b|\botp\b)[^\d]{0,16}(\d{4,8})(?![0-9])",
+    rf"(?:驗證碼|验证码|一次性密碼|一次性密码|密碼|密码|{_W_BEFORE}code{_W_AFTER}|{_W_BEFORE}otp{_W_AFTER})"
+    r"[^\d]{0,16}(\d{4,8})(?![0-9])",
     re.I,
 )
 _OTP_BARE = re.compile(r"(?<![0-9])\d{6,8}(?![0-9])")
 _URL_RE = re.compile(r"https?://[^\s<>\"'）)】]+", re.I)
-_WWW_RE = re.compile(r"\bwww\.[^\s<>\"'）)】]+", re.I)
-_SHORT_RE = re.compile(r"\b((?:wa\.me|t\.me|bit\.ly|tinyurl\.com)/)(\S+)", re.I)
+_WWW_RE = re.compile(_W_BEFORE + r"www\.[^\s<>\"'）)】]+", re.I)
+_SHORT_RE = re.compile(
+    _W_BEFORE + r"((?:wa\.me|t\.me|bit\.ly|tinyurl\.com)/)(\S+)",
+    re.I,
+)
 _MASK_MESSAGE_CAP = 10
 
 
@@ -294,6 +319,15 @@ def _otp_spans(text: str) -> list[dict]:
     )
 
 
+def _url_host_needle(parsed) -> str:
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return ""
+    if parsed.port:
+        return f"{host}:{parsed.port}"
+    return host
+
+
 def _url_spans(text: str) -> list[dict]:
     from urllib.parse import urlparse
 
@@ -302,14 +336,23 @@ def _url_spans(text: str) -> list[dict]:
         for match in pattern.finditer(text):
             raw = match.group(0)
             parsed = urlparse(raw if "://" in raw else f"https://{raw}")
-            host = parsed.netloc
-            if not host:
+            needle = _url_host_needle(parsed)
+            host_at = raw.lower().find(needle) if needle else -1
+            if host_at < 0:
                 spans.append({"start": match.start(), "end": match.end(), "label": "url"})
                 continue
-            host_at = raw.lower().find(host.lower())
-            if host_at < 0:
-                continue
-            secret_at = host_at + len(host)
+            scheme_at = raw.find("://")
+            user_at = scheme_at + 3 if scheme_at >= 0 else 0
+            at = raw.rfind("@", 0, host_at + 1)
+            if user_at < at < host_at:
+                spans.append(
+                    {
+                        "start": match.start() + user_at,
+                        "end": match.start() + at,
+                        "label": "url",
+                    }
+                )
+            secret_at = host_at + len(needle)
             if secret_at < len(raw):
                 spans.append(
                     {
@@ -455,6 +498,27 @@ def _to_utf16_spans(text: str, spans: list[dict]) -> list[dict]:
     return converted
 
 
+class MaskTruncated(Exception):
+    """Tokenizer dropped the tail. A 200 would leave those characters unmarked."""
+
+
+def mask_coverage_truncated(text: str, offsets) -> bool:
+    """True when a non-empty string is not fully covered by tokenizer offsets."""
+    body = "" if text is None else str(text)
+    if not body:
+        return False
+    covered = 0
+    for span in offsets or []:
+        try:
+            start = int(span[0])
+            end = int(span[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if end > start:
+            covered = max(covered, end)
+    return covered < len(body)
+
+
 def model_mask_spans(text: str) -> list[dict]:
     """Character spans from the fine-tuned mask head. Empty when it is not loaded."""
     if _MASK_HEAD is None or _MODEL is None or _COLLATOR is None or _DEVICE is None:
@@ -508,6 +572,8 @@ def model_mask_spans(text: str) -> list[dict]:
             logits = mask_option_logits(_MASK_HEAD, context_hidden, pooled)
             probs = torch.sigmoid(logits)[0].detach().cpu().tolist()
     offsets = encoded["offset_mapping"][0].detach().cpu().tolist()
+    if mask_coverage_truncated(text, offsets):
+        raise MaskTruncated("mask truncated")
     flags = flags_from_offsets(text, offsets, probs, _MASK_THRESHOLD)
     return _to_utf16_spans(text, spans_from_flags(text, flags))
 

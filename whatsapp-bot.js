@@ -128,6 +128,7 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
         pause: () => pacer.pause(),
       }),
   });
+  if (!result.ok) queue.release(pollId);
   await client.sendMessage(wid, result.text);
 }
 

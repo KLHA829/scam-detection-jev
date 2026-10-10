@@ -25,7 +25,7 @@ from torch.nn import functional as F
 
 from jevlike.model import AttentionHead, make_system
 
-from pii_mask_data import generate_split, gold_spans
+from pii_mask_data import char_set, generate_split, gold_spans, prf
 from pii_mask_head import (
     KEEP_OPTION,
     MASK_OPTION,
@@ -38,23 +38,6 @@ from pii_mask_head import (
 
 DEFAULT_ENCODER = "hfl/chinese-roberta-wwm-ext"
 R1_PATH = ROOT / "models" / "jevlike_hf_chinese_roberta_r1.pt"
-
-
-def char_set(text: str, spans: list[dict]) -> set[int]:
-    chosen = set()
-    for span in spans:
-        chosen.update(range(span["start"], span["end"]))
-    return {index for index in chosen if index < len(text) and not text[index].isspace()}
-
-
-def prf(gold: set[int], pred: set[int]) -> dict[str, float]:
-    tp = len(gold & pred)
-    fp = len(pred - gold)
-    fn = len(gold - pred)
-    precision = tp / (tp + fp) if tp + fp else 1.0
-    recall = tp / (tp + fn) if tp + fn else 1.0
-    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-    return {"precision": precision, "recall": recall, "f1": f1, "tp": tp, "fp": fp, "fn": fn}
 
 
 def encode_options(tokenizer, encoder, device):

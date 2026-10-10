@@ -67,6 +67,25 @@ def extra_gold_spans(text: str) -> list[dict]:
     return spans
 
 
+def char_set(text: str, spans: list[dict]) -> set[int]:
+    """Character indexes a span list covers, skipping whitespace."""
+    chosen: set[int] = set()
+    body = "" if text is None else str(text)
+    for span in spans:
+        chosen.update(range(int(span["start"]), int(span["end"])))
+    return {index for index in chosen if index < len(body) and not body[index].isspace()}
+
+
+def prf(gold: set[int], pred: set[int]) -> dict[str, float]:
+    tp = len(gold & pred)
+    fp = len(pred - gold)
+    fn = len(gold - pred)
+    precision = tp / (tp + fp) if tp + fp else 1.0
+    recall = tp / (tp + fn) if tp + fn else 1.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    return {"precision": precision, "recall": recall, "f1": f1, "tp": tp, "fp": fp, "fn": fn}
+
+
 def gold_spans(text: str) -> list[dict]:
     body = "" if text is None else str(text)
     return serve.merge_mask_spans(serve.find_mask_spans(body) + extra_gold_spans(body))

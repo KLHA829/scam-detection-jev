@@ -27,6 +27,26 @@ class ScamProbabilityTests(unittest.TestCase):
             0.7,
         )
 
+    def test_option_index_and_unlabeled_fallback(self):
+        self.assertEqual(serve.option_index(["not_scam", "scam"], "SCAM"), 1)
+        self.assertIsNone(serve.option_index(["safe", "risk"], "scam"))
+        self.assertAlmostEqual(
+            serve.scam_probability(["safe", "risk"], [0.4, 0.6]),
+            0.6,
+        )
+
+    def test_generate_split_spans_stay_inside_the_text(self):
+        import pii_mask_data as data
+
+        rows = data.generate_split("train", 4, 3)
+        self.assertGreaterEqual(len(rows), 4)
+        labelled = [row for row in rows if not row["hard_negative"]]
+        self.assertTrue(labelled)
+        for row in rows:
+            for span in row["spans"]:
+                self.assertGreater(span["end"], span["start"])
+                self.assertLessEqual(span["end"], len(row["text"]))
+
     def test_falls_back_to_last_when_unlabeled(self):
         self.assertAlmostEqual(
             serve.scam_probability(["safe", "risk"], [0.4, 0.6]),
@@ -195,6 +215,28 @@ class MaskSpanTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             serve.mask_payload(["x"] * 11)
 
+    def test_mask_coverage_truncated_ignores_empty_offsets(self):
+        self.assertFalse(serve.mask_coverage_truncated("", [(0, 0)]))
+        self.assertFalse(serve.mask_coverage_truncated("甲" * 4, [(0, 0), (0, 4)]))
+        self.assertTrue(serve.mask_coverage_truncated("甲" * 100 + "91234567", [(0, 1), (95, 96)]))
+        self.assertTrue(isinstance(serve.MaskTruncated("mask truncated"), Exception))
+        self.assertFalse(issubclass(serve.MaskTruncated, RuntimeError))
+
+    def test_userinfo_idn_and_chinese_glued_identifiers(self):
+        userinfo = "https://alice:s3cret!@evil.example/reset"
+        self.assertEqual(
+            _covered(userinfo, serve.find_mask_spans(userinfo)),
+            "alice:s3cret!/reset",
+        )
+        idn = "https://例子.測試/secret-token"
+        covered = _covered(idn, serve.find_mask_spans(idn))
+        self.assertIn("secret-token", covered)
+        self.assertNotIn("例子", covered)
+        glued = "電郵user@example.com請回覆"
+        self.assertIn("user@example.com", _covered(glued, serve.find_mask_spans(glued)))
+        short = "請開wa.me/abc123secret"
+        self.assertIn("abc123secret", _covered(short, serve.find_mask_spans(short)))
+
     def test_emoji_before_a_phone_uses_utf16_indexes(self):
         text = "😀91234567"
         spans = serve._to_utf16_spans(
@@ -202,6 +244,61 @@ class MaskSpanTests(unittest.TestCase):
         )
         self.assertEqual(text[1:9], "91234567")
         self.assertEqual(spans, [{"start": 2, "end": 10, "label": "phone"}])
+
+
+class LabelMetricTests(unittest.TestCase):
+    def test_char_set_skips_spaces_and_prf_is_one_on_empty(self):
+        import pii_mask_data as data
+
+        covered = data.char_set("ab cd", [{"start": 0, "end": 5}])
+        self.assertEqual(covered, {0, 1, 3, 4})
+        perfect = data.prf(set(), set())
+        self.assertEqual(perfect["f1"], 1.0)
+        self.assertEqual(perfect["precision"], 1.0)
+        self.assertEqual(perfect["recall"], 1.0)
+        scored = data.prf({0, 1}, {1, 2})
+        self.assertEqual(scored["tp"], 1)
+        self.assertEqual(scored["fp"], 1)
+        self.assertEqual(scored["fn"], 1)
+
+    def test_authorized_requires_the_bearer_when_a_key_is_set(self):
+        class Header:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self, _name, default=""):
+                return self.value
+
+        class Handler:
+            def __init__(self, value):
+                self.headers = Header(value)
+
+        with patch.object(serve, "API_KEY", ""):
+            self.assertTrue(serve.authorized(Handler("")))
+        with patch.object(serve, "API_KEY", "secret"):
+            self.assertTrue(serve.authorized(Handler("Bearer secret")))
+            self.assertFalse(serve.authorized(Handler("Bearer other")))
+
+
+class HeadStateTests(unittest.TestCase):
+    def test_strips_encoder_and_head_prefix(self):
+        from pii_mask_head import head_state_from_checkpoint
+
+        state = head_state_from_checkpoint(
+            {
+                "encoder.weight": 1,
+                "head.query.weight": 2,
+                "context_norm.weight": 3,
+                "other": 4,
+            }
+        )
+        self.assertEqual(state, {"query.weight": 2, "context_norm.weight": 3})
+
+    def test_empty_head_is_an_error(self):
+        from pii_mask_head import head_state_from_checkpoint
+
+        with self.assertRaises(ValueError):
+            head_state_from_checkpoint({"encoder.weight": 1})
 
 
 if __name__ == "__main__":
