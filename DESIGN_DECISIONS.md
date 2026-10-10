@@ -1,16 +1,16 @@
 # Design decisions
 
-This repository started empty (`README` title only). Product invariants (graded block, LID, filters, heuristics) come from the original master prompt plus a later block policy. Scoring is **HF-encoder jevlike only** (`not_scam` / `scam`). LightJev / `SCORER=model_v2` is gone. There is **no** foreign-number hard archive.
+This repository started empty (`README` title only). Product invariants (archive, LID, filters, heuristics) come from the original master prompt plus a later block policy. Scoring is **HF-encoder jevlike only** (`not_scam` / `scam`). LightJev / `SCORER=model_v2` is gone. There is **no** foreign-number hard archive, and no automatic block.
 
 ## Kept
 
 | Decision | Why |
 |----------|-----|
-| **Graded block** — `contact.block()` only for unsaved contacts, and only on an obvious-scam heuristic in the current message | A score, including one at `BLOCK_THRESHOLD` (80), only archives. A current-message warning (`小心` / `防騙`) with no OTP ask, money ask, or impersonation plus secrecy beats the heuristic. Saved contacts are never auto-blocked. The reason is saved as the WhatsApp contact name and in `blocks.jsonl`. |
+| **Block only from the context model** — a hardcoded phrase does not archive or block | `contact.block()` runs for an unsaved contact when the context model answers `block`, or when you pick 封鎖並封存. A score, including one at `BLOCK_THRESHOLD` (80), only archives. A saved contact is not blocked by the model. |
 | Score **every** non-ignored live 1:1 body, including **saved contacts** | Saved ≠ safe; ATO and investment scams often arrive from hijacked contacts. |
 | **LID**: resolve `@lid` for logs / LLM context; never use LID digits as a phone | LID identifiers are not country codes. Unresolved LID still scores. |
-| Tight **regex heuristic** | Failover when the scorer is down or under-confident on copy-paste tropes. Includes OTP harvest (`請提供密碼` / 發給我) so fake anti-scam bait still archives. On an unsaved contact the same hit blocks. |
-| **Intent-gated suppress** | Warning/self-OTP language (`防騙`, `小心`, `新聞`) suppresses archive **only if** the DM does not also solicit OTP-forward, money transfer, or impersonation+secrecy. |
+| Tight **regex heuristic** | The phrase list remains in `lib/heuristics.js`. The live decision does not call it. |
+| **Intent-gated suppress** | Warning words no longer override the jevlike score. |
 | Filters: `fromMe`, groups, notification types, official WhatsApp names, `isMe` | Avoids looping on your own chats and WhatsApp system accounts. |
 | Session in **`.wwebjs_auth`** via `LocalAuth` | Same operator workflow as a typical `whatsapp-web.js` bot. |
 | Optional **Docker** for WhatsApp Web Chromium | jevlike runs as a sibling Python process so the Node image stays small. |
@@ -26,8 +26,8 @@ This repository started empty (`README` title only). Product invariants (graded 
 | `scoring-rubric.json` + `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` | Tune without code changes. Same numbers for jevlike’s 0–100 `P(scam)` map. |
 | In-memory **TTL cache** and **per-chat single-flight** | Dedupes retries and overlapping handlers. |
 | **Paced WhatsApp writes** | Block, rename, mute, and archive run one chat at a time, with `WA_ACTION_GAP_MS` (default 3s) between each call. A failed block does not save the contact. |
-| **Operator mode** — automatic, or ask in your own chat | First ready session offers a poll: keep graded block/archive, or forward each suspicious DM to yourself. Guided mode masks with `/v1/mask` before a Cantonese explanation. A failed mask skips the explanation and still shows the poll. The explanation cannot archive or block; the poll can. Until that first choice, suspicious chats are archived and not blocked. `OPERATOR_MODE` pins it without asking. A current-message obvious-scam heuristic is applied before the scorer, so a slow score does not delay the block. |
-| **Thread window for grey or short messages** | Score the current body, then the last `CONTEXT_TURNS` inbound bodies (default 4, memory only). Use the higher score unless the current sentence is longer than `CONTEXT_BENIGN_MIN_CHARS` and at or below the safe threshold. Blocking still uses only this message: a window score or a regex that appears only in earlier text can archive, and does not block. |
+| **Operator mode** — automatic archive, or ask in your own chat | First ready session offers a poll: archive automatically, or forward each suspicious DM to yourself. Guided mode masks with `/v1/mask` before a Cantonese explanation. A failed mask skips the explanation and still shows the poll. The explanation cannot archive or block; the poll can. Until that first choice, a context-model block is held as an archive. `OPERATOR_MODE` pins it without asking. Every message is scored by jevlike. |
+| **Thread window for grey or short messages** | Score the current body, then the last `CONTEXT_TURNS` inbound bodies (default 4, memory only). Use the higher score unless the current sentence is longer than `CONTEXT_BENIGN_MIN_CHARS` and at or below the safe threshold. A window score or a regex that appears only in earlier text can archive, and does not block. |
 | In-process **`stub-jevlike.js`** | `npm test` never downloads the encoder. |
 | **jevlike PII head** before any external LLM | `POST /v1/mask` returns character spans from the separate mask head. The bot writes `XXX`. A missing head or a failed mask skips the LLM call. |
 | **Optional OpenAI-compatible LLM review** | Second pass is any Chat Completions API. Default **off**. `LLM_REVIEW_ALL=0` keeps grey/conflict/high triggers. `LLM_REVIEW_ALL=1` reviews every remaining DM after the scorer (hard archives still skip). Merge default `bonsai`: LLM scam archives; LLM not_scam **releases** score-only archives (`jevlike_score`); unknown/fail keeps primary. `archive_only` never releases. PII is still masked by the jevlike head. |
@@ -56,7 +56,7 @@ Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high
 | chinese-roberta multi-label `model_v2` server | Same: gone for this Pi/jevlike deploy. |
 | **Foreign-number / unsaved non-local hard archive** (`foreign_number`, `STARTUP_FOREIGN_SCAN`) | User request: remove the 外國號碼 archive rule. Clean low-score DMs from any country code are ignored. Score, heuristic, RAG, and optional LLM still apply. |
 | llama-cpp / GGUF **chat** as the primary classifier | jevlike is a frozen-encoder choice scorer, not a chat completion API. LLM review remains optional and separate. |
-| Blocking saved contacts, or blocking from a jevlike score alone | A score false positive must not lock a real person out. Unsaved contacts block only on a current-message obvious-scam heuristic that the warning gate did not clear. |
+| Blocking from a hardcoded phrase or a jevlike score | A phrase or a score false positive must not lock a real person out. A phrase does not even archive. |
 | CAPTCHA solving or scraping third-party sites | Rejected unless asked. |
 | Committing API keys or model weight files | `.env` gitignored; jevlike head via GitHub Release; encoder downloaded at worker start. |
 
@@ -70,13 +70,10 @@ Live DM, after filters:
 4. Else if LLM review is enabled and a **trigger** fires (grey band 0.40–0.85 of score/100, high score above `GREY_MAX`, scorer vs local conflict, short OTP-ish DM, money ask from unknown/new number, **or** `LLM_REVIEW_ALL=1`) → mask PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. `not_scam` **releases** a score-only archive unless `LLM_REVIEW_MERGE=archive_only`. LLM failure → keep a score archive; otherwise `unknown` and do not archive.
 5. Else ignore.
 
-After that, if the final action is still archive **and** the contact is unsaved:
+A hardcoded phrase does not add an archive. A score, RAG, and `unknown` leave the archive as archive.
 
-6. Current-message obvious-scam heuristic, and the current message is not a pure `小心` / `防騙` warning → **block**. Write `封鎖·<reason>` as the WhatsApp contact name, mute, archive, append `blocks.jsonl`. A score at or above `BLOCK_THRESHOLD` stays an archive.
-7. Otherwise leave the archive as archive. Scores, RAG-only hits, and `unknown` do not block.
+LLM `not_scam` can **release** a score-only archive. When `CONTEXT_LLM_ENABLED` is on, `block` after the model has read the latest messages blocks an unsaved contact. A saved contact is archived. Until the setup poll is answered, that block is held as an archive.
 
-Saved contacts never take step 6. LLM `not_scam` can **release** a score-only archive before the block policy runs, so a released chat is not blocked. Heuristic hits skip the LLM and still block when the contact is unsaved.
+`OPERATOR_MODE=guided` (or the self-chat poll) stops after this decision. Steps 1–5 still decide that the DM is suspicious, including suppress and an enabled decision-changing LLM, but the WhatsApp write waits for **封鎖並封存**, **只封存**, or **留低**. The explanation call is not that LLM: it cannot release the card, and a mask or model failure still shows the local facts.
 
-`OPERATOR_MODE=guided` (or the self-chat poll) stops after this decision. Steps 1–7 still decide that the DM is suspicious, including suppress and an enabled decision-changing LLM, but the WhatsApp write waits for **封鎖並封存**, **只封存**, or **留低**. The explanation call is not that LLM: it cannot release the card, and a mask or model failure still shows the local facts.
-
-`CONTEXT_LLM_ENABLED` (default off) replaces step 4. The worker's `POST /v1/mask` returns spans from the PII head (not the r1 scam head, and not the identifier rules). The bot substitutes `XXX` and sends the latest `CONTEXT_LLM_MESSAGES` inbound bodies (default 10, current message included). Older messages fall off the front. The model may answer `archive`, `block`, or `no_action`. `block` does not lock anyone out by itself. `no_action` can release a score-only archive below the block line, and cannot release a block-line score. Heuristic archives still skip the call. A missing head, a failed mask, and an unusable reply leave the primary decision unchanged. The single-message second pass uses the same mask.
+`CONTEXT_LLM_ENABLED` (default off) replaces step 4. The worker's `POST /v1/mask` returns spans from the PII head (not the r1 scam head, and not the identifier rules). The bot substitutes `XXX` and sends the latest `CONTEXT_LLM_MESSAGES` inbound bodies (default 10, current message included). Older messages fall off the front. The model may answer `archive`, `block`, or `no_action`. `block` locks an unsaved contact and only archives a saved contact. `no_action` can release a score-only archive below the block line, and cannot release a block-line score. A missing head, a failed mask, and an unusable reply leave the primary decision unchanged. The single-message second pass uses the same mask.

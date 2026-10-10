@@ -1,7 +1,8 @@
 # AGENTS.md — read this before changing anything
 
 Local WhatsApp Web bot. Scores each 1:1 DM with a frozen-encoder **jevlike** choice model, archives risky
-chats, blocks unsaved high-risk contacts, and can hand grey/high messages to an optional OpenAI-compatible LLM.
+chats, and can hand grey/high messages to an optional OpenAI-compatible LLM. A person is blocked only
+when you pick 封鎖並封存.
 Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md)
 (kept / improved / deferred / rejected + the action matrix), [SCORING_RUBRIC.md](SCORING_RUBRIC.md).
 
@@ -9,7 +10,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 
 | Path | Role |
 |---|---|
-| `whatsapp-bot.js` | WhatsApp Web client: QR, orchestration, archive + graded block |
+| `whatsapp-bot.js` | WhatsApp Web client: QR, orchestration, archive; block only on your poll |
 | `lib/decide-incoming.js` | primary action from score + heuristic + rag + local classifier |
 | `lib/scorer.js` → `lib/jevlike-client.js` | `{text}` → `{prob_scam}` over HTTP |
 | `jevlike_serve.py` | persistent HF-encoder worker, `POST /v1/score` (start before the bot) |
@@ -20,28 +21,28 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 | `POST /v1/mask` | jevlike PII head spans; the bot replaces them with `XXX` before any external LLM |
 | `lib/context-llm.js` | optional review of the latest inbound messages (`CONTEXT_LLM_ENABLED`, default off) |
 | `lib/llm-review.js` | optional second pass (OpenAI-compatible Chat Completions) + merge policy |
-| `lib/block-policy.js`, `lib/wa-actions.js`, `lib/action-pacer.js` | graded block, paced WhatsApp writes |
+| `lib/block-policy.js`, `lib/wa-actions.js`, `lib/action-pacer.js` | no automatic block; operator block, paced WhatsApp writes |
 | `lib/operator-mode.js`, `lib/review-queue.js` | self-chat choice: automatic, or ask before archive/block |
 | `lib/review-prompt.js`, `lib/review-guide.js`, `lib/deliver-review.js` | local facts, masked Cantonese explanation, poll card |
 | `stub-jevlike.js` | fixed probabilities for offline tests |
 
 ## Invariants — do not break
 
-- Saved contacts are **never** auto-blocked. Unsaved contacts block only on an obvious-scam heuristic
-  in the current message. A pure warning (`小心` / `防騙`, and no OTP ask, money ask, or impersonation plus
-  secrecy) beats that heuristic and is left alone. A jevlike score, including one ≥ `BLOCK_THRESHOLD` (80),
+- A hardcoded phrase does not archive or block. A jevlike score, including one ≥ `BLOCK_THRESHOLD` (80),
   only archives. Archive line `ARCHIVE_THRESHOLD` (42), safe line `SAFE_THRESHOLD` (18).
+- An unsaved contact is blocked only when the context model has read the latest inbound messages and
+  answers `block` (it is sure the chat is a scam). A saved contact is archived instead. Your explicit
+  封鎖並封存 can still block either one. Until the setup poll is answered, that model block is held as
+  an archive.
 - Scorer timeout / 5xx / invalid JSON → `unknown`, and `unknown` alone never archives (fail closed).
 - **Every** outbound LLM call is masked by jevlike `POST /v1/mask` first. The bot writes `XXX` over those spans and never sends the raw text or the span list. If the PII head is missing or the mask call fails, the LLM call is skipped. The offline stub in `lib/mask-spans.js` stands in for the head so `npm test` does not load the encoder. Guided-mode explanations use the same mask.
-- Context LLM (`CONTEXT_LLM_ENABLED`, default off) may archive from the latest inbound messages
+- Context LLM (`CONTEXT_LLM_ENABLED`, default off) reviews the latest inbound messages
   (`CONTEXT_LLM_MESSAGES`, default 10). The current message is always included.
-  It does not block on its own: saved contacts stay unblockable, and an unsaved contact is blocked
-  only by the existing heuristic on this message. A score does not block. Mask failure or a bad model reply
-  does not archive. Heuristic hard archives still skip it.
-- Heuristic / RAG / local-classifier hard archives skip the decision-changing LLM.
+  `block` blocks an unsaved contact. `archive` only archives. Mask failure or a bad model reply
+  does not archive or block. RAG / local-classifier hard archives still skip it.
+- RAG / local-classifier hard archives skip the decision-changing single-message LLM.
   Guided mode may still ask the chat API for a Cantonese explanation after the same mask, and that reply cannot archive, block, or hide the card.
-- Suppress only when copy merely warns (`防騙`, `小心`). On the current message that also beats a hard
-  regex. It still archives if it also solicits OTP, a money transfer, or impersonation + secrecy.
+- Warning words do not override the jevlike score.
 - No network lookup of phone numbers or URLs (no Scameter, no third-party registry).
 - Thresholds and toggles change through `scoring-rubric.json` / env, never by editing constants in code.
 
@@ -69,8 +70,8 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   flag 34-41% of innocents.
 - Optional `CONTEXT_LLM_ENABLED` (default off) asks the local worker `POST /v1/mask` which characters
   to hide, replaces those spans with `XXX`, then sends the latest inbound messages (default 10,
-  current message included) to the same OpenAI-compatible chat API. A context-model `block` does not
-  override the graded block gate. The single-message second pass uses the same mask.
+  current message included) to the same OpenAI-compatible chat API. A context-model `block` blocks an
+  unsaved contact and only archives a saved one. The single-message second pass uses the same mask.
 - PII masking is a **separate** jevlike `AttentionHead` (`scripts/train_pii_mask.py` →
   `models/jevlike_hf_pii_mask.pt`, gitignored). It is initialised from the r1 head and trained with
   token-level labels, not the stock whole-message scam loss. The scam checkpoint is not overwritten.
@@ -78,13 +79,12 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   returns only that head's spans. Lure words such as `驗證碼` are cleared from the mask so the later
   model still sees them. Without the head the route returns 503 and nothing is sent.
   `find_mask_spans` remains the training-label helper and the offline stub, not a live fallback.
-- Unsaved contacts are blocked only by a current-message obvious-scam heuristic. Score ≥ 80 archives and does not block. `otp_expiry` needs an OTP ask or a link. `sf_customs_link` ignores an allowlisted official host such as `sf-express.com`. A current message with `小心` or `防騙` and no solicit is left alone even when a hard regex matches.
+- Hardcoded scam phrases do not archive or block. Score ≥ 80 archives and does not block. The context model is the only automatic block, and only for an unsaved contact when it answers `block`.
 - Operator mode archives without blocking until the self-chat poll is answered (or `OPERATOR_MODE` is set).
-  An obvious-scam heuristic on the current message is acted on before the scorer is called, so a slow score
-  does not delay that block. `guided` forwards a suspicious DM to the operator, explains it only after
+  Every message is scored by jevlike. `guided` forwards a suspicious DM to the operator, explains it only after
   `/v1/mask`, and waits for 封鎖並封存 / 只封存 / 留低. A failed mask skips the explanation and still shows
-  the poll. The explanation model cannot take that action. An explicit 封鎖並封存 is the only way a saved
-  contact is blocked.
+  the poll. The explanation model cannot take that action. 封鎖並封存 is the only block, including for a
+  saved contact.
 
 ## Landmines
 

@@ -229,11 +229,11 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('archives on obvious heuristic even when score is low', () => {
+  it('does not archive a hardcoded phrase when the score is low', () => {
     const low = scoreResult({ score: 4, label: 'not_scam' });
     assert.deepEqual(
       decideIncomingAction(low, '85261234567', true, { hit: true }),
-      { action: 'archive', archiveReason: 'obvious_scam' },
+      { action: 'ignore', archiveReason: null },
     );
   });
 
@@ -277,7 +277,7 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('primary action stays archive; unsaved high-risk is blocked afterwards', () => {
+  it('primary action stays archive; a hardcoded phrase does not block', () => {
     const high = scoreResult({ score: 99, label: 'scam' });
     const heuristic = { hit: true, id: 'otp_harvest', archiveReason: 'obvious_scam' };
     const d = decideIncomingAction(high, '14155550123', false, heuristic);
@@ -287,8 +287,8 @@ describe('decideIncomingAction matrix', () => {
       scoreResult: high,
       heuristic,
     });
-    assert.equal(blocked.action, 'block');
-    assert.equal(blocked.contactName, '封鎖·索取驗證碼');
+    assert.equal(blocked.action, 'archive');
+    assert.equal(blocked.contactName, undefined);
   });
 
   it('archives optional RAG / local-classifier hits after heuristics', () => {
@@ -315,13 +315,13 @@ describe('decideIncomingAction matrix', () => {
 });
 
 describe('resolveIncomingMessageLabel', () => {
-  it('promotes heuristic to scam without changing jevlike fail-closed unknown otherwise', () => {
+  it('keeps a low score as not_scam even when the words look like a lure', () => {
     const promoted = resolveIncomingMessageLabel(
       scoreResult({ label: 'not_scam', score: 2 }),
       'WhatsApp 官方通知：否則封號',
     );
-    assert.equal(promoted.label, 'scam');
-    assert.equal(promoted.archiveReason, 'obvious_scam');
+    assert.equal(promoted.label, 'not_scam');
+    assert.equal(promoted.archiveReason, null);
 
     const unknown = resolveIncomingMessageLabel(
       scoreResult({ label: 'unknown', score: 0, ok: false }),
