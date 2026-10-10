@@ -426,6 +426,35 @@ def maybe_load_mask_head() -> None:
     )
 
 
+def _utf16_units(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2
+
+
+def _to_utf16_spans(text: str, spans: list[dict]) -> list[dict]:
+    """Python indexes are code points. The bot slices UTF-16 code units."""
+    if not spans:
+        return []
+    prefixes = [0]
+    total = 0
+    for ch in text:
+        total += _utf16_units(ch)
+        prefixes.append(total)
+    converted = []
+    limit = len(prefixes) - 1
+    for span in spans:
+        start = span.get("start")
+        end = span.get("end")
+        if not isinstance(start, int) or not isinstance(end, int):
+            continue
+        if start < 0 or end > limit or end <= start:
+            continue
+        item = dict(span)
+        item["start"] = prefixes[start]
+        item["end"] = prefixes[end]
+        converted.append(item)
+    return converted
+
+
 def model_mask_spans(text: str) -> list[dict]:
     """Character spans from the fine-tuned mask head. Empty when it is not loaded."""
     if _MASK_HEAD is None or _MODEL is None or _COLLATOR is None or _DEVICE is None:
@@ -480,7 +509,7 @@ def model_mask_spans(text: str) -> list[dict]:
             probs = torch.sigmoid(logits)[0].detach().cpu().tolist()
     offsets = encoded["offset_mapping"][0].detach().cpu().tolist()
     flags = flags_from_offsets(text, offsets, probs, _MASK_THRESHOLD)
-    return spans_from_flags(text, flags)
+    return _to_utf16_spans(text, spans_from_flags(text, flags))
 
 
 def mask_payload(messages: list) -> dict:

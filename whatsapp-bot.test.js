@@ -14,7 +14,7 @@ const {
   labelFromScore,
   scoreMessage,
 } = require('./lib/score-message');
-const { JevlikeClient } = require('./lib/jevlike-client');
+const { JevlikeClient, resolveMaskUrl } = require('./lib/jevlike-client');
 const { processIncomingMessage } = require('./lib/handle-incoming');
 const { TtlCache, cacheKeyForMessage } = require('./lib/cache');
 const {
@@ -55,6 +55,23 @@ describe('LID handling', () => {
       '85261234567',
     );
     assert.equal(phoneFromLidMapping({ pn: '27028229202012@lid' }), null);
+    assert.equal(
+      phoneFromLidMapping({
+        _serialized: '27028229202012@lid',
+        user: '27028229202012',
+        server: 'lid',
+      }),
+      null,
+    );
+    assert.equal(
+      phoneFromLidMapping({
+        _serialized: '27028229202012@lid',
+        user: '27028229202012',
+        server: 'lid',
+        pn: '85261234567@c.us',
+      }),
+      '85261234567@c.us',
+    );
   });
 
   it('resolveRealNumber does not use LID digits when lookup fails', async () => {
@@ -142,6 +159,11 @@ describe('heuristics', () => {
       matchObviousScam('WhatsApp 官方通知：否則封號').id,
       'wa_official_ban',
     );
+    assert.equal(
+      matchObviousScam('WhatsApp official will ban this account').id,
+      'wa_official_ban',
+    );
+    assert.equal(matchObviousScam('WhatsApp 官方 bank 通知').hit, false);
     assert.equal(
       matchObviousScam('Send USDT to this wallet address now').id,
       'usdt_wallet_send',
@@ -326,6 +348,27 @@ describe('scoreMessage with stub jevlike', () => {
     assert.equal(result.label, 'scam');
     assert.equal(result.archiveReason, 'jevlike_score');
     assert.ok(result.score >= rubric.thresholds.archive);
+  });
+
+  it('keeps a usable mask URL and timeout', () => {
+    assert.equal(
+      resolveMaskUrl('http://127.0.0.1:8766/v1/score'),
+      'http://127.0.0.1:8766/v1/mask',
+    );
+    assert.equal(
+      resolveMaskUrl('http://127.0.0.1:8766'),
+      'http://127.0.0.1:8766/v1/mask',
+    );
+    const client = new JevlikeClient({
+      fetchImpl: async () => new Response('{}'),
+      timeoutMs: 0,
+    });
+    assert.equal(client.timeoutMs, 30000);
+    const fromEnv = new JevlikeClient({
+      fetchImpl: async () => new Response('{}'),
+      env: { JEVLIKE_TIMEOUT_MS: 'nope' },
+    });
+    assert.equal(fromEnv.timeoutMs, 30000);
   });
 
   it('fails closed on timeout / 5xx / invalid JSON', async () => {

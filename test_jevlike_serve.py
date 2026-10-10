@@ -195,6 +195,14 @@ class MaskSpanTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             serve.mask_payload(["x"] * 11)
 
+    def test_emoji_before_a_phone_uses_utf16_indexes(self):
+        text = "😀91234567"
+        spans = serve._to_utf16_spans(
+            text, [{"start": 1, "end": 9, "label": "phone"}]
+        )
+        self.assertEqual(text[1:9], "91234567")
+        self.assertEqual(spans, [{"start": 2, "end": 10, "label": "phone"}])
+
 
 if __name__ == "__main__":
     unittest.main()
