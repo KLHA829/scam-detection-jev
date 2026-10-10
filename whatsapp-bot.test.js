@@ -497,7 +497,7 @@ describe('processIncomingMessage', () => {
     const out = await processIncomingMessage(
       {
         type: 'chat',
-        body: '請立即把驗證碼發給我並轉帳',
+        body: '今晚食飯嗎',
         chatId: '85261234567@c.us',
         savedContact: true,
         messageId: 'm1',

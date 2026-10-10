@@ -232,6 +232,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
       },
       exclusive: (fn) => pacer.exclusive(fn),
       operatorMode: operator ? operator.mode() : 'auto',
+      holdBlock: operator ? operator.awaitingChoice() : false,
       pauseAction: () => pacer.pause(),
       blockContact: (info) =>
         blockAndRename({

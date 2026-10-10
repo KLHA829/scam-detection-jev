@@ -79,10 +79,12 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   model still sees them. Without the head the route returns 503 and nothing is sent.
   `find_mask_spans` remains the training-label helper and the offline stub, not a live fallback.
 - Unsaved contacts are blocked only by a current-message obvious-scam heuristic. Score ≥ 80 archives and does not block. `otp_expiry` needs an OTP ask or a link. `sf_customs_link` ignores an allowlisted official host such as `sf-express.com`. A current message with `小心` or `防騙` and no solicit is left alone even when a hard regex matches.
-- Operator mode defaults to automatic archive/block until the self-chat poll is answered (or `OPERATOR_MODE` is set).
-  `guided` forwards a suspicious DM to the operator, explains it only after `/v1/mask`, and waits for
-  封鎖並封存 / 只封存 / 留低. A failed mask skips the explanation and still shows the poll. The explanation
-  model cannot take that action. An explicit 封鎖並封存 is the only way a saved contact is blocked.
+- Operator mode archives without blocking until the self-chat poll is answered (or `OPERATOR_MODE` is set).
+  An obvious-scam heuristic on the current message is acted on before the scorer is called, so a slow score
+  does not delay that block. `guided` forwards a suspicious DM to the operator, explains it only after
+  `/v1/mask`, and waits for 封鎖並封存 / 只封存 / 留低. A failed mask skips the explanation and still shows
+  the poll. The explanation model cannot take that action. An explicit 封鎖並封存 is the only way a saved
+  contact is blocked.
 
 ## Landmines
 
