@@ -132,7 +132,16 @@ npm run stub
 
 Include `[stub:scam]` in a message body to force the stub’s high-risk preset.
 
-Keep `.wwebjs_auth/` across restarts. Deleting it forces a new QR login, which is a common way to get the session logged out. This bot does not send messages. Rename, block, mute, and archive run one chat at a time, with `WA_ACTION_GAP_MS` between each call.
+Keep `.wwebjs_auth/` across restarts. Deleting it forces a new QR login, which is a common way to get the session logged out. The only chats this bot messages are your own (setup and, if you opt in, a review of a suspicious DM). Rename, block, mute, and archive run one chat at a time, with `WA_ACTION_GAP_MS` between each call.
+
+### First-time choice
+
+On the first ready session the bot sends a poll to your own WhatsApp chat:
+
+- **自動封鎖同封存** — today's behaviour.
+- **逐條問我** — the same suspicion line, but nothing is archived or blocked until you choose. The original message is forwarded to you. A local note gives the score, the lure label, and whether the contact would have been blocked. A separate Cantonese explanation is requested only after `POST /v1/mask` and `redactPii`. That call uses `LLM_REVIEW_API_URL` / `LLM_REVIEW_MODEL` and does not require `LLM_REVIEW_ENABLED`. If masking or the model fails, the poll still appears and the model section says the explanation is unavailable. The model cannot press a choice for you.
+
+Until you answer, handling stays automatic. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Send `設定` in your own chat to choose again. Saved contacts are still never blocked unless you explicitly pick **封鎖並封存**. The first choice on a review poll is the one that runs.
 
 ### Scoring knobs (no code change)
 
@@ -257,7 +266,9 @@ QR login still needs a terminal that can show the code (or inspect container log
 
 ## Layout
 
-- `whatsapp-bot.js` — WhatsApp Web client, QR, archive and graded block
+- `whatsapp-bot.js` — WhatsApp Web client, QR, archive and graded block, self-chat setup poll
+- `lib/operator-mode.js` — `auto` or `guided`, stored in `operator-mode.json`
+- `lib/review-guide.js` — masked Cantonese explanation for guided review
 - `lib/scorer.js` — always builds a jevlike client (`createScoreClient`)
 - `lib/jevlike-client.js` — `{text}` → `{prob_scam}`
 - `lib/redact.js` — rule-based PII redaction before any external LLM call

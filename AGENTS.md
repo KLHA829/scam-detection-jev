@@ -21,6 +21,8 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 | `lib/context-llm.js` | optional review of the latest inbound messages (`CONTEXT_LLM_ENABLED`, default off) |
 | `lib/llm-review.js` | optional second pass (OpenAI-compatible Chat Completions) + merge policy |
 | `lib/block-policy.js`, `lib/wa-actions.js`, `lib/action-pacer.js` | graded block, paced WhatsApp writes |
+| `lib/operator-mode.js`, `lib/review-queue.js` | self-chat choice: automatic, or ask before archive/block |
+| `lib/review-prompt.js`, `lib/review-guide.js`, `lib/deliver-review.js` | local facts, masked Cantonese explanation, poll card |
 | `stub-jevlike.js` | fixed probabilities for offline tests |
 
 ## Invariants — do not break
@@ -29,13 +31,14 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   ≥ `BLOCK_THRESHOLD` (80). Archive line `ARCHIVE_THRESHOLD` (42), safe line `SAFE_THRESHOLD` (18).
 - Scorer timeout / 5xx / invalid JSON → `unknown`, and `unknown` alone never archives (fail closed).
 - **Every** outbound LLM call goes through `redactPii` first; the local placeholder mapping is never sent.
-  The context-LLM path also applies `/v1/mask` spans as `XXX` before that redaction.
+  The context-LLM path and the guided-mode explanation also apply `/v1/mask` spans as `XXX` before that redaction.
 - Context LLM (`CONTEXT_LLM_ENABLED`, default off) may archive from the latest inbound messages
   (`CONTEXT_LLM_MESSAGES`, default 10). The current message is always included.
   It does not block on its own: saved contacts stay unblockable, and an unsaved contact is blocked
   only by the existing heuristic or score ≥ `BLOCK_THRESHOLD`. Mask failure or a bad model reply
   does not archive. Heuristic hard archives still skip it.
-- Heuristic / RAG / local-classifier hard archives skip the LLM.
+- Heuristic / RAG / local-classifier hard archives skip the decision-changing LLM.
+  Guided mode may still ask the chat API for a Cantonese explanation after the same mask, and that reply cannot archive, block, or hide the card.
 - Suppress only when copy merely warns (`防騙`, `小心`); it still archives if it also solicits OTP, a money
   transfer, or impersonation + secrecy.
 - No network lookup of phone numbers or URLs (no Scameter, no third-party registry).
@@ -48,7 +51,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 - `python jevlike_serve.py` (or `npm run jevlike`) in terminal 1, then `npm start` in terminal 2.
 - `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — run the bot against fixed probabilities.
 
-## Current state (update with the date when it changes) — 2026-10-06
+## Current state (update with the date when it changes) — 2026-10-10
 
 - **Deployed head is `r1`**: `models/jevlike_hf_chinese_roberta_r1.pt`, published on release tag
   [`jevlike-hf-r1`](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1). On a 366-row real
@@ -76,6 +79,10 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 - `lib/redact.js` name masking is surname-gated: a run after `我係`/`本人` is masked only when it starts with a
   listed HK surname or `阿`, so `我係收數公司` and `如非本人操作` are no longer corrupted before the LLM sees them.
   Compound surnames (e.g. `我係歐陽文`) and role tails after a single-char surname (e.g. `我係張經理`) are handled in `NAME_TOKEN`.
+- Operator mode defaults to automatic archive/block until the self-chat poll is answered (or `OPERATOR_MODE` is set).
+  `guided` forwards a suspicious DM to the operator, explains it only after mask + `redactPii`, and waits for
+  封鎖並封存 / 只封存 / 留低. The explanation model cannot take that action. An explicit 封鎖並封存 is the only
+  way a saved contact is blocked.
 
 ## Landmines
 

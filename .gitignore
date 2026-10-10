@@ -4,6 +4,8 @@ node_modules/
 .env
 *.log
 blocks.jsonl
+operator-mode.json
+review-queue.json
 .DS_Store
 session/
 chrome-data/
