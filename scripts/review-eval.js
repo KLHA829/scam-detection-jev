@@ -20,6 +20,9 @@ const fs = require('fs');
 const path = require('path');
 
 const { decideIncomingAction } = require('../lib/decide-incoming');
+const { matchObviousScam } = require('../lib/heuristics');
+const { shouldSuppress, warningBeatsHeuristic } = require('../lib/scam-intent');
+const { applyBlockPolicy } = require('../lib/block-policy');
 const { maskMessagesForLlm } = require('../lib/context-llm');
 const { createStubJevlikeClient } = require('../stub-jevlike');
 const {
@@ -110,8 +113,11 @@ async function main() {
       failed: false,
       thresholds: { archive: ARCHIVE_THRESHOLD, block: BLOCK_THRESHOLD, safe: SAFE_THRESHOLD },
     };
-    const heuristic = { hit: false };
-    const decision = decideIncomingAction(scoreResult, '+85200000000', false, heuristic, null, null);
+    const heuristic = matchObviousScam(text, env);
+    let decision = decideIncomingAction(scoreResult, '+85200000000', false, heuristic, null, null);
+    if (warningBeatsHeuristic(text) || (decision.action === 'archive' && !heuristic.hit && shouldSuppress(text))) {
+      decision = { action: 'ignore', archiveReason: null, suppressed: true };
+    }
 
     // stage 2 — the repo's own trigger + redaction + merge
     const trig = shouldTriggerLlmReview({
@@ -141,18 +147,25 @@ async function main() {
       if (!llmReview.ok) stats.failed_transport += 1;
     }
 
-    const finalDecision = llmReview ? mergeLlmDecision(decision, llmReview, { env }) : decision;
+    const merged = llmReview ? mergeLlmDecision(decision, llmReview, { env }) : decision;
+    const finalDecision = applyBlockPolicy(merged, {
+      savedContact: false,
+      scoreResult,
+      heuristic: decision.suppressed ? { hit: false } : heuristic,
+      env,
+    });
     const flagged = finalDecision.action !== 'ignore';
+    const blocked = finalDecision.action === 'block';
     if (finalDecision.released) stats.released_by_llm += 1;
 
     if (label === 1) {
       if (flagged) stats.tp += 1; else stats.fn += 1;
-      if (flagged && scoreResult.score >= BLOCK_THRESHOLD) stats.scam_blocked += 1;
+      if (blocked) stats.scam_blocked += 1;
     } else {
       if (flagged) {
         stats.fp += 1;
         stats.fp_archived += 1;
-        if (scoreResult.score >= BLOCK_THRESHOLD) stats.fp_blocked += 1;
+        if (blocked) stats.fp_blocked += 1;
         if (samples.fp.length < SAMPLE) {
           samples.fp.push({ score: scoreResult.score, why: finalDecision.archiveReason, text: text.slice(0, 60) });
         }

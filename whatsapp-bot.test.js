@@ -172,6 +172,18 @@ describe('heuristics', () => {
       matchObviousScam('順豐包裹清關費 http://bit.ly/x').id,
       'sf_customs_link',
     );
+    assert.equal(
+      matchObviousScam('您的驗證碼即將過期，請到櫃檯').hit,
+      false,
+    );
+    assert.equal(
+      matchObviousScam('您的驗證碼即將過期 https://example.com/pay').id,
+      'otp_expiry',
+    );
+    assert.equal(
+      matchObviousScam('順豐包裹清關 https://www.sf-express.com/hk').hit,
+      false,
+    );
   });
 
   it('does not fire on ordinary chat', () => {
