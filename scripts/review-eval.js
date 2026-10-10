@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Offline end-to-end evaluation of stage 1 (jevlike score) + stage 2 (redact -> llm-review -> merge)
+ * Offline end-to-end evaluation of stage 1 (jevlike score) + stage 2 (mask -> llm-review -> merge)
  * against a labelled real HK corpus. Uses the repo's own modules, not a reimplementation.
  *
  * Usage:
@@ -11,7 +11,7 @@
  *
  *   --mode  stage-2 gating: off (LLM_REVIEW_ENABLED=false), triggers (grey/high/conflict), all (LLM_REVIEW_ALL=1)
  *   --llm   off   = no call, merge is skipped        (numbers are meaningful)
- *           dry   = build + redact the real request, capture the payload, DO NOT send, treat LLM as
+ *           dry   = mask with the offline stub, capture the payload, DO NOT send, treat LLM as
  *                   unknown so every number stays honest ("what would have been asked")
  *           live  = actually POST to LLM_REVIEW_API_URL (needs LLM_REVIEW_API_KEY or OPENAI_API_KEY)
  */
@@ -20,7 +20,8 @@ const fs = require('fs');
 const path = require('path');
 
 const { decideIncomingAction } = require('../lib/decide-incoming');
-const { redactPii } = require('../lib/redact');
+const { maskMessagesForLlm } = require('../lib/context-llm');
+const { createStubJevlikeClient } = require('../stub-jevlike');
 const {
   createLlmReviewConfig,
   shouldTriggerLlmReview,
@@ -39,8 +40,16 @@ const MODE = arg('mode', 'triggers');
 const LLM = arg('llm', 'off');
 const SAMPLE = Number(arg('sample', '3'));
 
-const ARCHIVE_THRESHOLD = Number(process.env.ARCHIVE_THRESHOLD || 42);
-const BLOCK_THRESHOLD = Number(process.env.BLOCK_THRESHOLD || 80);
+function finiteEnv(name, fallback) {
+  const raw = process.env[name];
+  if (raw == null || String(raw).trim() === '') return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+const ARCHIVE_THRESHOLD = finiteEnv('ARCHIVE_THRESHOLD', 42);
+const BLOCK_THRESHOLD = finiteEnv('BLOCK_THRESHOLD', 80);
+const SAFE_THRESHOLD = finiteEnv('SAFE_THRESHOLD', 18);
 
 function stage2Env() {
   return {
@@ -99,7 +108,7 @@ async function main() {
       score: Math.round(p * 100),
       prob_scam: p,
       failed: false,
-      thresholds: { archive: ARCHIVE_THRESHOLD, block: BLOCK_THRESHOLD, safe: Number(process.env.SAFE_THRESHOLD || 18) },
+      thresholds: { archive: ARCHIVE_THRESHOLD, block: BLOCK_THRESHOLD, safe: SAFE_THRESHOLD },
     };
     const heuristic = { hit: false };
     const decision = decideIncomingAction(scoreResult, '+85200000000', false, heuristic, null, null);
@@ -118,10 +127,12 @@ async function main() {
 
     let llmReview = null;
     if (trig.trigger && LLM !== 'off') {
-      const { redacted, mapping } = redactPii(text);
+      const maskResult = await createStubJevlikeClient().maskMessages([text]);
+      const redacted = maskMessagesForLlm([text], maskResult)[0];
+      const spanCount = (maskResult.messages[0] && maskResult.messages[0].spans.length) || 0;
       if (redacted !== text) {
         stats.redacted_rows += 1;
-        if (samples.redacted.length < SAMPLE * 2) samples.redacted.push({ before: text, after: redacted, kept_local: mapping.length });
+        if (samples.redacted.length < SAMPLE * 2) samples.redacted.push({ before: text, after: redacted, kept_local: spanCount });
       }
       stats.called += 1;
       llmReview = await reviewRedactedMessage(redacted, {

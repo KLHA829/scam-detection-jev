@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 
 const { extractDigits } = require('./lib/foreign-number');
 const { isLidId, lidUserPart, phoneFromLidMapping, resolveRealNumber } = require('./lib/lid');
-const { shouldIgnoreMessage, isOfficialWhatsAppName } = require('./lib/filters');
+const { shouldIgnoreMessage, isOfficialWhatsAppId } = require('./lib/filters');
 const { matchObviousScam } = require('./lib/heuristics');
 const { decideIncomingAction, resolveIncomingMessageLabel } = require('./lib/decide-incoming');
 const { applyBlockPolicy } = require('./lib/block-policy');
@@ -14,7 +14,7 @@ const {
   labelFromScore,
   scoreMessage,
 } = require('./lib/score-message');
-const { JevlikeClient } = require('./lib/jevlike-client');
+const { JevlikeClient, resolveMaskUrl } = require('./lib/jevlike-client');
 const { processIncomingMessage } = require('./lib/handle-incoming');
 const { TtlCache, cacheKeyForMessage } = require('./lib/cache');
 const {
@@ -55,6 +55,23 @@ describe('LID handling', () => {
       '85261234567',
     );
     assert.equal(phoneFromLidMapping({ pn: '27028229202012@lid' }), null);
+    assert.equal(
+      phoneFromLidMapping({
+        _serialized: '27028229202012@lid',
+        user: '27028229202012',
+        server: 'lid',
+      }),
+      null,
+    );
+    assert.equal(
+      phoneFromLidMapping({
+        _serialized: '27028229202012@lid',
+        user: '27028229202012',
+        server: 'lid',
+        pn: '85261234567@c.us',
+      }),
+      '85261234567@c.us',
+    );
   });
 
   it('resolveRealNumber does not use LID digits when lookup fails', async () => {
@@ -78,26 +95,49 @@ describe('LID handling', () => {
 });
 
 describe('filters', () => {
-  it('ignores fromMe, groups, notifications, isMe, and official WhatsApp names', () => {
+  it('ignores fromMe, groups, notifications, isMe, and official WhatsApp chats', () => {
     assert.equal(shouldIgnoreMessage({ fromMe: true }).ignore, true);
     assert.equal(shouldIgnoreMessage({ isGroup: true }).ignore, true);
     assert.equal(shouldIgnoreMessage({ isMe: true }).ignore, true);
     assert.equal(shouldIgnoreMessage({ type: 'notification' }).ignore, true);
     assert.equal(shouldIgnoreMessage({ type: 'e2e_notification' }).reason, 'notification');
     assert.equal(
-      shouldIgnoreMessage({ contactName: 'WhatsApp' }).reason,
+      shouldIgnoreMessage({ chatId: 'status@broadcast' }).reason,
       'official_whatsapp',
     );
     assert.equal(
-      shouldIgnoreMessage({ pushName: 'WhatsApp Business' }).reason,
+      shouldIgnoreMessage({ chatId: '0@c.us' }).reason,
       'official_whatsapp',
     );
     assert.equal(
-      shouldIgnoreMessage({ contactName: 'WhatsApp 官方' }).reason,
+      shouldIgnoreMessage({ from: '0@s.whatsapp.net' }).reason,
       'official_whatsapp',
     );
-    assert.equal(isOfficialWhatsAppName('Alice'), false);
+    assert.equal(isOfficialWhatsAppId('85260000000@c.us'), false);
+    assert.equal(
+      shouldIgnoreMessage({
+        type: 'chat',
+        pushName: 'WhatsApp Security',
+        contactName: 'WhatsApp',
+        chatId: '85260000000@c.us',
+      }).ignore,
+      false,
+    );
     assert.equal(shouldIgnoreMessage({ type: 'chat' }).ignore, false);
+  });
+});
+
+describe('loadRubric env', () => {
+  it('keeps the rubric lines when a threshold is not a number', () => {
+    const tuned = loadRubric(undefined, {
+      ARCHIVE_THRESHOLD: 'nope',
+      SAFE_THRESHOLD: 'nope',
+      BLOCK_THRESHOLD: 'nope',
+    });
+    assert.equal(tuned.thresholds.archive, 42);
+    assert.equal(tuned.thresholds.safe, 18);
+    assert.equal(tuned.thresholds.block, 80);
+    assert.equal(labelFromScore(96, tuned.thresholds), 'scam');
   });
 });
 
@@ -119,6 +159,11 @@ describe('heuristics', () => {
       matchObviousScam('WhatsApp 官方通知：否則封號').id,
       'wa_official_ban',
     );
+    assert.equal(
+      matchObviousScam('WhatsApp official will ban this account').id,
+      'wa_official_ban',
+    );
+    assert.equal(matchObviousScam('WhatsApp 官方 bank 通知').hit, false);
     assert.equal(
       matchObviousScam('Send USDT to this wallet address now').id,
       'usdt_wallet_send',
@@ -303,6 +348,27 @@ describe('scoreMessage with stub jevlike', () => {
     assert.equal(result.label, 'scam');
     assert.equal(result.archiveReason, 'jevlike_score');
     assert.ok(result.score >= rubric.thresholds.archive);
+  });
+
+  it('keeps a usable mask URL and timeout', () => {
+    assert.equal(
+      resolveMaskUrl('http://127.0.0.1:8766/v1/score'),
+      'http://127.0.0.1:8766/v1/mask',
+    );
+    assert.equal(
+      resolveMaskUrl('http://127.0.0.1:8766'),
+      'http://127.0.0.1:8766/v1/mask',
+    );
+    const client = new JevlikeClient({
+      fetchImpl: async () => new Response('{}'),
+      timeoutMs: 0,
+    });
+    assert.equal(client.timeoutMs, 30000);
+    const fromEnv = new JevlikeClient({
+      fetchImpl: async () => new Response('{}'),
+      env: { JEVLIKE_TIMEOUT_MS: 'nope' },
+    });
+    assert.equal(fromEnv.timeoutMs, 30000);
   });
 
   it('fails closed on timeout / 5xx / invalid JSON', async () => {
