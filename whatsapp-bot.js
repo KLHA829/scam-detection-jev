@@ -404,6 +404,7 @@ module.exports = {
   createWhatsAppClient,
   handleWaMessage,
   attachHandlers,
+  main,
   decideIncomingAction,
   resolveIncomingMessageLabel,
 };

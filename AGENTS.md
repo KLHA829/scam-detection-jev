@@ -79,6 +79,8 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   returns only that head's spans. Lure words such as `驗證碼` are cleared from the mask so the later
   model still sees them. Without the head the route returns 503 and nothing is sent.
   `find_mask_spans` remains the training-label helper and the offline stub, not a live fallback.
+  Its digit classes are ASCII `[0-9]`, the same characters JavaScript `\d` matches. Fullwidth phones
+  and Chinese-numeral phones stay on the training-only extra gold, not on that shared stub.
 - Operator mode defaults to automatic archive/block until the self-chat poll is answered (or `OPERATOR_MODE` is set).
   `guided` forwards a suspicious DM to the operator, explains it only after `/v1/mask`, and waits for
   封鎖並封存 / 只封存 / 留低. A failed mask skips the explanation and still shows the poll. The explanation

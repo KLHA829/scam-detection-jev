@@ -104,6 +104,59 @@ def pool_token_hidden(hidden, mask):
     return (hidden * weights).sum(1) / weights.sum(1).clamp_min(1)
 
 
+def predict_spans(text, offsets, probs, threshold: float) -> list[dict]:
+    flags = flags_from_offsets(text, offsets, probs, threshold)
+    return spans_from_flags(text, flags)
+
+
+def score_threshold(cache, probs, threshold: float) -> dict:
+    from pii_mask_data import char_set, extra_gold_spans, prf
+
+    gold_all: set[tuple[int, int]] = set()
+    pred_all: set[tuple[int, int]] = set()
+    hard_fp_rows = 0
+    extra_gold: set[tuple[int, int]] = set()
+    extra_hit: set[tuple[int, int]] = set()
+    for index, row in enumerate(cache["rows"]):
+        text = row["text"]
+        gold = char_set(text, row["spans"])
+        pred_spans = predict_spans(text, cache["offsets"][index], probs[index], threshold)
+        pred = char_set(text, pred_spans)
+        for pos in gold:
+            gold_all.add((index, pos))
+        for pos in pred:
+            pred_all.add((index, pos))
+        if row["hard_negative"] and pred:
+            hard_fp_rows += 1
+        extra = char_set(text, extra_gold_spans(text))
+        for pos in extra:
+            extra_gold.add((index, pos))
+            if pos in pred:
+                extra_hit.add((index, pos))
+    stats = prf(gold_all, pred_all)
+    stats["hard_negative_rows_flagged"] = hard_fp_rows
+    stats["extra_recall"] = len(extra_hit) / len(extra_gold) if extra_gold else 1.0
+    return stats
+
+
+def choose_threshold(cache, probs) -> tuple[float, dict]:
+    best = None
+    best_threshold = 0.5
+    for step in range(20, 95, 5):
+        threshold = step / 100
+        stats = score_threshold(cache, probs, threshold)
+        if stats["hard_negative_rows_flagged"] > 0:
+            continue
+        if best is None or stats["f1"] > best["f1"]:
+            best = stats
+            best_threshold = threshold
+    if best is None:
+        best_threshold = 0.9
+        best = score_threshold(cache, probs, best_threshold)
+    best["threshold"] = best_threshold
+    return best_threshold, best
+
+
 def head_state_from_checkpoint(state: dict) -> dict:
     """Keep AttentionHead weights whether they are stored as head.* or bare."""
     filtered = {}

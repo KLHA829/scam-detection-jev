@@ -231,7 +231,8 @@ _NAME_RE = re.compile(
     "(?!防騙|防骗|反詐|反诈|銀行|银行|警察|公安|官方|協調|协调|客服|職員|职员|新聞|新闻|政府|入境|海關|海关|順豐|顺丰|whatsapp)"
     f"({_NAME_TOKEN})"
 )
-# ASCII edges, matching JavaScript \b. re.ASCII would also shrink \d and \s.
+# ASCII edges, matching JavaScript \b. Digit atoms are [0-9], matching
+# JavaScript \d. re.ASCII stays off so \s and \S stay wide.
 _W_BEFORE = r"(?<![A-Za-z0-9_])"
 _W_AFTER = r"(?![A-Za-z0-9_])"
 _MASK_RULES: tuple[tuple[str, re.Pattern[str], int], ...] = (
@@ -246,25 +247,25 @@ _MASK_RULES: tuple[tuple[str, re.Pattern[str], int], ...] = (
     (
         "id",
         re.compile(
-            _W_BEFORE + r"[A-Z]{1,2}\d{6}\s*\(?[\dA]\)?" + _W_AFTER,
+            _W_BEFORE + r"[A-Z]{1,2}[0-9]{6}\s*\(?[0-9A]\)?" + _W_AFTER,
             re.I,
         ),
         False,
     ),
-    ("id", re.compile(_W_BEFORE + r"\d{17}[\dXx]" + _W_AFTER), False),
+    ("id", re.compile(_W_BEFORE + r"[0-9]{17}[0-9Xx]" + _W_AFTER), False),
     (
         "phone",
-        re.compile(r"(?:\+|00)?852[\s-]*[45679]\d{3}[\s-]?\d{4}" + _W_AFTER),
+        re.compile(r"(?:\+|00)?852[\s-]*[45679][0-9]{3}[\s-]?[0-9]{4}" + _W_AFTER),
         False,
     ),
-    ("phone", re.compile(r"(?<![0-9])[45679]\d{3}[\s-]?\d{4}(?![0-9])"), False),
-    ("phone", re.compile(r"(?<![0-9])(?:\+?\d[\d\s-]{7,20}\d)(?![0-9])"), False),
-    ("account", re.compile(r"(?<![0-9])(?:\d[ -]?){12,18}\d(?![0-9])"), False),
+    ("phone", re.compile(r"(?<![0-9])[45679][0-9]{3}[\s-]?[0-9]{4}(?![0-9])"), False),
+    ("phone", re.compile(r"(?<![0-9])(?:\+?[0-9][0-9\s-]{7,20}[0-9])(?![0-9])"), False),
+    ("account", re.compile(r"(?<![0-9])(?:[0-9][ -]?){12,18}[0-9](?![0-9])"), False),
     (
         "account",
         re.compile(
             r"(?:戶口|户口|帳號|账号|帳戶|账户|卡號|卡号|a/c(?:\s*no\.?)?|account(?:\s*(?:no\.?|number))?)"
-            r"\s*[:：#]?\s*([\d\s-]{6,24})",
+            r"\s*[:：#]?\s*([0-9\s-]{6,24})",
             re.I,
         ),
         1,
@@ -281,10 +282,10 @@ _MASK_RULES: tuple[tuple[str, re.Pattern[str], int], ...] = (
 )
 _OTP_NEAR = re.compile(
     rf"(?:驗證碼|验证码|一次性密碼|一次性密码|密碼|密码|{_W_BEFORE}code{_W_AFTER}|{_W_BEFORE}otp{_W_AFTER})"
-    r"[^\d]{0,16}(\d{4,8})(?![0-9])",
+    r"[^0-9]{0,16}([0-9]{4,8})(?![0-9])",
     re.I,
 )
-_OTP_BARE = re.compile(r"(?<![0-9])\d{6,8}(?![0-9])")
+_OTP_BARE = re.compile(r"(?<![0-9])[0-9]{6,8}(?![0-9])")
 _URL_RE = re.compile(r"https?://[^\s<>\"'）)】]+", re.I)
 _WWW_RE = re.compile(_W_BEFORE + r"www\.[^\s<>\"'）)】]+", re.I)
 _SHORT_RE = re.compile(
