@@ -1,10 +1,10 @@
 # scam-detection-jev
 
-Local **WhatsApp Web** bot that scores each 1:1 DM, **archives** risky chats, and **blocks** unsaved high-risk contacts.
+Local **WhatsApp Web** bot that scores each 1:1 DM and **archives** risky chats. It blocks a contact only after you pick 封鎖並封存.
 
 **Primary (and only) scorer:** [jevlike](https://github.com/vinnylarouge/jevlike) with a frozen Hugging Face encoder `hfl/chinese-roberta-wwm-ext` and choice labels `not_scam` / `scam`. The fine-tuned head (`jevlike_hf_chinese_roberta_r1.pt`, ~2.3 MB) is already on GitHub Release tag [`jevlike-hf-r1`](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1); the encoder (~400 MB) downloads from the Hub on first run. This is the path meant for a **Raspberry Pi** and other CPU machines. There is **no** LightJev / `SCORER=model_v2` fallback.
 
-**Blocking** is separate from archive. Unsaved contacts are blocked only when a tight scam regex hits on the current message, and that message is not a pure warning (`小心` / `防騙` with no OTP ask, money ask, or impersonation plus secrecy). A jevlike score, including one at or above `BLOCK_THRESHOLD` (default **80**), only archives. The reason is written onto the WhatsApp contact name (`封鎖·索取驗證碼`, …) and appended to `blocks.jsonl` (number, score, reason, time). Saved contacts are never auto-blocked. Grey scores and scorer failures do not block. It does **not** call Scameter or any phone/URL registry.
+**Archive** comes from the jevlike score or a tight scam phrase. Neither one blocks. A pure warning (`小心` / `防騙` with no OTP ask, money ask, or impersonation plus secrecy) is left alone. A score at or above `BLOCK_THRESHOLD` (default **80**) only archives. The contact is blocked only when you pick 封鎖並封存; that writes `封鎖·索取驗證碼` onto the name and appends `blocks.jsonl`. It does **not** call Scameter or any phone/URL registry.
 
 Eval note (does not block shipping): measured on a 366-message real HK set (179 scam / 187 innocent), the current head wrongly flags 18/187 innocents (9.6%) at the archive line and 10/187 (5.3%) at the block line; the older `hn800` head flagged 43/187 (23.0%) and 38/187 (20.3%) on the same set. 187 innocents is a small sample, so read those rates as a point estimate rather than a guarantee. Pi portability is the reason this deploy is jevlike-only.
 
@@ -138,8 +138,8 @@ Keep `.wwebjs_auth/` across restarts. Deleting it forces a new QR login, which i
 
 On the first ready session the bot sends a poll to your own WhatsApp chat:
 
-- **自動封鎖同封存** — today's behaviour.
-- **逐條問我** — the same suspicion line, but nothing is archived or blocked until you choose. The original message is forwarded to you. A local note gives the score, the lure label, and whether the contact would have been blocked. A separate Cantonese explanation is requested only after `POST /v1/mask`. That call uses `LLM_REVIEW_API_URL` / `LLM_REVIEW_MODEL` and does not require `LLM_REVIEW_ENABLED`. If masking or the model fails, the poll still appears and the model section says the explanation is unavailable. The model cannot press a choice for you.
+- **自動封存** — archive a suspicious chat and do not block.
+- **逐條問我** — the same suspicion line, but nothing is archived or blocked until you choose. The original message is forwarded to you. A local note gives the score and the lure label. A separate Cantonese explanation is requested only after `POST /v1/mask`. That call uses `LLM_REVIEW_API_URL` / `LLM_REVIEW_MODEL` and does not require `LLM_REVIEW_ENABLED`. If masking or the model fails, the poll still appears and the model section says the explanation is unavailable. The model cannot press a choice for you.
 
 Until you answer, suspicious chats are archived and nobody is blocked. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Send `設定` in your own chat to choose again. Saved contacts are still never blocked unless you explicitly pick **封鎖並封存**. The first choice on a review poll is the one that runs.
 
@@ -148,8 +148,8 @@ Until you answer, suspicious chats are archived and nobody is blocked. `OPERATOR
 See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rubric.json).
 
 - `ARCHIVE_THRESHOLD` (default `42`) — label `scam` / archive from score
-- `BLOCK_THRESHOLD` (default `80`) — still the line context review will not release. A score at this line archives and does **not** block. Heuristic hits block unsaved contacts.
-- `BLOCK_ENABLED` (default `true`) — `false` restores archive-only
+- `BLOCK_THRESHOLD` (default `80`) — still the line context review will not release. A score at this line archives and does **not** block. A hardcoded phrase also only archives.
+- `BLOCK_ENABLED` — does not turn a hardcoded phrase into a block. Incoming messages stay archive-only.
 - `WA_ACTION_GAP_MS` (default `3000`) — minimum gap between WhatsApp account changes (block, rename, mute, archive). Chats are changed one at a time. Rename runs only after a successful block.
 - `CONTEXT_TURNS` (default `4`) — score the current message, and also the last N inbound messages when that window scores higher. `1` disables the window.
 - `CONTEXT_BENIGN_MIN_CHARS` (default `24`) — a longer message at or below `SAFE_THRESHOLD` keeps its own score
@@ -167,7 +167,7 @@ See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rub
 - `LLM_REVIEW_API_KEY` or `OPENAI_API_KEY` — **optional**; omit for local servers with no auth; when set, sent as `Authorization: Bearer …`
 - `LLM_REVIEW_MODEL` (default `gpt-4o-mini`; use the model id your server expects)
 - `LLM_REVIEW_TIMEOUT_MS` (default `8000`)
-- `CONTEXT_LLM_ENABLED` (default `false`) — replace the single-message second pass with a review of the latest inbound messages. The local worker returns PII-head spans (`POST /v1/mask`); the bot writes `XXX`, then asks the chat model for `archive` / `block` / `no_action`. A model `block` still has to pass the graded block gate. A missing head, a failed mask, or a bad model reply does not archive.
+- `CONTEXT_LLM_ENABLED` (default `false`) — replace the single-message second pass with a review of the latest inbound messages. The local worker returns PII-head spans (`POST /v1/mask`); the bot writes `XXX`, then asks the chat model for `archive` / `block` / `no_action`. A model `block` only archives. A missing head, a failed mask, or a bad model reply does not archive.
 - `JEVLIKE_MASK_CKPT` — second jevlike head trained to mark personal-data characters (`python scripts/train_pii_mask.py`). It does not replace the scam scorer. Without it, `/v1/mask` returns 503 and the bot does not send the text. See [models/README.md](models/README.md).
 - `CONTEXT_LLM_MESSAGES` (default `10`, capped at 10) — how many of the latest inbound messages are sent. The message that just arrived is always included.
 
@@ -232,7 +232,7 @@ Aliases if `LLM_REVIEW_API_URL` / `LLM_REVIEW_API_KEY` are unset: `OPENAI_BASE_U
 
 ## 第二輪覆核（灰帶／高分／可選全部）
 
-流程維持：**jevlike／heuristic／本地分類／RAG** 先跑；**唔會為咗 LLM 拆走現有計分**。已儲存聯絡人只會 archive。未儲存聯絡人先會 block：當前句正則中咗明顯騙局，而且唔係純「小心／防騙」警告。分數達到 `BLOCK_THRESHOLD`（預設 80）只會封存，唔會封鎖。封鎖原因會寫入 WhatsApp 聯絡人名（`封鎖·…`），並追加到 `blocks.jsonl`。灰帶同分數失敗唔會 block。LLM 若把高分放行，就唔會 block。對外 LLM 之前用 jevlike 脱敏頭把個人資料換成 `XXX`；頭未載入就唔送。純警告會壓過硬正則；假冒兼索取驗證碼、轉帳，或者假冒加保密，仍然封鎖。
+流程維持：**jevlike／heuristic／本地分類／RAG** 先跑；**唔會為咗 LLM 拆走現有計分**。寫死字眼同分數都只會封存，唔會封鎖。分數達到 `BLOCK_THRESHOLD`（預設 80）只會封存。你揀「封鎖並封存」先會寫 WhatsApp 聯絡人名（`封鎖·…`）同追加 `blocks.jsonl`。對外 LLM 之前用 jevlike 脱敏頭把個人資料換成 `XXX`；頭未載入就唔送。純警告會壓過硬正則；假冒兼索取驗證碼、轉帳，或者假冒加保密，仍然封存，唔會自動封鎖。
 
 - heuristic／RAG hard archive → **立刻 archive，不呼叫 LLM**（`LLM_REVIEW_ALL=1` 都一樣）
 - 主模型高分 archive（分數/100 **高過** `LLM_REVIEW_GREY_MAX`，預設 0.85）→ **LLM 第二輪**（`LLM_REVIEW_ON_HIGH=true`，預設開）。LLM `not_scam` 可以 **放行** 分數誤報；`unknown`／失敗則 **維持 archive**
@@ -266,7 +266,7 @@ QR login still needs a terminal that can show the code (or inspect container log
 
 ## Layout
 
-- `whatsapp-bot.js` — WhatsApp Web client, QR, archive and graded block, self-chat setup poll
+- `whatsapp-bot.js` — WhatsApp Web client, QR, archive, self-chat setup poll
 - `lib/operator-mode.js` — `auto` or `guided`, stored in `operator-mode.json`
 - `lib/review-guide.js` — masked Cantonese explanation for guided review
 - `lib/scorer.js` — always builds a jevlike client (`createScoreClient`)
@@ -294,4 +294,4 @@ QR login still needs a terminal that can show the code (or inspect container log
 
 ## Disclaimer
 
-This is a personal filter. WhatsApp Web automation can violate WhatsApp’s terms and may get the session logged out. Do not use it on other people’s accounts. Scores are **un-calibrated model probabilities**. Saved contacts are not auto-blocked; unsaved blocks still need a look at `blocks.jsonl` before you treat the name as final.
+This is a personal filter. WhatsApp Web automation can violate WhatsApp’s terms and may get the session logged out. Do not use it on other people’s accounts. Scores are **un-calibrated model probabilities**. Nothing is auto-blocked. A 封鎖並封存 choice is the row in `blocks.jsonl`.

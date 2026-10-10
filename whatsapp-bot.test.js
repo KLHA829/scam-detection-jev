@@ -277,7 +277,7 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('primary action stays archive; unsaved high-risk is blocked afterwards', () => {
+  it('primary action stays archive; a hardcoded phrase does not block', () => {
     const high = scoreResult({ score: 99, label: 'scam' });
     const heuristic = { hit: true, id: 'otp_harvest', archiveReason: 'obvious_scam' };
     const d = decideIncomingAction(high, '14155550123', false, heuristic);
@@ -287,8 +287,8 @@ describe('decideIncomingAction matrix', () => {
       scoreResult: high,
       heuristic,
     });
-    assert.equal(blocked.action, 'block');
-    assert.equal(blocked.contactName, '封鎖·索取驗證碼');
+    assert.equal(blocked.action, 'archive');
+    assert.equal(blocked.contactName, undefined);
   });
 
   it('archives optional RAG / local-classifier hits after heuristics', () => {

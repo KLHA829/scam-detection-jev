@@ -93,7 +93,7 @@ async function confirmOperatorMode(client, operator, mode) {
     wid,
     mode === 'guided'
       ? '已改為逐條問你。之後每條可疑訊息會轉發嚟呢度。'
-      : '已改為自動封鎖同封存。',
+      : '已改為自動封存。',
   );
 }
 
@@ -366,7 +366,7 @@ async function main() {
   const reviewQueue = createReviewQueue();
   const client = createWhatsAppClient();
 
-  log.info('starting WhatsApp scam-risk bot (jevlike scoring, graded block)', {
+  log.info('starting WhatsApp scam-risk bot (jevlike scoring, archive only)', {
     scorer: 'jevlike',
     baseURL: scoreClient.baseURL,
     archiveThreshold: rubric.thresholds.archive,
