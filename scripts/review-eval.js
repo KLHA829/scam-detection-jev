@@ -20,6 +20,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { decideIncomingAction } = require('../lib/decide-incoming');
+const { loadRubric, jevlikePayloadToScoreResult } = require('../lib/score-message');
 const { redactPii } = require('../lib/redact');
 const {
   createLlmReviewConfig,
@@ -39,8 +40,7 @@ const MODE = arg('mode', 'triggers');
 const LLM = arg('llm', 'off');
 const SAMPLE = Number(arg('sample', '3'));
 
-const ARCHIVE_THRESHOLD = Number(process.env.ARCHIVE_THRESHOLD || 42);
-const BLOCK_THRESHOLD = Number(process.env.BLOCK_THRESHOLD || 80);
+const rubric = loadRubric();
 
 function stage2Env() {
   return {
@@ -93,14 +93,8 @@ async function main() {
     stats.rows += 1;
     if (label === 1) stats.scam += 1; else stats.innocent += 1;
 
-    // stage 1 — exactly the shape lib/jevlike-client.js produces
-    const scoreResult = {
-      label: p * 100 >= ARCHIVE_THRESHOLD ? 'scam' : 'not_scam',
-      score: Math.round(p * 100),
-      prob_scam: p,
-      failed: false,
-      thresholds: { archive: ARCHIVE_THRESHOLD, block: BLOCK_THRESHOLD, safe: Number(process.env.SAFE_THRESHOLD || 18) },
-    };
+    // stage 1 — the same score object the bot builds from a worker payload
+    const scoreResult = jevlikePayloadToScoreResult({ prob_scam: p }, rubric);
     const heuristic = { hit: false };
     const decision = decideIncomingAction(scoreResult, '+85200000000', false, heuristic, null, null);
 
@@ -136,12 +130,12 @@ async function main() {
 
     if (label === 1) {
       if (flagged) stats.tp += 1; else stats.fn += 1;
-      if (flagged && scoreResult.score >= BLOCK_THRESHOLD) stats.scam_blocked += 1;
+      if (flagged && scoreResult.score >= scoreResult.thresholds.block) stats.scam_blocked += 1;
     } else {
       if (flagged) {
         stats.fp += 1;
         stats.fp_archived += 1;
-        if (scoreResult.score >= BLOCK_THRESHOLD) stats.fp_blocked += 1;
+        if (scoreResult.score >= scoreResult.thresholds.block) stats.fp_blocked += 1;
         if (samples.fp.length < SAMPLE) {
           samples.fp.push({ score: scoreResult.score, why: finalDecision.archiveReason, text: text.slice(0, 60) });
         }

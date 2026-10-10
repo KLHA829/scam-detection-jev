@@ -46,6 +46,7 @@ describe('LID handling', () => {
   it('detects @lid ids and never treats LID user digits as a ready phone', () => {
     assert.equal(isLidId('27028229202012@lid'), true);
     assert.equal(isLidId('85261234567@c.us'), false);
+    assert.equal(isLidId('1@lidx'), false);
     assert.equal(lidUserPart('27028229202012@lid'), '27028229202012');
   });
 
@@ -55,6 +56,24 @@ describe('LID handling', () => {
       '85261234567',
     );
     assert.equal(phoneFromLidMapping({ pn: '27028229202012@lid' }), null);
+    assert.equal(
+      phoneFromLidMapping({
+        server: 'lid',
+        user: '27028229202012',
+        _serialized: '27028229202012@lid',
+      }),
+      null,
+    );
+    assert.equal(
+      phoneFromLidMapping({
+        id: {
+          server: 'lid',
+          user: '27028229202012',
+          _serialized: '27028229202012@lid',
+        },
+      }),
+      null,
+    );
   });
 
   it('resolveRealNumber does not use LID digits when lookup fails', async () => {
@@ -119,6 +138,19 @@ describe('heuristics', () => {
       matchObviousScam('WhatsApp 官方通知：否則封號').id,
       'wa_official_ban',
     );
+    assert.equal(matchObviousScam('WhatsApp official will ban you').id, 'wa_official_ban');
+    assert.equal(
+      matchObviousScam('whatsapp official account is banned today').id,
+      'wa_official_ban',
+    );
+    assert.equal(
+      matchObviousScam('WhatsApp official notice suspend now').id,
+      'wa_official_ban',
+    );
+    assert.equal(
+      matchObviousScam('WhatsApp official notice: update your bank details').hit,
+      false,
+    );
     assert.equal(
       matchObviousScam('Send USDT to this wallet address now').id,
       'usdt_wallet_send',
@@ -179,6 +211,18 @@ describe('decideIncomingAction matrix', () => {
     );
     assert.deepEqual(
       decideIncomingAction(low, '14155550123', true, { hit: false }),
+      { action: 'ignore', archiveReason: null },
+    );
+  });
+
+  it('does not archive an unknown label from the numeric score alone', () => {
+    assert.deepEqual(
+      decideIncomingAction(
+        scoreResult({ score: 50, label: 'unknown', ok: true }),
+        '85261234567',
+        false,
+        { hit: false },
+      ),
       { action: 'ignore', archiveReason: null },
     );
   });

@@ -201,6 +201,137 @@ class MaskSpanTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             serve.mask_payload(["x"] * 11)
 
+    def test_emoji_phone_span_is_utf16(self):
+        text = "😀91234567"
+        spans = serve.find_mask_spans(text)
+        self.assertTrue(any(span["start"] == 2 and span["end"] == 10 for span in spans))
+
+    def test_cjk_glued_identifiers_match_ascii_boundaries(self):
+        email = "電話user@example.com"
+        self.assertIn("user@example.com", _covered(email, serve.find_mask_spans(email)))
+        hkid = "驗證A123456(7)"
+        self.assertIn("A123456(7)", _covered(hkid, serve.find_mask_spans(hkid)))
+        short = "碼wa.me/s3cret"
+        self.assertIn("s3cret", _covered(short, serve.find_mask_spans(short)))
+        payme = "轉payme AB12CD34"
+        self.assertIn("AB12CD34", _covered(payme, serve.find_mask_spans(payme)))
+        code = "驗證code 1234"
+        self.assertIn("1234", _covered(code, serve.find_mask_spans(code)))
+
+    def test_url_stops_before_cjk_and_keeps_the_host(self):
+        text = "https://evil.example/secret驗證碼是123456"
+        covered = _covered(text, serve.find_mask_spans(text))
+        self.assertIn("/secret", covered)
+        self.assertNotIn("驗證碼", covered)
+        self.assertNotIn("evil.example", covered)
+        wide = "備用號碼９１２３４５６７留低"
+        self.assertEqual(serve.find_mask_spans(wide), [])
+
+    def test_date_is_not_a_phone_and_userinfo_keeps_the_host(self):
+        dated = "請於2024-01-15前付款"
+        self.assertNotIn("2024-01-15", _covered(dated, serve.find_mask_spans(dated)))
+        card = "12345678901234"
+        self.assertIn(card, _covered(card, serve.find_mask_spans(card)))
+        url = "https://user:s3cret@evil.example/path"
+        covered = _covered(url, serve.find_mask_spans(url))
+        self.assertIn("user:s3cret", covered)
+        self.assertIn("/path", covered)
+        self.assertNotIn("evil.example", covered)
+
+    def test_name_backoff_leaves_org_and_role_words_whole(self):
+        cases = {
+            "我係陳大公司": "陳大",
+            "我係陳大文": "陳大文",
+            "我係歐陽文": "歐陽文",
+            "我係歐陽文經理": "歐陽文",
+            "我係陳大文公司": "陳大文",
+        }
+        for text, name in cases.items():
+            covered = _covered(text, serve.find_mask_spans(text))
+            self.assertIn(name, covered, text)
+            self.assertNotIn("公司", covered)
+            self.assertNotIn("經理", covered)
+        for text in ("我係張經理", "我係陳小姐", "我係收數公司", "如非本人操作"):
+            self.assertEqual(serve.find_mask_spans(text), [], text)
+
+    def test_head_failure_does_not_disable_later_messages(self):
+        def fake(text):
+            if text == "bad":
+                raise RuntimeError("boom")
+            return [{"start": 0, "end": 1, "label": "name"}]
+
+        with patch.object(serve, "_MASK_HEAD", object()), patch.object(
+            serve, "model_mask_spans", side_effect=fake
+        ):
+            payload = serve.mask_payload(["bad", "ok"])
+        self.assertEqual(payload["method"], "jevlike_pii_head+rules")
+        self.assertEqual(payload["messages"][0]["spans"], serve.find_mask_spans("bad"))
+        self.assertTrue(
+            any(span.get("label") == "name" for span in payload["messages"][1]["spans"])
+        )
+
+
+class PostBodyTests(unittest.TestCase):
+    def _handler(self, length, body=b""):
+        handler = serve.Handler.__new__(serve.Handler)
+        handler.path = "/v1/mask"
+        handler.headers = {"content-length": length}
+
+        class Headers(dict):
+            def get(self, key, default=None):
+                return super().get(key, default)
+
+        handler.headers = Headers({"content-length": length})
+        handler.sent = []
+        handler._send = lambda status, payload: handler.sent.append((status, payload))
+
+        class Reader:
+            def __init__(self, data):
+                self.data = data
+                self.calls = []
+
+            def read(self, n=-1):
+                self.calls.append(n)
+                if n is None or n < 0:
+                    chunk = self.data
+                    self.data = b""
+                    return chunk
+                chunk = self.data[:n]
+                self.data = self.data[n:]
+                return chunk
+
+        handler.rfile = Reader(body)
+        return handler
+
+    def test_bad_length_does_not_read(self):
+        for raw in ("abc", "-1"):
+            handler = self._handler(raw, b"x" * 40)
+            handler.do_POST()
+            self.assertEqual(handler.rfile.calls, [], raw)
+            self.assertEqual(handler.sent[0][0], 400, raw)
+
+    def test_non_utf8_is_400(self):
+        handler = self._handler("1", b"\xff")
+        handler.do_POST()
+        self.assertEqual(handler.rfile.calls, [1])
+        self.assertEqual(handler.sent[0][0], 400)
+
+    def test_oversize_does_not_read(self):
+        handler = self._handler(str(serve.MAX_BODY + 1), b"x")
+        handler.do_POST()
+        self.assertEqual(handler.rfile.calls, [])
+        self.assertEqual(handler.sent[0][0], 413)
+
+
+class TrainingSurnameTests(unittest.TestCase):
+    def test_compound_surname_is_generated_and_hard_negatives_stay_empty(self):
+        import pii_mask_data as data
+
+        self.assertIn("歐陽", data._TRAIN_SURNAMES)
+        self.assertNotIn("歐", data._TRAIN_SURNAMES)
+        for text in data._HARD_NEGATIVES:
+            self.assertEqual(data.gold_spans(text), [], text)
+
 
 if __name__ == "__main__":
     unittest.main()

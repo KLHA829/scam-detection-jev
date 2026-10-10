@@ -221,29 +221,39 @@ _ORG_TAIL = "會|公司|中心|銀行|部門|職員|客戶|集團|機構|協會|
 _COMPOUND = "歐陽|司馬|上官|諸葛|令狐|皇甫|慕容|司徒|軒轅"
 _ROLE = "經理|主任|董事|總監|監事|專員|助理|顧問|律師|醫生|老師|警官|隊長|組長|文員|店長|小姐|先生|太太"
 _NAME_TOKEN = (
-    f"(?:(?:{_COMPOUND})[\\u4e00-\\u9fff]{{1,2}}"
-    f"|[{_SURNAME}](?!{_ORG_TAIL})(?!{_ROLE})[\\u4e00-\\u9fff]{{1,2}}"
+    f"(?:(?:{_COMPOUND})[\\u4e00-\\u9fff]{{1,2}}(?![司行理姐])"
+    f"|[{_SURNAME}](?!{_ORG_TAIL})(?!{_ROLE})[\\u4e00-\\u9fff]{{1,2}}(?![司行理姐])"
     f"|阿[\\u4e00-\\u9fff])"
 )
+_URL_STOP = r"\s<>\"'\u3000，。！？、；：“”「」『』（）【】《》\u4e00-\u9fff)"
+_ASCII = re.ASCII
 _NAME_RE = re.compile(
     "(我[係是]|本人)"
     "(?!防騙|防骗|反詐|反诈|銀行|银行|警察|公安|官方|協調|协调|客服|職員|职员|新聞|新闻|政府|入境|海關|海关|順豐|顺丰|whatsapp)"
     f"({_NAME_TOKEN})"
 )
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_GENERIC_PHONE = re.compile(
+    r"(?<![0-9])(?:\+?\d[\d\s-]{7,20}\d)(?![0-9])",
+    _ASCII,
+)
+_EMAIL_RE = re.compile(
+    r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
+    re.I | _ASCII,
+)
 _MASK_RULES: tuple[tuple[str, re.Pattern[str], int], ...] = (
-    ("email", re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I), False),
-    ("id", re.compile(r"\b[A-Z]{1,2}\d{6}\s*\(?[\dA]\)?\b", re.I), False),
-    ("id", re.compile(r"\b\d{17}[\dXx]\b"), False),
-    ("phone", re.compile(r"(?:\+|00)?852[\s-]*[45679]\d{3}[\s-]?\d{4}\b"), False),
-    ("phone", re.compile(r"(?<![0-9])[45679]\d{3}[\s-]?\d{4}(?![0-9])"), False),
-    ("phone", re.compile(r"(?<![0-9])(?:\+?\d[\d\s-]{7,20}\d)(?![0-9])"), False),
-    ("account", re.compile(r"(?<![0-9])(?:\d[ -]?){12,18}\d(?![0-9])"), False),
+    ("id", re.compile(r"\b[A-Z]{1,2}\d{6}\s*\(?[\dA]\)?(?![A-Za-z0-9])", re.I | _ASCII), False),
+    ("id", re.compile(r"\b\d{17}[\dXx]\b", _ASCII), False),
+    ("phone", re.compile(r"(?:\+|00)?852[\s-]*[45679]\d{3}[\s-]{0,3}\d{4}\b", _ASCII), False),
+    ("phone", re.compile(r"(?<![0-9])[45679]\d{3}[\s-]{0,3}\d{4}(?![0-9])", _ASCII), False),
+    ("phone", _GENERIC_PHONE, False),
+    ("account", re.compile(r"(?<![0-9])(?:\d[ -]?){12,18}\d(?![0-9])", _ASCII), False),
     (
         "account",
         re.compile(
             r"(?:戶口|户口|帳號|账号|帳戶|账户|卡號|卡号|a/c(?:\s*no\.?)?|account(?:\s*(?:no\.?|number))?)"
             r"\s*[:：#]?\s*([\d\s-]{6,24})",
-            re.I,
+            re.I | _ASCII,
         ),
         1,
     ),
@@ -251,20 +261,24 @@ _MASK_RULES: tuple[tuple[str, re.Pattern[str], int], ...] = (
         "account",
         re.compile(
             r"(?:\bpayme\b|轉數快|转数快|\bfps\b)"
-            r"(?:\s*(?:id|號碼|号码|戶口|户口|帳號|账号))?\s*[:：#]?\s*([A-Z0-9._+-]{4,32})",
-            re.I,
+            r"(?:\s*(?:id|號碼|号码|戶口|户口|帳號|账号))?\s*[:：#]?\s*"
+            r"((?=[A-Z0-9_+-]{0,31}\d)[A-Z0-9_+-]{4,32})",
+            re.I | _ASCII,
         ),
         1,
     ),
 )
 _OTP_NEAR = re.compile(
     r"(?:驗證碼|验证码|一次性密碼|一次性密码|密碼|密码|\bcode\b|\botp\b)[^\d]{0,16}(\d{4,8})(?![0-9])",
-    re.I,
+    re.I | _ASCII,
 )
-_OTP_BARE = re.compile(r"(?<![0-9])\d{6,8}(?![0-9])")
-_URL_RE = re.compile(r"https?://[^\s<>\"'）)】]+", re.I)
-_WWW_RE = re.compile(r"\bwww\.[^\s<>\"'）)】]+", re.I)
-_SHORT_RE = re.compile(r"\b((?:wa\.me|t\.me|bit\.ly|tinyurl\.com)/)(\S+)", re.I)
+_OTP_BARE = re.compile(r"(?<![0-9])\d{6,8}(?![0-9])", _ASCII)
+_URL_RE = re.compile(rf"https?://[^{_URL_STOP}]+", re.I)
+_WWW_RE = re.compile(rf"\bwww\.[^{_URL_STOP}]+", re.I | _ASCII)
+_SHORT_RE = re.compile(
+    rf"\b((?:wa\.me|t\.me|bit\.ly|tinyurl\.com)/)([^{_URL_STOP}]+)",
+    re.I | _ASCII,
+)
 _MASK_MESSAGE_CAP = 10
 
 
@@ -282,8 +296,59 @@ def _spans_from_regex(
             start, end = match.start(group), match.end(group)
         else:
             start, end = match.start(), match.end()
-        if end > start:
-            spans.append({"start": start, "end": end, "label": label})
+        if end <= start:
+            continue
+        if pattern is _GENERIC_PHONE and _DATE_RE.fullmatch(text[start:end]):
+            continue
+        spans.append({"start": start, "end": end, "label": label})
+    return spans
+
+
+def _utf16_units(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2
+
+
+def _to_utf16_spans(text: str, spans: list[dict]) -> list[dict]:
+    """Regex indexes are code points. applyXxx slices UTF-16 code units."""
+    if not spans:
+        return []
+    prefixes = [0]
+    total = 0
+    for ch in text:
+        total += _utf16_units(ch)
+        prefixes.append(total)
+    converted = []
+    limit = len(prefixes) - 1
+    for span in spans:
+        start = span.get("start")
+        end = span.get("end")
+        if not isinstance(start, int) or not isinstance(end, int):
+            continue
+        if start < 0 or end > limit or end <= start:
+            continue
+        item = dict(span)
+        item["start"] = prefixes[start]
+        item["end"] = prefixes[end]
+        converted.append(item)
+    return converted
+
+
+def _email_spans(text: str) -> list[dict]:
+    spans = []
+    for match in _EMAIL_RE.finditer(text):
+        at = match.start() + match.group(0).find("@")
+        scheme_at = text.rfind("://", 0, match.start())
+        if scheme_at != -1:
+            auth_start = scheme_at + 3
+            end_auth = len(text)
+            for sep in ("/", "?", "#"):
+                found = text.find(sep, auth_start)
+                if found != -1 and found < end_auth:
+                    end_auth = found
+            if match.start() >= auth_start and auth_start < at < end_auth:
+                spans.append({"start": auth_start, "end": at, "label": "email"})
+                continue
+        spans.append({"start": match.start(), "end": match.end(), "label": "email"})
     return spans
 
 
@@ -374,10 +439,11 @@ def find_mask_spans(text: str) -> list[dict]:
     spans: list[dict] = []
     for label, pattern, group in _MASK_RULES:
         spans.extend(_spans_from_regex(body, pattern, label, group))
+    spans.extend(_email_spans(body))
     spans.extend(_otp_spans(body))
     spans.extend(_url_spans(body))
     spans.extend(_name_spans(body))
-    return merge_mask_spans(spans)
+    return merge_mask_spans(_to_utf16_spans(body, spans))
 
 
 def resolve_mask_checkpoint() -> Path | None:
@@ -479,7 +545,7 @@ def model_mask_spans(text: str) -> list[dict]:
             probs = torch.sigmoid(logits)[0].detach().cpu().tolist()
     offsets = encoded["offset_mapping"][0].detach().cpu().tolist()
     flags = flags_from_offsets(text, offsets, probs, _MASK_THRESHOLD)
-    return spans_from_flags(text, flags)
+    return _to_utf16_spans(text, spans_from_flags(text, flags))
 
 
 def mask_payload(messages: list) -> dict:
@@ -496,7 +562,6 @@ def mask_payload(messages: list) -> dict:
                 spans = merge_mask_spans(spans + model_mask_spans(item))
             except Exception as exc:  # noqa: BLE001
                 print(f"[WARN] pii mask head failed open to rules: {exc}", file=sys.stderr)
-                used_model = False
         rows.append({"spans": spans})
     return {
         "ok": True,
@@ -504,6 +569,17 @@ def mask_payload(messages: list) -> dict:
         "method": "jevlike_pii_head+rules" if _MASK_HEAD is not None else "identifier_spans",
         "messages": rows,
     }
+
+
+def content_length(handler: BaseHTTPRequestHandler) -> int | None:
+    """None means the header is present and not a non-negative integer."""
+    raw = handler.headers.get("content-length")
+    if raw is None or str(raw).strip() == "":
+        return 0
+    text = str(raw).strip()
+    if not text.isdigit():
+        return None
+    return int(text)
 
 
 def authorized(handler: BaseHTTPRequestHandler) -> bool:
@@ -553,13 +629,19 @@ class Handler(BaseHTTPRequestHandler):
         if path not in ("/predict", "/v1/score", "/score", "/v1/mask"):
             self._send(404, {"error": "not found"})
             return
-        length = int(self.headers.get("content-length") or 0)
+        length = content_length(self)
+        if length is None:
+            self._send(400, {"error": "bad_content_length"})
+            return
         if length > MAX_BODY:
             self._send(413, {"error": "payload_too_large"})
             return
         raw = self.rfile.read(length) if length else b"{}"
         try:
             payload = json.loads(raw.decode("utf-8") or "{}")
+        except UnicodeDecodeError:
+            self._send(400, {"error": "invalid_encoding"})
+            return
         except json.JSONDecodeError:
             self._send(422, {"error": "invalid json"})
             return

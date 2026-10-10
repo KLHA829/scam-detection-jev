@@ -25,7 +25,7 @@ _CN_PHONE = re.compile(
 )
 _FW_PHONE = re.compile(r"(?<![0-9０-９])[４５６７９][０-９]{7}(?![0-9０-９])")
 
-_TRAIN_SURNAMES = list("陳李黃張劉周吳鄭王何梁馬羅")
+_TRAIN_SURNAMES = list("陳李黃張劉周吳鄭王何梁馬羅") + ["歐陽"]
 _TEST_SURNAMES = list("蔡楊許謝郭洪曾邱廖")
 _TRAIN_GIVEN = ("大文", "小明", "嘉怡", "志強", "美玲", "家輝")
 _TEST_GIVEN = ("子軒", "曉彤", "詠詩", "凱晴")
@@ -87,10 +87,7 @@ def _intl_phone(rng: random.Random) -> str:
 
 
 def _name(rng: random.Random, surnames: list[str], givens: tuple[str, ...]) -> str:
-    surname = rng.choice(surnames)
-    if surname == "歐":
-        surname = "歐陽"
-    return surname + rng.choice(givens)
+    return rng.choice(surnames) + rng.choice(givens)
 
 
 def _fill(rng: random.Random, frame: str, surnames: list[str], givens: tuple[str, ...]) -> str:
