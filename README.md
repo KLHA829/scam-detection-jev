@@ -141,7 +141,7 @@ On the first ready session the bot sends a poll to your own WhatsApp chat:
 - **自動封鎖同封存** — today's behaviour.
 - **逐條問我** — the same suspicion line, but nothing is archived or blocked until you choose. The original message is forwarded to you. A local note gives the score, the lure label, and whether the contact would have been blocked. A separate Cantonese explanation is requested only after `POST /v1/mask`. That call uses `LLM_REVIEW_API_URL` / `LLM_REVIEW_MODEL` and does not require `LLM_REVIEW_ENABLED`. If masking or the model fails, the poll still appears and the model section says the explanation is unavailable. The model cannot press a choice for you.
 
-Until you answer, handling stays automatic. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Send `設定` in your own chat to choose again. Saved contacts are still never blocked unless you explicitly pick **封鎖並封存**. The first choice on a review poll is the one that runs.
+Until you answer, suspicious chats are archived and nobody is blocked. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Send `設定` in your own chat to choose again. Saved contacts are still never blocked unless you explicitly pick **封鎖並封存**. The first choice on a review poll is the one that runs.
 
 ### Scoring knobs (no code change)
 
