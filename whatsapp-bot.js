@@ -3,7 +3,7 @@
 require('dotenv').config();
 
 const path = require('path');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, Poll } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
 const log = require('./lib/log');
@@ -27,6 +27,17 @@ const {
 const { blockAndRename } = require('./lib/wa-actions');
 const { createActionPacer } = require('./lib/action-pacer');
 const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-context');
+const { createOperatorState } = require('./lib/operator-mode');
+const { createReviewQueue } = require('./lib/review-queue');
+const { deliverGuidedReview } = require('./lib/deliver-review');
+const { applyReviewChoice } = require('./lib/apply-review-choice');
+const {
+  SETUP_INTRO,
+  SETUP_POLL_NAME,
+  SETUP_OPTIONS,
+  optionLabels,
+} = require('./lib/review-prompt');
+const { serializedId, routeSelfText, routeVote } = require('./lib/self-chat');
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
 
@@ -43,7 +54,144 @@ function createWhatsAppClient() {
   });
 }
 
-async function handleWaMessage(msg, { client, pacer, threadContext, recentContext, scoreClient, rubric, cache, llmReview }) {
+function selfWid(client) {
+  return serializedId(client && client.info && client.info.wid);
+}
+
+async function sendSetupPoll(client, operator, { reconfigure = false } = {}) {
+  const wid = selfWid(client);
+  if (!wid) {
+    log.warn('self chat unavailable; operator setup not sent');
+    return null;
+  }
+  await client.sendMessage(
+    wid,
+    reconfigure ? '再揀一次處理方式。未揀之前維持而家嘅模式。' : SETUP_INTRO,
+  );
+  const sent = await client.sendMessage(
+    wid,
+    new Poll(SETUP_POLL_NAME, optionLabels(SETUP_OPTIONS), {
+      allowMultipleAnswers: false,
+    }),
+  );
+  const id = serializedId(sent && sent.id);
+  if (!id) return null;
+  if (reconfigure) operator.rememberReconfigurePoll(id);
+  else operator.rememberSetupPoll(id);
+  return id;
+}
+
+async function confirmOperatorMode(client, operator, mode) {
+  const wid = selfWid(client);
+  if (!wid) return;
+  if (operator.pinned()) {
+    await client.sendMessage(wid, '模式由 OPERATOR_MODE 釘死。改環境變數先至可以轉。');
+    return;
+  }
+  operator.choose(mode);
+  await client.sendMessage(
+    wid,
+    mode === 'guided'
+      ? '已改為逐條問你。之後每條可疑訊息會轉發嚟呢度。'
+      : '已改為自動封鎖同封存。',
+  );
+}
+
+async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
+  const wid = selfWid(client);
+  const existing = queue.get(pollId);
+  if (!existing || !wid) return;
+  if (existing.resolved) {
+    await client.sendMessage(wid, '已經處理咗。');
+    return;
+  }
+  const record = queue.consume(pollId);
+  if (!record) {
+    await client.sendMessage(wid, '已經處理咗。');
+    return;
+  }
+  const result = await applyReviewChoice(record, choice, {
+    exclusive: (fn) => pacer.exclusive(fn),
+    pause: () => pacer.pause(),
+    getChat: (id) => client.getChatById(id),
+    getContact: (chat) => chat.getContact(),
+    archiveChat: async (chat) => {
+      await chat.archive();
+    },
+    blockContact: ({ chat, contact, record: row, contactName }) =>
+      blockAndRename({
+        client,
+        contact,
+        chat,
+        digits: row.digits,
+        contactName,
+        pause: () => pacer.pause(),
+      }),
+  });
+  await client.sendMessage(wid, result.text);
+}
+
+async function handleSelfMessage(msg, deps) {
+  const body = String(msg.body || '').trim();
+  if (body !== '設定' && !msg.hasQuotedMsg) return;
+  const wid = selfWid(deps.client);
+  if (!wid) return;
+  let isSelf = false;
+  try {
+    const chat = await msg.getChat();
+    const contact = await msg.getContact();
+    const chatId = serializedId(chat && chat.id);
+    isSelf = chatId === wid || Boolean(contact && contact.isMe);
+  } catch (err) {
+    log.warn('self chat check failed', { error: err.message });
+    return;
+  }
+  if (!isSelf) return;
+
+  let quotedId = null;
+  if (msg.hasQuotedMsg && typeof msg.getQuotedMessage === 'function') {
+    try {
+      const quoted = await msg.getQuotedMessage();
+      quotedId = serializedId(quoted && quoted.id);
+    } catch (err) {
+      log.warn('quoted message unavailable', { error: err.message });
+    }
+  }
+  const route = routeSelfText({
+    body,
+    quotedId,
+    operator: deps.operator,
+    queue: deps.reviewQueue,
+  });
+  if (route.kind === 'ignore') return;
+  if (route.kind === 'reconfigure') {
+    if (deps.operator.pinned()) {
+      await deps.client.sendMessage(wid, '模式由 OPERATOR_MODE 釘死。改環境變數先至可以轉。');
+      return;
+    }
+    await sendSetupPoll(deps.client, deps.operator, { reconfigure: true });
+    return;
+  }
+  if (route.kind === 'setup') {
+    await confirmOperatorMode(deps.client, deps.operator, route.mode);
+    return;
+  }
+  if (route.kind === 'already') {
+    await deps.client.sendMessage(wid, '已經處理咗。');
+    return;
+  }
+  if (route.kind === 'review') {
+    await confirmReviewChoice(
+      deps.client,
+      deps.reviewQueue,
+      deps.pacer,
+      route.choice,
+      route.pollId,
+    );
+  }
+}
+
+async function handleWaMessage(msg, { client, pacer, threadContext, recentContext, scoreClient, rubric, cache, llmReview, operator, reviewQueue }) {
   let chat;
   let contact;
   try {
@@ -57,7 +205,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
   const chatId = (chat.id && chat.id._serialized) || msg.from;
   const contactId = contact.id && contact.id._serialized;
 
-  return processIncomingMessage(
+  const result = await processIncomingMessage(
     {
       fromMe: Boolean(msg.fromMe),
       isGroup: Boolean(chat.isGroup),
@@ -83,6 +231,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
         await chat.archive();
       },
       exclusive: (fn) => pacer.exclusive(fn),
+      operatorMode: operator ? operator.mode() : 'auto',
       pauseAction: () => pacer.pause(),
       blockContact: (info) =>
         blockAndRename({
@@ -95,6 +244,38 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
         }),
     },
   );
+  if (!result || !result.deferred || !reviewQueue) return result;
+  const wid = selfWid(client);
+  if (!wid) {
+    log.error('guided review has no self chat', { chatId });
+    return result;
+  }
+  try {
+    const delivered = await deliverGuidedReview({
+      result,
+      scoreClient,
+      llmReview,
+      env: process.env,
+      rubric,
+      queue: reviewQueue,
+      forward: () => msg.forward(wid),
+      sendText: (text) => client.sendMessage(wid, text),
+      sendPoll: async (name, options) =>
+        client.sendMessage(
+          wid,
+          new Poll(name, options, { allowMultipleAnswers: false }),
+        ),
+    });
+    if (delivered && delivered.forwardError) {
+      log.warn('guided forward or poll failed', {
+        chatId,
+        error: delivered.forwardError,
+      });
+    }
+  } catch (err) {
+    log.error('guided review failed', { chatId, error: err.message });
+  }
+  return result;
 }
 
 function attachHandlers(client, deps) {
@@ -113,6 +294,10 @@ function attachHandlers(client, deps) {
 
   client.on('ready', () => {
     log.ok('WhatsApp client ready');
+    if (!deps.operator || !deps.operator.needsSetup()) return;
+    sendSetupPoll(client, deps.operator).catch((err) => {
+      log.error('operator setup failed', { error: err.message });
+    });
   });
 
   client.on('message', async (msg) => {
@@ -120,6 +305,41 @@ function attachHandlers(client, deps) {
       await handleWaMessage(msg, { client, ...deps });
     } catch (err) {
       log.error('message handler failed', { error: err.message });
+    }
+  });
+
+  client.on('message_create', async (msg) => {
+    try {
+      if (!msg.fromMe || !deps.operator) return;
+      await handleSelfMessage(msg, { client, ...deps });
+    } catch (err) {
+      log.error('self chat handler failed', { error: err.message });
+    }
+  });
+
+  client.on('vote_update', async (vote) => {
+    try {
+      if (!deps.operator || !deps.reviewQueue) return;
+      const route = routeVote(vote, {
+        operator: deps.operator,
+        queue: deps.reviewQueue,
+      });
+      if (route.kind === 'setup') {
+        await confirmOperatorMode(client, deps.operator, route.mode);
+      } else if (route.kind === 'already') {
+        const wid = selfWid(client);
+        if (wid) await client.sendMessage(wid, '已經處理咗。');
+      } else if (route.kind === 'review') {
+        await confirmReviewChoice(
+          client,
+          deps.reviewQueue,
+          deps.pacer,
+          route.choice,
+          route.pollId,
+        );
+      }
+    } catch (err) {
+      log.error('vote handler failed', { error: err.message });
     }
   });
 
@@ -141,6 +361,8 @@ async function main() {
   const recentContext = contextOn
     ? createRecentContext({ limit: contextLlmMessageLimit() })
     : null;
+  const operator = createOperatorState();
+  const reviewQueue = createReviewQueue();
   const client = createWhatsAppClient();
 
   log.info('starting WhatsApp scam-risk bot (jevlike scoring, graded block)', {
@@ -157,6 +379,8 @@ async function main() {
     llmReviewModel: llmReview.enabled ? llmReview.model : null,
     contextLlmEnabled: contextOn,
     contextLlmMessages: recentContext ? recentContext.limit : 0,
+    operatorMode: operator.mode(),
+    operatorSetup: operator.needsSetup(),
   });
 
   attachHandlers(client, {
@@ -167,6 +391,8 @@ async function main() {
     pacer,
     threadContext,
     recentContext,
+    operator,
+    reviewQueue,
   });
   await client.initialize();
 }
