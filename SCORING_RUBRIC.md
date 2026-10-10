@@ -26,7 +26,7 @@ jevlike probabilities are **not calibrated**. Thresholds are operational, not sc
 | `not_scam` | `score <= 18` (`SAFE_THRESHOLD`) | No | No. A heuristic hit archives and does not block. |
 | `unknown` | in between, **or** empty text, **or** jevlike failure | No (unless heuristic / RAG / local classifier) | No. A heuristic hit archives and does not block. |
 
-Nobody is auto-blocked. `BLOCK_ENABLED` does not turn a hardcoded phrase into a block.
+A score never blocks. `BLOCK_ENABLED` does not turn a hardcoded phrase into a block. An unsaved contact is blocked only by a context-model `block`.
 
 Empty body: skip the worker, `unknown`, `ok: true`.  
 Timeout / 5xx / 401 / 422 / invalid response: `unknown`, `ok: false`.
@@ -67,9 +67,7 @@ Tight regexes in `lib/heuristics.js` (disable with `HEURISTIC_ENABLED=false`):
 - Lookalike hostname: a hostname label **is** the brand (`whatsapp`, `hsbc`, `sf-express`, …), or the site name is that brand plus a hyphen (`whatsapp-secure`, `sf-express-hk`), or the site name is one character off a brand of at least 6 letters (`whatspp`). A longer word that merely contains the brand (`bestwhatsapp.com`, `whatsapp-tips.medium.com`) does not match, and neither does a short near-miss (`hsb.com`). Allowlisted suffixes: `whatsapp.com`, `wa.me`, `sf-express.com`, `hsbc.com`, `hsbc.com.hk`, `hangseng.com`, `payme.hsbc.com.hk`.
 - Short link (`bit.ly`, `tinyurl.com`, `t.co`, `cutt.ly`, `rb.gy`, `is.gd`, `t.cn`, `dwz.cn`, `url.cn`, `youtu.be`, with or without `https://`) **and** an OTP ask, impersonation, or an urgent transfer into an account. A short link alone, or with ordinary bill-splitting, does not match.
 
-These set `archiveReason: 'obvious_scam'` even when the jevlike score is low. They do not block. A high score or a regex hit that appears only after joining earlier messages can archive; it does not block. If you later pick 封鎖並封存, the phrase label is written into the contact name (`封鎖·索取驗證碼`, `封鎖·轉數快即轉`, …). A score never blocks.
-
-Warning-only copy (`防騙` / `小心` / `新聞` telling you **not** to send OTP or money) is suppressed and does **not** archive. On the current message, `小心` or `防騙` also beats a hard regex. Fake anti-scam bait that also asks for a password, OTP forward, or a transfer still archives and does not block.
+The live decision does not use these phrases. A low jevlike score stays `not_scam`. A score never blocks. With `CONTEXT_LLM_ENABLED`, `block` from the context model blocks an unsaved contact.
 
 ## Tuning
 

@@ -229,11 +229,11 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('archives on obvious heuristic even when score is low', () => {
+  it('does not archive a hardcoded phrase when the score is low', () => {
     const low = scoreResult({ score: 4, label: 'not_scam' });
     assert.deepEqual(
       decideIncomingAction(low, '85261234567', true, { hit: true }),
-      { action: 'archive', archiveReason: 'obvious_scam' },
+      { action: 'ignore', archiveReason: null },
     );
   });
 
@@ -315,13 +315,13 @@ describe('decideIncomingAction matrix', () => {
 });
 
 describe('resolveIncomingMessageLabel', () => {
-  it('promotes heuristic to scam without changing jevlike fail-closed unknown otherwise', () => {
+  it('keeps a low score as not_scam even when the words look like a lure', () => {
     const promoted = resolveIncomingMessageLabel(
       scoreResult({ label: 'not_scam', score: 2 }),
       'WhatsApp 官方通知：否則封號',
     );
-    assert.equal(promoted.label, 'scam');
-    assert.equal(promoted.archiveReason, 'obvious_scam');
+    assert.equal(promoted.label, 'not_scam');
+    assert.equal(promoted.archiveReason, null);
 
     const unknown = resolveIncomingMessageLabel(
       scoreResult({ label: 'unknown', score: 0, ok: false }),
