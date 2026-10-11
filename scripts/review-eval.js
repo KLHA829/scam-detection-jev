@@ -175,6 +175,10 @@ async function main() {
     }
   }
 
+  if (stats.rows === 0) {
+    throw new Error(`split ${SPLIT} is empty`);
+  }
+
   const prec = stats.tp + stats.fp ? stats.tp / (stats.tp + stats.fp) : null;
   const rec = stats.tp + stats.fn ? stats.tp / (stats.tp + stats.fn) : null;
   const out = {
@@ -197,7 +201,10 @@ async function main() {
   line('LLM calls made', stats.called);
   line('LLM transport failures (=unknown)', stats.failed_transport);
   line('scams caught / missed', `${stats.tp} / ${stats.fn}  recall=${rec === null ? '-' : rec.toFixed(3)}`);
-  line('innocents wrongly flagged', `${stats.fp}/${stats.innocent}  (${((100 * stats.fp) / stats.innocent).toFixed(1)}%)`);
+  const innocentRate = stats.innocent
+    ? `${((100 * stats.fp) / stats.innocent).toFixed(1)}%`
+    : 'n/a';
+  line('innocents wrongly flagged', `${stats.fp}/${stats.innocent}  (${innocentRate})`);
   line('...of those would auto-block', stats.fp_blocked);
   line('precision of a flag', prec === null ? '-' : prec.toFixed(3));
   line('accuracy', out.accuracy.toFixed(3));

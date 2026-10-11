@@ -53,7 +53,10 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 - `python jevlike_serve.py` (or `npm run jevlike`) in terminal 1, then `npm start` in terminal 2.
 - `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — run the bot against fixed probabilities.
 
-## Current state (update with the date when it changes) — 2026-10-10
+## Current state (update with the date when it changes) — 2026-10-11
+
+- Phrase-trope warnings are not hard blocks. A news quote of 轉數快 / 封號 / 驗證碼過期 / 順豐官方連結 is ignored when it does not also ask for an OTP, money, or secrecy. Lookalike and short-link hits still block an unsaved contact, including when the text says 這不是詐騙. An older `小心` does not cancel a later message whose own score is already at the archive line.
+- A mask response that is truncated, short a row, or has a non-integer span is a failed mask. The LLM call is skipped. Empty span lists (no PII) are still success.
 
 - **Deployed head is `r1`**: `models/jevlike_hf_chinese_roberta_r1.pt`, published on release tag
   [`jevlike-hf-r1`](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1). On a 366-row real
@@ -79,7 +82,9 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   returns only that head's spans. Lure words such as `驗證碼` are cleared from the mask so the later
   model still sees them. Without the head the route returns 503 and nothing is sent.
   `find_mask_spans` remains the training-label helper and the offline stub, not a live fallback.
-- Unsaved contacts are blocked only by a current-message obvious-scam heuristic. Score ≥ 80 archives and does not block. `otp_expiry` needs an OTP ask or a link. `sf_customs_link` ignores an allowlisted official host such as `sf-express.com`. A current message with `小心` or `防騙` and no solicit is left alone even when a hard regex matches.
+  Its digit classes are ASCII `[0-9]`, the same characters JavaScript `\d` matches. Fullwidth phones
+  and Chinese-numeral phones stay on the training-only extra gold, not on that shared stub.
+- Unsaved contacts are blocked only by a current-message obvious-scam heuristic. Score ≥ 80 archives and does not block. `otp_expiry` needs an OTP ask or a link. `sf_customs_link` ignores an allowlisted official host such as `sf-express.com`. A current message with `小心` or `防騙` and no solicit is left alone even when a hard regex matches. An older `小心` does not cancel a later message whose own score is already at the archive line. Lookalike and short-link hits still block an unsaved contact, including when the text says 這不是詐騙.
 - Operator mode archives without blocking until the self-chat poll is answered (or `OPERATOR_MODE` is set).
   An obvious-scam heuristic on the current message is acted on before the scorer is called, so a slow score
   does not delay that block. `guided` forwards a suspicious DM to the operator, explains it only after

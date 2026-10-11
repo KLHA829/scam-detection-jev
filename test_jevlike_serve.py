@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Mapping helpers for jevlike_serve.py (no torch / no encoder download)."""
 
+import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,6 +28,26 @@ class ScamProbabilityTests(unittest.TestCase):
             serve.scam_probability(["Not_Scam", "SCAM"], [0.3, 0.7]),
             0.7,
         )
+
+    def test_option_index_and_unlabeled_fallback(self):
+        self.assertEqual(serve.option_index(["not_scam", "scam"], "SCAM"), 1)
+        self.assertIsNone(serve.option_index(["safe", "risk"], "scam"))
+        self.assertAlmostEqual(
+            serve.scam_probability(["safe", "risk"], [0.4, 0.6]),
+            0.6,
+        )
+
+    def test_generate_split_spans_stay_inside_the_text(self):
+        import pii_mask_data as data
+
+        rows = data.generate_split("train", 4, 3)
+        self.assertGreaterEqual(len(rows), 4)
+        labelled = [row for row in rows if not row["hard_negative"]]
+        self.assertTrue(labelled)
+        for row in rows:
+            for span in row["spans"]:
+                self.assertGreater(span["end"], span["start"])
+                self.assertLessEqual(span["end"], len(row["text"]))
 
     def test_falls_back_to_last_when_unlabeled(self):
         self.assertAlmostEqual(
@@ -195,6 +217,28 @@ class MaskSpanTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             serve.mask_payload(["x"] * 11)
 
+    def test_mask_coverage_truncated_ignores_empty_offsets(self):
+        self.assertFalse(serve.mask_coverage_truncated("", [(0, 0)]))
+        self.assertFalse(serve.mask_coverage_truncated("甲" * 4, [(0, 0), (0, 4)]))
+        self.assertTrue(serve.mask_coverage_truncated("甲" * 100 + "91234567", [(0, 1), (95, 96)]))
+        self.assertTrue(isinstance(serve.MaskTruncated("mask truncated"), Exception))
+        self.assertFalse(issubclass(serve.MaskTruncated, RuntimeError))
+
+    def test_userinfo_idn_and_chinese_glued_identifiers(self):
+        userinfo = "https://alice:s3cret!@evil.example/reset"
+        self.assertEqual(
+            _covered(userinfo, serve.find_mask_spans(userinfo)),
+            "alice:s3cret!/reset",
+        )
+        idn = "https://例子.測試/secret-token"
+        covered = _covered(idn, serve.find_mask_spans(idn))
+        self.assertIn("secret-token", covered)
+        self.assertNotIn("例子", covered)
+        glued = "電郵user@example.com請回覆"
+        self.assertIn("user@example.com", _covered(glued, serve.find_mask_spans(glued)))
+        short = "請開wa.me/abc123secret"
+        self.assertIn("abc123secret", _covered(short, serve.find_mask_spans(short)))
+
     def test_emoji_before_a_phone_uses_utf16_indexes(self):
         text = "😀91234567"
         spans = serve._to_utf16_spans(
@@ -202,6 +246,650 @@ class MaskSpanTests(unittest.TestCase):
         )
         self.assertEqual(text[1:9], "91234567")
         self.assertEqual(spans, [{"start": 2, "end": 10, "label": "phone"}])
+
+
+class LabelMetricTests(unittest.TestCase):
+    def test_char_set_skips_spaces_and_prf_is_one_on_empty(self):
+        import pii_mask_data as data
+
+        covered = data.char_set("ab cd", [{"start": 0, "end": 5}])
+        self.assertEqual(covered, {0, 1, 3, 4})
+        perfect = data.prf(set(), set())
+        self.assertEqual(perfect["f1"], 1.0)
+        self.assertEqual(perfect["precision"], 1.0)
+        self.assertEqual(perfect["recall"], 1.0)
+        scored = data.prf({0, 1}, {1, 2})
+        self.assertEqual(scored["tp"], 1)
+        self.assertEqual(scored["fp"], 1)
+        self.assertEqual(scored["fn"], 1)
+
+    def test_authorized_requires_the_bearer_when_a_key_is_set(self):
+        class Header:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self, _name, default=""):
+                return self.value
+
+        class Handler:
+            def __init__(self, value):
+                self.headers = Header(value)
+
+        with patch.object(serve, "API_KEY", ""):
+            self.assertTrue(serve.authorized(Handler("")))
+        with patch.object(serve, "API_KEY", "secret"):
+            self.assertTrue(serve.authorized(Handler("Bearer secret")))
+            self.assertFalse(serve.authorized(Handler("Bearer other")))
+
+
+class HeadStateTests(unittest.TestCase):
+    def test_strips_encoder_and_head_prefix(self):
+        from pii_mask_head import head_state_from_checkpoint
+
+        state = head_state_from_checkpoint(
+            {
+                "encoder.weight": 1,
+                "head.query.weight": 2,
+                "context_norm.weight": 3,
+                "other": 4,
+            }
+        )
+        self.assertEqual(state, {"query.weight": 2, "context_norm.weight": 3})
+
+    def test_empty_head_is_an_error(self):
+        from pii_mask_head import head_state_from_checkpoint
+
+        with self.assertRaises(ValueError):
+            head_state_from_checkpoint({"encoder.weight": 1})
+
+
+class ThresholdTests(unittest.TestCase):
+    def test_choose_threshold_keeps_a_hard_negative_clear(self):
+        from pii_mask_head import choose_threshold, predict_spans
+
+        text = "驗證碼 123456"
+        spans = predict_spans(text, [(0, 3), (4, 10)], [0.99, 0.99], 0.5)
+        covered = _covered(text, spans)
+        self.assertIn("123456", covered)
+        self.assertNotIn("驗證碼", covered)
+        cache = {
+            "rows": [
+                {
+                    "text": text,
+                    "spans": [{"start": 4, "end": 10, "label": "otp"}],
+                    "hard_negative": False,
+                },
+                {"text": "小心詐騙", "spans": [], "hard_negative": True},
+            ],
+            "offsets": [[(0, 3), (4, 10)], [(0, 4)]],
+        }
+        threshold, stats = choose_threshold(cache, [[0.2, 0.99], [0.01]])
+        self.assertEqual(stats["hard_negative_rows_flagged"], 0)
+        self.assertGreater(stats["f1"], 0)
+        self.assertGreaterEqual(threshold, 0.2)
+        self.assertLessEqual(threshold, 0.9)
+
+    def test_choose_threshold_falls_back_when_every_cut_flags_the_negative(self):
+        from pii_mask_head import choose_threshold
+
+        cache = {
+            "rows": [{"text": "普通一句", "spans": [], "hard_negative": True}],
+            "offsets": [[(0, 4)]],
+        }
+        threshold, stats = choose_threshold(cache, [[0.99]])
+        self.assertEqual(threshold, 0.9)
+        self.assertGreater(stats["hard_negative_rows_flagged"], 0)
+
+
+class UnloadedWorkerTests(unittest.TestCase):
+    def test_mask_helpers_do_nothing_until_a_head_is_loaded(self):
+        self.assertEqual(serve.model_mask_spans("電話91234567"), [])
+        self.assertIsNone(serve.maybe_load_mask_head())
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing.pt"
+            with patch.dict(os.environ, {"JEVLIKE_MASK_CKPT": str(missing)}):
+                with self.assertRaises(FileNotFoundError):
+                    serve.resolve_mask_checkpoint()
+            present = Path(tmp) / "mask.pt"
+            present.write_bytes(b"stub")
+            with patch.dict(os.environ, {"JEVLIKE_MASK_CKPT": str(present)}):
+                self.assertEqual(serve.resolve_mask_checkpoint(), present)
+
+    def test_http_routes_without_a_loaded_checkpoint(self):
+        import threading
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError
+
+        server = serve.ThreadingHTTPServer(("127.0.0.1", 0), serve.Handler)
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with urlopen(f"http://127.0.0.1:{port}/health") as res:
+                body = json.loads(res.read().decode())
+            self.assertEqual(res.status, 200)
+            self.assertFalse(body["ok"])
+            self.assertFalse(body["pii_mask"])
+
+            mask = Request(
+                f"http://127.0.0.1:{port}/v1/mask",
+                data=json.dumps({"messages": ["電話91234567"]}).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as ctx:
+                urlopen(mask)
+            self.assertEqual(ctx.exception.code, 503)
+
+            bad = Request(
+                f"http://127.0.0.1:{port}/v1/score",
+                data=b"not-json",
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as ctx:
+                urlopen(bad)
+            self.assertEqual(ctx.exception.code, 422)
+
+            missing = Request(
+                f"http://127.0.0.1:{port}/nope",
+                data=b"{}",
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as ctx:
+                urlopen(missing)
+            self.assertEqual(ctx.exception.code, 404)
+
+            healthz = urlopen(f"http://127.0.0.1:{port}/healthz")
+            self.assertEqual(healthz.status, 200)
+            healthz.close()
+
+            not_object = Request(
+                f"http://127.0.0.1:{port}/v1/score",
+                data=b"[]",
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as ctx:
+                urlopen(not_object)
+            self.assertEqual(ctx.exception.code, 422)
+
+            text_mask = Request(
+                f"http://127.0.0.1:{port}/v1/mask",
+                data=json.dumps({"text": "電話91234567"}).encode(),
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as ctx:
+                urlopen(text_mask)
+            self.assertEqual(ctx.exception.code, 503)
+
+            unloaded_score = Request(
+                f"http://127.0.0.1:{port}/v1/score",
+                data=json.dumps({"text": "你好"}).encode(),
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as ctx:
+                urlopen(unloaded_score)
+            self.assertEqual(ctx.exception.code, 500)
+
+            with patch.object(serve, "API_KEY", "secret"):
+                denied = Request(
+                    f"http://127.0.0.1:{port}/health",
+                    method="POST",
+                    data=b"{}",
+                )
+                with self.assertRaises(HTTPError) as ctx:
+                    urlopen(denied)
+                self.assertEqual(ctx.exception.code, 401)
+
+            import http.client
+
+            conn = http.client.HTTPConnection("127.0.0.1", port)
+            conn.request(
+                "POST",
+                "/v1/score",
+                body=None,
+                headers={"content-length": str(serve.MAX_BODY + 1)},
+            )
+            too_big = conn.getresponse()
+            self.assertEqual(too_big.status, 413)
+            too_big.read()
+            conn.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_maybe_load_does_nothing_without_a_checkpoint(self):
+        saved = serve._MODEL
+        serve._MODEL = object()
+        try:
+            with patch.dict(os.environ, {"JEVLIKE_MASK_CKPT": ""}, clear=False):
+                self.assertIsNone(serve.maybe_load_mask_head())
+        finally:
+            serve._MODEL = saved
+
+
+def _install_jevlike_stub():
+    import sys
+    import types
+
+    if "jevlike" in sys.modules and hasattr(sys.modules["jevlike"], "data"):
+        return
+    jevlike = types.ModuleType("jevlike")
+    model = types.ModuleType("jevlike.model")
+    data = types.ModuleType("jevlike.data")
+    train = types.ModuleType("jevlike.train")
+
+    class AttentionHead:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class ChoiceExample:
+        def __init__(self, text, labels, label_index=0):
+            self.text = text
+            self.labels = labels
+            self.label_index = label_index
+
+    def move(batch, device):
+        return batch
+
+    model.AttentionHead = AttentionHead
+    model.make_system = lambda config, device: (None, None)
+    data.ChoiceExample = ChoiceExample
+    train.move = move
+    jevlike.model = model
+    jevlike.data = data
+    jevlike.train = train
+    sys.modules["jevlike"] = jevlike
+    sys.modules["jevlike.model"] = model
+    sys.modules["jevlike.data"] = data
+    sys.modules["jevlike.train"] = train
+
+
+class TorchHelperTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("torch is not installed")
+        self.torch = torch
+        _install_jevlike_stub()
+
+    def test_pool_and_mask_logits_and_training_steps(self):
+        import importlib.util
+
+        from pii_mask_head import mask_option_logits, pool_token_hidden
+
+        torch = self.torch
+        hidden = torch.ones(2, 3, 4)
+        mask = torch.tensor([[True, True, False], [True, False, False]])
+        pooled = pool_token_hidden(hidden, mask)
+        self.assertEqual(tuple(pooled.shape), (2, 4))
+        self.assertTrue(torch.allclose(pooled[0], torch.ones(4)))
+
+        class Head:
+            rank = 4
+
+            def context_norm(self, value):
+                return value
+
+            def option_norm(self, value):
+                return value
+
+            def query(self, value):
+                return value[..., : self.rank]
+
+            def key(self, value):
+                return value[..., : self.rank]
+
+        logits = mask_option_logits(Head(), hidden, torch.ones(2, 4))
+        self.assertEqual(tuple(logits.shape), (2, 3))
+
+        spec = importlib.util.spec_from_file_location(
+            "train_pii_mask_under_test",
+            Path(__file__).resolve().parent / "scripts" / "train_pii_mask.py",
+        )
+        train = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(train)
+
+        loss = train.loss_on(
+            torch.zeros(2),
+            torch.tensor([0.0, 1.0]),
+            torch.tensor([False, False]),
+            torch.tensor([True, True]),
+            torch.tensor(1.0),
+        )
+        self.assertEqual(loss.ndim, 0)
+        empty = train.loss_on(
+            torch.ones(2),
+            torch.ones(2),
+            torch.tensor([True, True]),
+            torch.tensor([True, True]),
+            torch.tensor(1.0),
+        )
+        self.assertEqual(float(empty), 0.0)
+
+        batched = train.batched_logits(Head(), hidden, torch.ones(2, 4), mask, 1)
+        self.assertEqual(tuple(batched.shape), (2, 3))
+
+        class Tokenizer:
+            def __call__(self, texts, **kwargs):
+                count = len(texts)
+                return {
+                    "input_ids": torch.ones(count, 3, dtype=torch.long),
+                    "attention_mask": torch.ones(count, 3, dtype=torch.long),
+                    "offset_mapping": torch.tensor([[[0, 0], [0, 1], [1, 2]]] * count),
+                }
+
+        class Encoder:
+            def eval(self):
+                return self
+
+            def __call__(self, input_ids, attention_mask):
+                batch, length = input_ids.shape
+                return type(
+                    "Out",
+                    (),
+                    {"last_hidden_state": torch.ones(batch, length, 4)},
+                )()
+
+        rows = [{"text": "ab", "spans": [{"start": 1, "end": 2}]}]
+        cached = train.cache_split(rows, Tokenizer(), Encoder(), torch.device("cpu"), 8)
+        self.assertEqual(tuple(cached["hidden"].shape), (1, 3, 4))
+        self.assertEqual(float(cached["labels"][0, 2]), 1.0)
+        self.assertTrue(bool(cached["special"][0, 0]))
+        options = train.encode_options(Tokenizer(), Encoder(), torch.device("cpu"))
+        self.assertEqual(tuple(options.shape), (2, 4))
+
+        with self.assertRaises(SystemExit):
+            old = sys.argv
+            sys.argv = [
+                "train_pii_mask.py",
+                "--output",
+                str(train.R1_PATH),
+            ]
+            try:
+                train.main()
+            finally:
+                sys.argv = old
+
+    def test_score_text_and_truncated_mask_with_fakes(self):
+        torch = self.torch
+        saved = {
+            "model": serve._MODEL,
+            "collator": serve._COLLATOR,
+            "device": serve._DEVICE,
+            "options": serve._OPTIONS,
+            "encoder": serve._ENCODER_ID,
+            "ckpt": serve._CHECKPOINT_PATH,
+            "head": serve._MASK_HEAD,
+            "cfg": serve._MASK_CFG,
+            "config": serve._CONFIG,
+        }
+
+        class Collator:
+            def __call__(self, examples):
+                return {"examples": examples}
+
+            tokenizer = None
+
+        class Model:
+            def __call__(self, batch):
+                return torch.tensor([[0.1, 2.0]])
+
+        try:
+            serve._MODEL = Model()
+            serve._COLLATOR = Collator()
+            serve._DEVICE = torch.device("cpu")
+            serve._OPTIONS = ("not_scam", "scam")
+            serve._ENCODER_ID = "stub"
+            serve._CHECKPOINT_PATH = None
+            scored = serve.score_text("你好")
+            self.assertEqual(scored["label"], "scam")
+            self.assertGreater(scored["prob_scam"], 0.5)
+            import threading
+            from urllib.request import Request, urlopen
+
+            server = serve.ThreadingHTTPServer(("127.0.0.1", 0), serve.Handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                port = server.server_address[1]
+                req = Request(
+                    f"http://127.0.0.1:{port}/v1/score",
+                    data=json.dumps({"text": "你好", "options": ["not_scam", "scam"]}).encode(),
+                    method="POST",
+                )
+                with urlopen(req) as res:
+                    body = json.loads(res.read().decode())
+                self.assertEqual(res.status, 200)
+                self.assertEqual(body["label"], "scam")
+            finally:
+                server.shutdown()
+                server.server_close()
+            with self.assertRaises(ValueError):
+                serve.score_text("   ")
+            with self.assertRaises(ValueError):
+                serve.score_text("你好", ("only-one",))
+
+            class Tok:
+                def __call__(self, text, **kwargs):
+                    length = len(text)
+                    return {
+                        "input_ids": torch.ones(1, 2, dtype=torch.long),
+                        "attention_mask": torch.ones(1, 2, dtype=torch.long),
+                        "offset_mapping": torch.tensor([[[0, 0], [0, length]]]),
+                    }
+
+            class Enc:
+                def __call__(self, input_ids, attention_mask):
+                    batch, length = input_ids.shape[0], input_ids.shape[1]
+                    return type(
+                        "Out",
+                        (),
+                        {"last_hidden_state": torch.ones(batch, length, 4)},
+                    )()
+
+                encoder = property(lambda self: self)
+
+            class Head:
+                rank = 4
+
+                def context_norm(self, value):
+                    return value
+
+                def option_norm(self, value):
+                    return value
+
+                def query(self, value):
+                    return value[..., : self.rank]
+
+                def key(self, value):
+                    return value[..., : self.rank]
+
+            serve._MASK_HEAD = Head()
+            serve._MODEL = Enc()
+            serve._COLLATOR = type("C", (), {"tokenizer": Tok()})()
+            serve._MASK_CFG = {"context_tokens": 8, "mask_threshold": 0.5}
+            spans = serve.model_mask_spans("ab")
+            self.assertIsInstance(spans, list)
+
+            class ShortTok(Tok):
+                def __call__(self, text, **kwargs):
+                    return {
+                        "input_ids": torch.ones(1, 2, dtype=torch.long),
+                        "attention_mask": torch.ones(1, 2, dtype=torch.long),
+                        "offset_mapping": torch.tensor([[[0, 0], [0, 1]]]),
+                    }
+
+            serve._COLLATOR = type("C", (), {"tokenizer": ShortTok()})()
+            with self.assertRaises(serve.MaskTruncated):
+                serve.model_mask_spans("abcd")
+        finally:
+            serve._MODEL = saved["model"]
+            serve._COLLATOR = saved["collator"]
+            serve._DEVICE = saved["device"]
+            serve._OPTIONS = saved["options"]
+            serve._ENCODER_ID = saved["encoder"]
+            serve._CHECKPOINT_PATH = saved["ckpt"]
+            serve._MASK_HEAD = saved["head"]
+            serve._MASK_CFG = saved["cfg"]
+            serve._CONFIG = saved["config"]
+
+    def test_load_runtime_rejects_a_checkpoint_that_is_not_a_head(self):
+        torch = self.torch
+        saved = {
+            "options": serve._OPTIONS,
+            "ckpt": serve._CHECKPOINT_PATH,
+            "config": serve._CONFIG,
+            "encoder": serve._ENCODER_ID,
+            "device": serve._DEVICE,
+            "model": serve._MODEL,
+            "collator": serve._COLLATOR,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "not-a-head.pt"
+            torch.save({"nope": 1}, path)
+            with patch.dict(os.environ, {"JEVLIKE_CKPT": str(path)}):
+                with self.assertRaises(ValueError):
+                    serve.load_runtime()
+        serve._OPTIONS = saved["options"]
+        serve._CHECKPOINT_PATH = saved["ckpt"]
+        serve._CONFIG = saved["config"]
+        serve._ENCODER_ID = saved["encoder"]
+        serve._DEVICE = saved["device"]
+        serve._MODEL = saved["model"]
+        serve._COLLATOR = saved["collator"]
+        serve._MASK_HEAD = None
+        serve._MASK_CFG = None
+        serve._MASK_PATH = None
+
+
+class SyntheticLabelTests(unittest.TestCase):
+    def test_fullwidth_digits_stay_off_the_shared_stub_and_on_the_gold(self):
+        import pii_mask_data as data
+
+        text = "全形４５６７８９０１"
+        self.assertEqual(serve.find_mask_spans(text), [])
+        gold = data.gold_spans(text)
+        self.assertEqual(gold, [{"start": 2, "end": 10, "label": "phone"}])
+        spoken = "電話一二三四五六七八"
+        self.assertEqual(serve.find_mask_spans(spoken), [])
+        self.assertEqual(data.extra_gold_spans(spoken)[0]["label"], "phone")
+
+    def test_generate_split_labels_positives_and_keeps_hard_negatives_clear(self):
+        import pii_mask_data as data
+
+        train = data.generate_split("train", 12, 3)
+        val = data.generate_split("val", 12, 3)
+        self.assertEqual(len(train), 17)
+        self.assertEqual(len(val), 17)
+        for row in train + val:
+            if row["hard_negative"]:
+                self.assertEqual(row["spans"], [])
+            else:
+                self.assertTrue(row["spans"])
+
+
+class MaskHeadLoadTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("torch is not installed")
+        self.torch = torch
+        _install_jevlike_stub()
+
+    def test_rejects_the_wrong_task_and_loads_a_pii_head(self):
+        torch = self.torch
+        saved = {
+            "model": serve._MODEL,
+            "device": serve._DEVICE,
+            "head": serve._MASK_HEAD,
+            "cfg": serve._MASK_CFG,
+            "path": serve._MASK_PATH,
+            "threshold": serve._MASK_THRESHOLD,
+        }
+
+        class Head:
+            def __init__(self, hidden, rank):
+                self.hidden = hidden
+                self.rank = rank
+
+            def load_state_dict(self, state, strict=True):
+                if strict and "query.weight" not in state:
+                    raise RuntimeError("missing query")
+                self.state = state
+
+            def to(self, _device):
+                return self
+
+            def eval(self):
+                return self
+
+        sys.modules["jevlike.model"].AttentionHead = Head
+        serve._MODEL = type(
+            "Model",
+            (),
+            {"encoder": type("Enc", (), {"config": type("Cfg", (), {"hidden_size": 8})()})()},
+        )()
+        serve._DEVICE = torch.device("cpu")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                wrong = Path(tmp) / "wrong.pt"
+                torch.save({"config": {"task": "scam"}, "state_dict": {}}, wrong)
+                with patch.dict(os.environ, {"JEVLIKE_MASK_CKPT": str(wrong)}):
+                    with self.assertRaises(ValueError):
+                        serve.maybe_load_mask_head()
+                good = Path(tmp) / "pii.pt"
+                torch.save(
+                    {
+                        "config": {
+                            "task": "pii_mask",
+                            "rank": 4,
+                            "mask_threshold": 0.42,
+                            "context_tokens": 12,
+                        },
+                        "state_dict": {"head.query.weight": 1},
+                    },
+                    good,
+                )
+                with patch.dict(os.environ, {"JEVLIKE_MASK_CKPT": str(good)}):
+                    serve.maybe_load_mask_head()
+                self.assertEqual(serve._MASK_THRESHOLD, 0.42)
+                self.assertEqual(serve._MASK_HEAD.state, {"query.weight": 1})
+                with self.assertRaises(ValueError):
+                    serve.mask_payload(["ok", 1])
+        finally:
+            serve._MODEL = saved["model"]
+            serve._DEVICE = saved["device"]
+            serve._MASK_HEAD = saved["head"]
+            serve._MASK_CFG = saved["cfg"]
+            serve._MASK_PATH = saved["path"]
+            serve._MASK_THRESHOLD = saved["threshold"]
+
+    def test_main_stops_before_listen_when_the_checkpoint_is_not_a_head(self):
+        torch = self.torch
+        saved = {
+            "options": serve._OPTIONS,
+            "ckpt": serve._CHECKPOINT_PATH,
+            "config": serve._CONFIG,
+            "encoder": serve._ENCODER_ID,
+            "device": serve._DEVICE,
+            "model": serve._MODEL,
+            "collator": serve._COLLATOR,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "not-a-head.pt"
+            torch.save({"nope": 1}, path)
+            with patch.dict(os.environ, {"JEVLIKE_CKPT": str(path)}):
+                with self.assertRaises(ValueError):
+                    serve.main()
+        serve._OPTIONS = saved["options"]
+        serve._CHECKPOINT_PATH = saved["ckpt"]
+        serve._CONFIG = saved["config"]
+        serve._ENCODER_ID = saved["encoder"]
+        serve._DEVICE = saved["device"]
+        serve._MODEL = saved["model"]
+        serve._COLLATOR = saved["collator"]
 
 
 if __name__ == "__main__":
