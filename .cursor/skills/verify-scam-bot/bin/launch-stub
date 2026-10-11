@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Start the offline stub jevlike worker for verification. Does not start WhatsApp.
+set -euo pipefail
+
+BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
+SKILL_DIR="$(cd "$BIN_DIR/.." && pwd)"
+ROOT="$(cd "$SKILL_DIR/../../.." && pwd)"
+RUN_DIR="$SKILL_DIR/run"
+PORT="${VERIFY_PORT:-18766}"
+
+if [[ ! -f "$ROOT/package.json" || ! -f "$ROOT/stub-jevlike.js" ]]; then
+  echo "launch-stub: repo root not found from $SKILL_DIR" >&2
+  exit 1
+fi
+
+mkdir -p "$RUN_DIR"
+
+port_free() {
+  node -e '
+    const net = require("net");
+    const port = Number(process.argv[1]);
+    const server = net.createServer();
+    server.once("error", () => process.exit(1));
+    server.listen(port, "127.0.0.1", () => server.close(() => process.exit(0)));
+  ' "$1"
+}
+
+reuse_existing() {
+  local pidfile="$RUN_DIR/stub.pid"
+  [[ -f "$pidfile" ]] || return 1
+  local pid
+  pid="$(cat "$pidfile")"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  local cmd
+  cmd="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+  [[ "$cmd" == *stub-jevlike.js* ]] || return 1
+  local base
+  base="$(cat "$RUN_DIR/base-url" 2>/dev/null || true)"
+  [[ -n "$base" ]] || return 1
+  curl -fsS --max-time 2 "$base/health" >/dev/null 2>&1 || return 1
+  echo "stub already listening at $base (pid $pid)"
+  return 0
+}
+
+if reuse_existing; then
+  exit 0
+fi
+
+rm -f "$RUN_DIR/stub.pid" "$RUN_DIR/base-url" "$RUN_DIR/port"
+
+if ! port_free "$PORT"; then
+  echo "launch-stub: 127.0.0.1:$PORT is already in use. Set VERIFY_PORT to a free port." >&2
+  echo "launch-stub: refusing to kill a process this run did not start." >&2
+  exit 1
+fi
+
+LOG="$RUN_DIR/stub.log"
+: >"$LOG"
+(
+  cd "$ROOT"
+  JEVLIKE_PORT="$PORT" exec node stub-jevlike.js
+) >>"$LOG" 2>&1 &
+echo $! >"$RUN_DIR/stub.pid"
+echo "$PORT" >"$RUN_DIR/port"
+echo "http://127.0.0.1:$PORT" >"$RUN_DIR/base-url"
+
+base="http://127.0.0.1:$PORT"
+ready=0
+for _ in $(seq 1 50); do
+  if curl -fsS --max-time 1 "$base/health" >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  if ! kill -0 "$(cat "$RUN_DIR/stub.pid")" 2>/dev/null; then
+    echo "launch-stub: stub exited before /health. Log:" >&2
+    cat "$LOG" >&2
+    exit 1
+  fi
+  sleep 0.1
+done
+
+if [[ "$ready" != 1 ]]; then
+  echo "launch-stub: timed out waiting for $base/health" >&2
+  cat "$LOG" >&2
+  exit 1
+fi
+
+echo "stub listening at $base/v1/score (pid $(cat "$RUN_DIR/stub.pid"))"
+echo "ready when GET $base/health returns {\"ok\":true,\"model\":\"stub-jevlike\"}"

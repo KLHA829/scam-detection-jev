@@ -1,0 +1,166 @@
+TAP version 13
+# [SCAN] message scored {"chatId":"85269990000@c.us","score":96,"label":"scam","ok":true,"bonus":0,"breakdown":[{"id":"scam","p":0.96,"f":0.96,"weight":100,"contribution":96}],"scoreSource":"single","singleScore":96,"windowScore":null,"heuristic":null,"rag":null,"digits":"85269990000","savedContact":false}
+# [OK] archived chat (jevlike_score) {"chatId":"85269990000@c.us","score":96,"label":"scam"}
+# Subtest: block policy
+    # Subtest: archives a high score and does not block on the score alone
+    ok 1 - archives a high score and does not block on the score alone
+      ---
+      duration_ms: 0.711298
+      ...
+    1..1
+ok 1 - block policy
+  ---
+  duration_ms: 2.590194
+  type: 'suite'
+  ...
+# Subtest: processIncomingMessage block actions
+    # Subtest: archives an unsaved high score without blocking
+    ok 1 - archives an unsaved high score without blocking
+      ---
+      duration_ms: 6.935886
+      ...
+    1..1
+ok 2 - processIncomingMessage block actions
+  ---
+  duration_ms: 7.208451
+  type: 'suite'
+  ...
+# [SCAN] message scored {"chatId":"85261234567@c.us","score":96,"label":"scam","ok":true,"bonus":0,"breakdown":[{"id":"scam","p":0.96,"f":0.96,"weight":100,"contribution":96}],"scoreSource":"single","singleScore":96,"windowScore":null,"heuristic":null,"rag":null,"digits":"85261234567","savedContact":true}
+# [OK] archived chat (jevlike_score) {"chatId":"85261234567@c.us","score":96,"label":"scam"}
+# Subtest: jevlike-only scoring
+    # Subtest: createScoreClient always builds a JevlikeClient (SCORER env is ignored)
+    ok 1 - createScoreClient always builds a JevlikeClient (SCORER env is ignored)
+      ---
+      duration_ms: 0.586489
+      ...
+    1..1
+ok 3 - jevlike-only scoring
+  ---
+  duration_ms: 1.28079
+  type: 'suite'
+  ...
+# Subtest: jevlike score mapping
+    # Subtest: fails closed on jevlike timeout without archiving
+    ok 1 - fails closed on jevlike timeout without archiving
+      ---
+      duration_ms: 1.089139
+      ...
+    # Subtest: fails closed on jevlike HTTP 5xx without archiving
+    ok 2 - fails closed on jevlike HTTP 5xx without archiving
+      ---
+      duration_ms: 17.424547
+      ...
+    1..2
+ok 4 - jevlike score mapping
+  ---
+  duration_ms: 18.770786
+  type: 'suite'
+  ...
+# Subtest: decideIncomingAction failed score
+    # Subtest: does not archive a failed score that still carries a high number
+    ok 1 - does not archive a failed score that still carries a high number
+      ---
+      duration_ms: 0.10141
+      ...
+    1..1
+ok 5 - decideIncomingAction failed score
+  ---
+  duration_ms: 0.193857
+  type: 'suite'
+  ...
+# Subtest: processIncomingMessage jevlike
+    # Subtest: archives jevlike_score for a high stub score
+    ok 1 - archives jevlike_score for a high stub score
+      ---
+      duration_ms: 3.648485
+      ...
+    1..1
+ok 6 - processIncomingMessage jevlike
+  ---
+  duration_ms: 3.827193
+  type: 'suite'
+  ...
+# [SCAN] message scored {"chatId":"85261234567@c.us","score":96,"label":"scam","ok":true,"bonus":0,"breakdown":[{"id":"scam","p":0.96,"f":0.96,"weight":100,"contribution":96}],"scoreSource":"single","singleScore":96,"windowScore":null,"heuristic":null,"rag":null,"digits":"85261234567","savedContact":true}
+# [OK] archived chat (jevlike_score) {"chatId":"85261234567@c.us","score":96,"label":"scam"}
+# Subtest: decideIncomingAction matrix
+    # Subtest: archives on score >= T for any sender
+    ok 1 - archives on score >= T for any sender
+      ---
+      duration_ms: 1.021975
+      ...
+    # Subtest: does not archive unsaved non-local numbers from score-or-heuristic alone
+    ok 2 - does not archive unsaved non-local numbers from score-or-heuristic alone
+      ---
+      duration_ms: 0.160271
+      ...
+    # Subtest: ignores low score for local unsaved and for saved foreign
+    ok 3 - ignores low score for local unsaved and for saved foreign
+      ---
+      duration_ms: 0.099142
+      ...
+    # Subtest: ignores unknown for unsaved non-local and local unsaved
+    ok 4 - ignores unknown for unsaved non-local and local unsaved
+      ---
+      duration_ms: 0.214898
+      ...
+    1..4
+ok 7 - decideIncomingAction matrix
+  ---
+  duration_ms: 2.624995
+  type: 'suite'
+  ...
+# Subtest: scoring labels
+    # Subtest: labels using archive / safe thresholds
+    ok 1 - labels using archive / safe thresholds
+      ---
+      duration_ms: 0.190984
+      ...
+    1..1
+ok 8 - scoring labels
+  ---
+  duration_ms: 0.276905
+  type: 'suite'
+  ...
+# Subtest: scoreMessage with stub jevlike
+    # Subtest: returns stub benign as not_scam
+    ok 1 - returns stub benign as not_scam
+      ---
+      duration_ms: 0.732062
+      ...
+    # Subtest: returns stub scam as scam
+    ok 2 - returns stub scam as scam
+      ---
+      duration_ms: 0.280533
+      ...
+    # Subtest: fails closed on timeout / 5xx / invalid JSON
+    ok 3 - fails closed on timeout / 5xx / invalid JSON
+      ---
+      duration_ms: 16.036818
+      ...
+    1..3
+ok 9 - scoreMessage with stub jevlike
+  ---
+  duration_ms: 17.312188
+  type: 'suite'
+  ...
+# Subtest: processIncomingMessage
+    # Subtest: archives via callback on high stub score
+    ok 1 - archives via callback on high stub score
+      ---
+      duration_ms: 4.075928
+      ...
+    1..1
+ok 10 - processIncomingMessage
+  ---
+  duration_ms: 4.307247
+  type: 'suite'
+  ...
+1..10
+# tests 16
+# suites 10
+# pass 16
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 86.602065
