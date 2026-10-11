@@ -452,6 +452,15 @@ class UnloadedWorkerTests(unittest.TestCase):
             too_big = conn.getresponse()
             self.assertEqual(too_big.status, 413)
             too_big.read()
+            conn.request(
+                "POST",
+                "/v1/score",
+                body=b"not-a-json",
+                headers={"content-length": "-1"},
+            )
+            negative = conn.getresponse()
+            self.assertEqual(negative.status, 400)
+            negative.read()
             conn.close()
         finally:
             server.shutdown()

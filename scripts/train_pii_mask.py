@@ -151,7 +151,7 @@ def main() -> None:
     rank = 32
     encoder_name = args.encoder
     if args.init.is_file():
-        init_payload = torch.load(args.init, map_location="cpu", weights_only=False)
+        init_payload = torch.load(args.init, map_location="cpu", weights_only=True)
         rank = int((init_payload.get("config") or {}).get("rank") or 32)
         encoder_name = (init_payload.get("config") or {}).get("hf_model") or args.encoder
         print(json.dumps({"init": str(args.init), "rank": rank, "encoder": encoder_name}))

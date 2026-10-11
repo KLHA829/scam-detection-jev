@@ -54,7 +54,8 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 
 ## Current state (update with the date when it changes) — 2026-10-11
 
-- Hardcoded decisions are link rules only: lookalike hosts and a short link that also solicits. Allowlisted hosts such as `sf-express.com` are not lookalikes. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block. Those lines follow the jevlike score, and the optional context LLM when it is on. An explicit context-model `block` blocks an unsaved contact. A score alone does not.
+- Hardcoded decisions are link rules only: lookalike hosts and a short link that also solicits. A bare host with no scheme counts. Allowlisted hosts such as `sf-express.com` are not lookalikes, and neither are `github.io`, `medium.com`, or `blogspot.com`. The brand has to start the site name, so `not-hangseng.com` does not match; `hsbc.evil.com` does. `youtu.be` is not a short link. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block. Those lines follow the jevlike score, and the optional context LLM when it is on. An explicit context-model `block` blocks an unsaved contact. A score alone does not.
+- A failed archive still messages the operator. The receipt says the archive did not happen. Block, rename, mute, archive, the receipt, and the guided card share one WhatsApp write queue.
 - A mask response that is truncated, short a row, or has a non-integer span is a failed mask. The LLM call is skipped. Empty span lists (no PII) are still success.
 
 - **Deployed head is `r1`**: `models/jevlike_hf_chinese_roberta_r1.pt`, published on release tag
