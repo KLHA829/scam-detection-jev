@@ -37,13 +37,13 @@ Timeout / 5xx / 401 / 422 / invalid response: `unknown`, `ok: false`.
 Expected: low `P(scam)` → `not_scam` → ignore (even if unsaved).
 
 **Benign (ZH):** 「今晚食飯嗎？我轉帳比你 AA。」  
-Money talk without OTP/impersonation should stay below 42. Heuristic does **not** match (no FPS+立即+轉帳 triple).
+Money talk without OTP/impersonation should stay below 42. Heuristic does **not** match (no payee ask).
 
 **Scam (ZH OTP + bank):** 「我係銀行職員。你個戶口異常，請即回覆驗證碼並用轉數快轉帳核實。」  
 High `P(scam)` → `scam` → archive `jevlike_score`. Heuristic OTP harvest also archives if the score is low.
 
 **Scam (EN):** “WhatsApp Official: your account will be banned. Click http://bit.ly/x and send the OTP.”  
-Heuristic `wa_official_ban` archives even if jevlike is low.
+The ban sentence alone is not a hard hit. The short link plus the OTP ask archives even if jevlike is low.
 
 **Scam (parcel):** 「順豐包裹清關費未付 http://bit.ly/fee」  
 Heuristic `sf_customs_link` archives.
@@ -57,19 +57,19 @@ Should stay `not_scam` / `unknown`. Saved or unsaved → ignore.
 
 Tight regexes in `lib/heuristics.js` (disable with `HEURISTIC_ENABLED=false`):
 
-- 驗證碼 / OTP / verification code **and** 過期 / expire, **and** either an ask to hand the code over or a link
+- 驗證碼 / OTP / verification code **and** 過期 / expire, **and** an ask to hand the code over. A link by itself is not this hit
 - OTP / 密碼 **and** 提供 / 轉發 / 發給我 (harvest)
 - 我係防騙／銀行／警察… **and** OTP harvest or money ask
-- 轉數快 / FPS **and** 立即/立刻 **and** 轉帳/transfer
-- WhatsApp + 官方/official + 封號/ban
-- USDT/bitcoin + wallet/錢包 + send/轉
+- 轉數快 / FPS **and** 立即/立刻 **and** 轉帳/transfer **and** a payee (`到此帳戶`, `俾我`, `我的戶口`). The phrase without a payee does not match
 - 順豐 / SF Express + 清關/customs + a link whose host is not an allowlisted official site (`sf-express.com` does not match)
 - Lookalike hostname: a hostname label **is** the brand (`whatsapp`, `hsbc`, `sf-express`, …), or the site name is that brand plus a hyphen (`whatsapp-secure`, `sf-express-hk`), or the site name is one character off a brand of at least 6 letters (`whatspp`). A longer word that merely contains the brand (`bestwhatsapp.com`, `whatsapp-tips.medium.com`) does not match, and neither does a short near-miss (`hsb.com`). Allowlisted suffixes: `whatsapp.com`, `wa.me`, `sf-express.com`, `hsbc.com`, `hsbc.com.hk`, `hangseng.com`, `payme.hsbc.com.hk`.
 - Short link (`bit.ly`, `tinyurl.com`, `t.co`, `cutt.ly`, `rb.gy`, `is.gd`, `t.cn`, `dwz.cn`, `url.cn`, `youtu.be`, with or without `https://`) **and** an OTP ask, impersonation, or an urgent transfer into an account. A short link alone, or with ordinary bill-splitting, does not match.
 
+WhatsApp + 官方/official + 封號/ban, and USDT/bitcoin + wallet + send, are not hard hits. The scorer decides those lines, including when a news article quotes them.
+
 These set `archiveReason: 'obvious_scam'` even when the jevlike score is low. On an unsaved contact they also block, but only when **this message** matches. A high score or a regex hit that appears only after joining earlier messages can archive; it does not block. The heuristic label is written into the contact name (`封鎖·索取驗證碼`, `封鎖·轉數快即轉`, …). A score never blocks.
 
-Warning-only copy (`防騙` / `小心` / `新聞` telling you **not** to send OTP or money) is suppressed and does **not** archive. On the current message, `小心` or `防騙` also beats a hard regex. Fake anti-scam bait that also asks for a password, OTP forward, or a transfer still archives and can still block.
+A message that is itself an OTP delivery (`您的驗證碼是 …`, `don't share this code`) is not archived when it does not also solicit. `防騙` / `小心` / `新聞` do not suppress a score and do not clear a hard hit. Fake anti-scam bait that also asks for a password, OTP forward, or a transfer still archives and can still block.
 
 ## Tuning
 

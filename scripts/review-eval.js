@@ -21,7 +21,7 @@ const path = require('path');
 
 const { decideIncomingAction } = require('../lib/decide-incoming');
 const { matchObviousScam } = require('../lib/heuristics');
-const { shouldSuppress, warningBeatsHeuristic } = require('../lib/scam-intent');
+const { shouldSuppress } = require('../lib/scam-intent');
 const { applyBlockPolicy } = require('../lib/block-policy');
 const { maskMessagesForLlm } = require('../lib/context-llm');
 const { createStubJevlikeClient } = require('../stub-jevlike');
@@ -115,7 +115,7 @@ async function main() {
     };
     const heuristic = matchObviousScam(text, env);
     let decision = decideIncomingAction(scoreResult, '+85200000000', false, heuristic, null, null);
-    if (warningBeatsHeuristic(text) || (decision.action === 'archive' && !heuristic.hit && shouldSuppress(text))) {
+    if (decision.action === 'archive' && !heuristic.hit && shouldSuppress(text)) {
       decision = { action: 'ignore', archiveReason: null, suppressed: true };
     }
 
