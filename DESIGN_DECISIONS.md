@@ -6,11 +6,11 @@ This repository started empty (`README` title only). Product invariants (graded 
 
 | Decision | Why |
 |----------|-----|
-| **Graded block** — `contact.block()` only for unsaved contacts, and only on an obvious-scam heuristic in the current message | A score, including one at `BLOCK_THRESHOLD` (80), only archives. A current-message warning (`小心` / `防騙`) with no OTP ask, money ask, or impersonation plus secrecy beats the heuristic. Saved contacts are never auto-blocked. The reason is saved as the WhatsApp contact name and in `blocks.jsonl`. |
+| **Graded block** — `contact.block()` only for unsaved contacts, and only on an obvious-scam heuristic in the current message | A score, including one at `BLOCK_THRESHOLD` (80), only archives. The heuristic has to be a solicit or an unsafe link, so a news quote of a phrase trope does not block. Saved contacts are never auto-blocked. The reason is saved as the WhatsApp contact name and in `blocks.jsonl`. |
 | Score **every** non-ignored live 1:1 body, including **saved contacts** | Saved ≠ safe; ATO and investment scams often arrive from hijacked contacts. |
 | **LID**: resolve `@lid` for logs / LLM context; never use LID digits as a phone | LID identifiers are not country codes. Unresolved LID still scores. |
-| Tight **regex heuristic** | Failover when the scorer is down or under-confident on copy-paste tropes. Includes OTP harvest (`請提供密碼` / 發給我) so fake anti-scam bait still archives. On an unsaved contact the same hit blocks. |
-| **Intent-gated suppress** | Warning/self-OTP language (`防騙`, `小心`, `新聞`) suppresses archive **only if** the DM does not also solicit OTP-forward, money transfer, or impersonation+secrecy. |
+| Tight **regex heuristic** | Failover when the scorer is down or under-confident on a real solicit or an unsafe link: OTP harvest (`請提供密碼` / 發給我), impersonation plus that ask, 轉數快 with a payee, a non-allowlisted 順豐 link, a lookalike host, or a soliciting short link. Phrase-only tropes (封號, USDT wallet, 轉數快 without a payee, 驗證碼過期 without a handoff) are not hard hits. On an unsaved contact a hard hit blocks. |
+| **Self-OTP suppress** | A message that is itself an OTP delivery (`您的驗證碼是 …`, `don't share this code`) does not archive when it does not also solicit. A word list (`防騙`, `小心`, `新聞`, `警方提醒`) does not suppress a score and does not clear a hard hit. |
 | Filters: `fromMe`, groups, notification types, official WhatsApp names, `isMe` | Avoids looping on your own chats and WhatsApp system accounts. |
 | Session in **`.wwebjs_auth`** via `LocalAuth` | Same operator workflow as a typical `whatsapp-web.js` bot. |
 | Optional **Docker** for WhatsApp Web Chromium | jevlike runs as a sibling Python process so the Node image stays small. |
@@ -56,7 +56,8 @@ Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high
 | chinese-roberta multi-label `model_v2` server | Same: gone for this Pi/jevlike deploy. |
 | **Foreign-number / unsaved non-local hard archive** (`foreign_number`, `STARTUP_FOREIGN_SCAN`) | User request: remove the 外國號碼 archive rule. Clean low-score DMs from any country code are ignored. Score, heuristic, RAG, and optional LLM still apply. |
 | llama-cpp / GGUF **chat** as the primary classifier | jevlike is a frozen-encoder choice scorer, not a chat completion API. LLM review remains optional and separate. |
-| Blocking saved contacts, or blocking from a jevlike score alone | A score false positive must not lock a real person out. Unsaved contacts block only on a current-message obvious-scam heuristic that the warning gate did not clear. |
+| Blocking saved contacts, or blocking from a jevlike score alone | A score false positive must not lock a real person out. Unsaved contacts block only on a current-message obvious-scam heuristic. |
+| **Warning-word table** (`防騙` / `小心` / `新聞` / `警方提醒`) as a suppress or heuristic-beating gate | User request: those words must not decide. Phrase-only tropes are not hard hits, so a news quote does not block. The scorer (and the optional context LLM) decides whether the quote archives. |
 | CAPTCHA solving or scraping third-party sites | Rejected unless asked. |
 | Committing API keys or model weight files | `.env` gitignored; jevlike head via GitHub Release; encoder downloaded at worker start. |
 
@@ -65,14 +66,14 @@ Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high
 Live DM, after filters:
 
 1. `score >= ARCHIVE_THRESHOLD` (label `scam`) → archive `jevlike_score` (any sender). If LLM review is enabled, this **score-only** archive still goes to the second pass when the score is in the grey band, (with `LLM_REVIEW_ON_HIGH`, default true) **score/100 > GREY_MAX**, or `LLM_REVIEW_ALL=1`.
-2. Else obvious heuristic (or optional local classifier / RAG) → archive `obvious_scam` / `local_classifier` / `rag_scam_match`. Skip LLM. A phrase trope that is only a warning (no OTP-forward, money ask, or impersonation+secrecy) is not this hit, so a news quote of 轉數快 / 封號 / 驗證碼過期 does not block. Lookalike and short-link hits still are, even when the text says 這不是詐騙. An official host such as `sf-express.com` does not satisfy the 順豐清關 link rule.
-3. Else if the text is a warning/self-OTP **without** OTP-forward, money-transfer ask, or impersonation+secrecy → **suppress** (ignore). Skip LLM.
+2. Else obvious heuristic (or optional local classifier / RAG) → archive `obvious_scam` / `local_classifier` / `rag_scam_match`. Skip LLM. The heuristic is a solicit or an unsafe link, not a phrase trope, so a news quote of 轉數快 / 封號 / USDT / 驗證碼過期 does not block. Lookalike and short-link hits still are, even when the text says 這不是詐騙. An official host such as `sf-express.com` does not satisfy the 順豐清關 link rule.
+3. Else if the text is itself an OTP delivery **without** an OTP-forward, money-transfer ask, or impersonation+secrecy → **suppress** (ignore). Skip LLM. A warning-word list does not take this step.
 4. Else if LLM review is enabled and a **trigger** fires (grey band 0.40–0.85 of score/100, high score above `GREY_MAX`, scorer vs local conflict, short OTP-ish DM, money ask from unknown/new number, **or** `LLM_REVIEW_ALL=1`) → mask PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. `not_scam` **releases** a score-only archive unless `LLM_REVIEW_MERGE=archive_only`. LLM failure → keep a score archive; otherwise `unknown` and do not archive.
 5. Else ignore.
 
 After that, if the final action is still archive **and** the contact is unsaved:
 
-6. Current-message obvious-scam heuristic, and the current message is not a pure `小心` / `防騙` warning → **block**. Write `封鎖·<reason>` as the WhatsApp contact name, mute, archive, append `blocks.jsonl`. A score at or above `BLOCK_THRESHOLD` stays an archive.
+6. Current-message obvious-scam heuristic → **block**. Write `封鎖·<reason>` as the WhatsApp contact name, mute, archive, append `blocks.jsonl`. A score at or above `BLOCK_THRESHOLD` stays an archive. A phrase-only trope never reaches this step.
 7. Otherwise leave the archive as archive. Scores, RAG-only hits, and `unknown` do not block.
 
 Saved contacts never take step 6. LLM `not_scam` can **release** a score-only archive before the block policy runs, so a released chat is not blocked. Heuristic hits skip the LLM and still block when the contact is unsaved.

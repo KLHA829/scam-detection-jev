@@ -142,10 +142,10 @@ describe('loadRubric env', () => {
 });
 
 describe('heuristics', () => {
-  it('matches tight OTP / FPS / official-ban / USDT / SF tropes', () => {
+  it('matches OTP handoff, a paid FPS ask, and a non-official customs link', () => {
     assert.equal(
-      matchObviousScam('您的驗證碼即將過期，請立即回覆').hit,
-      true,
+      matchObviousScam('您的驗證碼即將過期，請立即回覆').id,
+      'otp_expiry',
     );
     assert.equal(
       matchObviousScam('請把驗證碼發給我').id,
@@ -156,17 +156,17 @@ describe('heuristics', () => {
       'fps_urgent_transfer',
     );
     assert.equal(
-      matchObviousScam('WhatsApp 官方通知：否則封號').id,
-      'wa_official_ban',
+      matchObviousScam('轉數快立即轉帳俾我').id,
+      'fps_urgent_transfer',
     );
-    assert.equal(
-      matchObviousScam('WhatsApp official will ban this account').id,
-      'wa_official_ban',
-    );
+    assert.equal(matchObviousScam('新聞：有騙徒要求用轉數快立即轉帳').hit, false);
+    assert.equal(matchObviousScam('WhatsApp 官方通知：否則封號').hit, false);
+    assert.equal(matchObviousScam('WhatsApp official will ban this account').hit, false);
     assert.equal(matchObviousScam('WhatsApp 官方 bank 通知').hit, false);
+    assert.equal(matchObviousScam('Send USDT to this wallet address now').hit, false);
     assert.equal(
-      matchObviousScam('Send USDT to this wallet address now').id,
-      'usdt_wallet_send',
+      matchObviousScam('新聞：騙徒叫人 send USDT to this wallet').hit,
+      false,
     );
     assert.equal(
       matchObviousScam('順豐包裹清關費 http://bit.ly/x').id,
@@ -177,8 +177,8 @@ describe('heuristics', () => {
       false,
     );
     assert.equal(
-      matchObviousScam('您的驗證碼即將過期 https://example.com/pay').id,
-      'otp_expiry',
+      matchObviousScam('您的驗證碼即將過期 https://example.com/pay').hit,
+      false,
     );
     assert.equal(
       matchObviousScam('順豐包裹清關 https://www.sf-express.com/hk').hit,
@@ -318,7 +318,7 @@ describe('resolveIncomingMessageLabel', () => {
   it('promotes heuristic to scam without changing jevlike fail-closed unknown otherwise', () => {
     const promoted = resolveIncomingMessageLabel(
       scoreResult({ label: 'not_scam', score: 2 }),
-      'WhatsApp 官方通知：否則封號',
+      '請把驗證碼發給我',
     );
     assert.equal(promoted.label, 'scam');
     assert.equal(promoted.archiveReason, 'obvious_scam');
