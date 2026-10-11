@@ -135,7 +135,7 @@ if (benign.model !== 'stub-jevlike' || benign.label !== 'not_scam' || !(benign.s
 
 const launchLog = path.join(runDir, 'stub.log');
 if (fs.existsSync(launchLog)) {
-  fs.copyFileSync(launchLog, path.join(outDir, 'launch.log'));
+  fs.copyFileSync(launchLog, path.join(outDir, 'launch.txt'));
 }
 
 const pattern = TEST_NAMES.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');

@@ -106,7 +106,7 @@ Score-archive contents:
 |---|---|
 | `doctor.txt` | The instance that was driven |
 | `health.json` | `GET /health` body |
-| `launch.log` | Stub startup log, including the listen line |
+| `launch.txt` | Stub startup log, including the listen line. Named `.txt` so the repo's `*.log` gitignore does not drop it. |
 | `score-scam.request.json` / `score-scam.json` | The scored body and the HTTP response |
 | `score-benign.request.json` / `score-benign.json` | The safe body and the HTTP response |
 | `node-test.txt` | TAP from the decision tests, including commands' exit status via `# fail` |
