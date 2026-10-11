@@ -142,43 +142,27 @@ describe('loadRubric env', () => {
 });
 
 describe('heuristics', () => {
-  it('matches OTP handoff, a paid FPS ask, and a non-official customs link', () => {
-    assert.equal(
-      matchObviousScam('您的驗證碼即將過期，請立即回覆').id,
-      'otp_expiry',
-    );
-    assert.equal(
-      matchObviousScam('請把驗證碼發給我').id,
-      'otp_harvest',
-    );
-    assert.equal(
-      matchObviousScam('請用轉數快立即轉帳到此帳戶').id,
-      'fps_urgent_transfer',
-    );
-    assert.equal(
-      matchObviousScam('轉數快立即轉帳俾我').id,
-      'fps_urgent_transfer',
-    );
+  it('hard-hits only link rules, not phrase tropes', () => {
+    assert.equal(matchObviousScam('您的驗證碼即將過期，請立即回覆').hit, false);
+    assert.equal(matchObviousScam('請把驗證碼發給我').hit, false);
+    assert.equal(matchObviousScam('請用轉數快立即轉帳到此帳戶').hit, false);
+    assert.equal(matchObviousScam('轉數快立即轉帳俾我').hit, false);
     assert.equal(matchObviousScam('新聞：有騙徒要求用轉數快立即轉帳').hit, false);
     assert.equal(matchObviousScam('WhatsApp 官方通知：否則封號').hit, false);
     assert.equal(matchObviousScam('WhatsApp official will ban this account').hit, false);
     assert.equal(matchObviousScam('WhatsApp 官方 bank 通知').hit, false);
     assert.equal(matchObviousScam('Send USDT to this wallet address now').hit, false);
+    assert.equal(matchObviousScam('新聞：騙徒叫人 send USDT to this wallet').hit, false);
+    assert.equal(matchObviousScam('順豐包裹清關費 http://bit.ly/x').hit, false);
+    assert.equal(matchObviousScam('您的驗證碼即將過期，請到櫃檯').hit, false);
+    assert.equal(matchObviousScam('您的驗證碼即將過期 https://example.com/pay').hit, false);
     assert.equal(
-      matchObviousScam('新聞：騙徒叫人 send USDT to this wallet').hit,
-      false,
+      matchObviousScam('登入 https://whatsapp-secure.com/login').id,
+      'lookalike_domain',
     );
     assert.equal(
-      matchObviousScam('順豐包裹清關費 http://bit.ly/x').id,
-      'sf_customs_link',
-    );
-    assert.equal(
-      matchObviousScam('您的驗證碼即將過期，請到櫃檯').hit,
-      false,
-    );
-    assert.equal(
-      matchObviousScam('您的驗證碼即將過期 https://example.com/pay').hit,
-      false,
+      matchObviousScam('請提供驗證碼 https://bit.ly/fee').id,
+      'short_link_solicit',
     );
     assert.equal(
       matchObviousScam('順豐包裹清關 https://www.sf-express.com/hk').hit,
@@ -197,8 +181,8 @@ describe('heuristics', () => {
     assert.equal(
       matchObviousScam(
         '順豐包裹清關 https://www.sf-express.com/hk 同埋 http://bit.ly/fee',
-      ).id,
-      'sf_customs_link',
+      ).hit,
+      false,
     );
     assert.equal(matchObviousScam('驗證碼過期，切勿提供給他人').hit, false);
   });
@@ -209,10 +193,9 @@ describe('heuristics', () => {
   });
 
   it('can be disabled via env', () => {
-    assert.equal(
-      matchObviousScam('您的驗證碼即將過期', { HEURISTIC_ENABLED: 'false' }).hit,
-      false,
-    );
+    const text = '登入 https://whatsapp-secure.com/login';
+    assert.equal(matchObviousScam(text).hit, true);
+    assert.equal(matchObviousScam(text, { HEURISTIC_ENABLED: 'false' }).hit, false);
   });
 });
 
@@ -279,7 +262,7 @@ describe('decideIncomingAction matrix', () => {
 
   it('primary action stays archive; unsaved high-risk is blocked afterwards', () => {
     const high = scoreResult({ score: 99, label: 'scam' });
-    const heuristic = { hit: true, id: 'otp_harvest', archiveReason: 'obvious_scam' };
+    const heuristic = { hit: true, id: 'lookalike_domain', archiveReason: 'obvious_scam' };
     const d = decideIncomingAction(high, '14155550123', false, heuristic);
     assert.equal(d.action, 'archive');
     const blocked = applyBlockPolicy(d, {
@@ -288,7 +271,7 @@ describe('decideIncomingAction matrix', () => {
       heuristic,
     });
     assert.equal(blocked.action, 'block');
-    assert.equal(blocked.contactName, '封鎖·索取驗證碼');
+    assert.equal(blocked.contactName, '封鎖·假域名');
   });
 
   it('archives optional RAG / local-classifier hits after heuristics', () => {
@@ -318,7 +301,7 @@ describe('resolveIncomingMessageLabel', () => {
   it('promotes heuristic to scam without changing jevlike fail-closed unknown otherwise', () => {
     const promoted = resolveIncomingMessageLabel(
       scoreResult({ label: 'not_scam', score: 2 }),
-      '請把驗證碼發給我',
+      '登入 https://whatsapp-secure.com/login',
     );
     assert.equal(promoted.label, 'scam');
     assert.equal(promoted.archiveReason, 'obvious_scam');
