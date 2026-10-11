@@ -6,6 +6,7 @@ After every completed archive or block, the bot messages the operator's own chat
 
 - `receipt-archive` starts with `已封存，未封鎖` and includes `左邊：` and `電話：`.
 - `receipt-block` starts with `已封鎖並封存` when the block finished, or `封鎖未完成，對話已嘗試封存` when the block did not.
+- `receipt-archive-failed` starts with `封存未完成`, or `已封鎖，封存未完成` when the block finished and the archive did not. The receipt still goes out.
 - `receipt-phone-missing` writes `電話未解析到` when the number was not resolved, and still names the chat.
 - `receipt-guide` adds `模型講解：` only when a guide was requested. A failed mask or a missing model yields `解釋暫時出唔到` and the receipt still goes out.
 - `receipt-leave` answers 留低 with `已留低，冇封存亦冇封鎖。` and does not include the chat-list name.

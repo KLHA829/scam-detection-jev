@@ -147,7 +147,7 @@ async function main() {
     const finalDecision = applyBlockPolicy(merged, {
       savedContact: false,
       scoreResult,
-      heuristic: decision.suppressed ? { hit: false } : heuristic,
+      heuristic,
       env,
     });
     const flagged = finalDecision.action !== 'ignore';

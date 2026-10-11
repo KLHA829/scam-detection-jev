@@ -42,10 +42,14 @@ const { serializedId, routeSelfText, routeVote } = require('./lib/self-chat');
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
 
+function puppeteerArgs(uid = typeof process.getuid === 'function' ? process.getuid() : null) {
+  const args = ['--disable-dev-shm-usage'];
+  if (uid === 0) args.push('--no-sandbox', '--disable-setuid-sandbox');
+  return args;
+}
+
 function createWhatsAppClient() {
-  const puppeteer = {
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-  };
+  const puppeteer = { args: puppeteerArgs() };
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
     puppeteer.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
   }
@@ -77,6 +81,7 @@ async function sendActionNotice(client, result, { scoreClient, llmReview, rubric
       rubric,
       action,
       blocked: action === 'block' ? Boolean(result.blocked) : false,
+      archived: Boolean(result.archived),
       listName,
       digits: result.formattedNumber,
       scoreResult: result.scoreResult,
@@ -163,7 +168,7 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
       }),
   });
   if (!result.ok) queue.release(pollId);
-  await client.sendMessage(wid, result.text);
+  await pacer.exclusive(() => client.sendMessage(wid, result.text));
 }
 
 async function handleSelfMessage(msg, deps) {
@@ -282,7 +287,9 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
     },
   );
   if (result && !result.deferred) {
-    await sendActionNotice(client, result, { scoreClient, llmReview, rubric, listName });
+    await pacer.exclusive(() =>
+      sendActionNotice(client, result, { scoreClient, llmReview, rubric, listName }),
+    );
   }
   if (!result || !result.deferred || !reviewQueue) return result;
   const wid = selfWid(client);
@@ -291,7 +298,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
     return result;
   }
   try {
-    const delivered = await deliverGuidedReview({
+    const delivered = await pacer.exclusive(() => deliverGuidedReview({
       result: { ...result, listName },
       scoreClient,
       llmReview,
@@ -305,7 +312,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
           wid,
           new Poll(name, options, { allowMultipleAnswers: false }),
         ),
-    });
+    }));
     if (delivered && delivered.forwardError) {
       log.warn('guided forward or poll failed', {
         chatId,
@@ -441,6 +448,7 @@ module.exports = {
   AUTH_PATH,
   createScoreClient,
   createWhatsAppClient,
+  puppeteerArgs,
   handleWaMessage,
   attachHandlers,
   main,

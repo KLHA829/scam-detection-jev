@@ -9,7 +9,7 @@ This repository started empty (`README` title only). Product invariants (graded 
 | **Graded block** — `contact.block()` only for unsaved contacts, and only on a current-message link rule or an explicit context-model `block` | A score, including one at `BLOCK_THRESHOLD` (80), only archives. Saved contacts are never auto-blocked. The reason is saved as the WhatsApp contact name and in `blocks.jsonl`. |
 | Score **every** non-ignored live 1:1 body, including **saved contacts** | Saved ≠ safe; ATO and investment scams often arrive from hijacked contacts. |
 | **LID**: resolve `@lid` for logs / LLM context; never use LID digits as a phone | LID identifiers are not country codes. Unresolved LID still scores. |
-| **Link rules only** | The hardcoded hard hit is a lookalike host, or a short link that also solicits. Allowlisted hosts (`sf-express.com`, `whatsapp.com`, `hsbc.com`, …) are not lookalikes. On an unsaved contact that hit blocks. |
+| **Link rules only** | The hardcoded hard hit is a lookalike host, or a short link that also solicits. A bare host counts. Allowlisted hosts (`sf-express.com`, `whatsapp.com`, `hsbc.com`, …) and public hosts (`github.io`, `medium.com`, `blogspot.com`) are not lookalikes. On an unsaved contact that hit blocks. |
 | Filters: `fromMe`, groups, notification types, official WhatsApp names, `isMe` | Avoids looping on your own chats and WhatsApp system accounts. |
 | Session in **`.wwebjs_auth`** via `LocalAuth` | Same operator workflow as a typical `whatsapp-web.js` bot. |
 | Optional **Docker** for WhatsApp Web Chromium | jevlike runs as a sibling Python process so the Node image stays small. |

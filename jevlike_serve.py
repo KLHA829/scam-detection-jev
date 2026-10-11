@@ -127,7 +127,7 @@ def load_runtime() -> None:
     _CHECKPOINT_PATH = resolve_checkpoint()
     print(ENCODER_DOWNLOAD_NOTE, file=sys.stderr, flush=True)
 
-    payload = torch.load(_CHECKPOINT_PATH, map_location="cpu", weights_only=False)
+    payload = torch.load(_CHECKPOINT_PATH, map_location="cpu", weights_only=True)
     if not isinstance(payload, dict) or "config" not in payload or "state_dict" not in payload:
         raise ValueError("checkpoint is not a jevlike {'config','state_dict'} payload")
     config = dict(payload["config"])
@@ -451,7 +451,7 @@ def maybe_load_mask_head() -> None:
 
     from pii_mask_head import head_state_from_checkpoint
 
-    payload = torch.load(path, map_location="cpu", weights_only=False)
+    payload = torch.load(path, map_location="cpu", weights_only=True)
     config = payload.get("config") or {}
     if config.get("task") != "pii_mask":
         raise ValueError(f"{path} is not a pii_mask checkpoint")
@@ -644,7 +644,14 @@ class Handler(BaseHTTPRequestHandler):
         if path not in ("/predict", "/v1/score", "/score", "/v1/mask"):
             self._send(404, {"error": "not found"})
             return
-        length = int(self.headers.get("content-length") or 0)
+        try:
+            length = int(self.headers.get("content-length") or 0)
+        except ValueError:
+            self._send(400, {"error": "bad_content_length"})
+            return
+        if length < 0:
+            self._send(400, {"error": "bad_content_length"})
+            return
         if length > MAX_BODY:
             self._send(413, {"error": "payload_too_large"})
             return

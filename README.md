@@ -262,7 +262,7 @@ docker run --rm -it \
   scam-detection-jev
 ```
 
-QR login still needs a terminal that can show the code (or inspect container logs).
+QR login still needs a terminal that can show the code (or inspect container logs). The image runs as the `node` user so Chromium can keep its sandbox. A `.wwebjs_auth` directory created as root has to be given to that user before it will open.
 
 ## Layout
 

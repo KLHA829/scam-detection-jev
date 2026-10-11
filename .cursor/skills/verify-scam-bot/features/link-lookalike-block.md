@@ -1,6 +1,6 @@
 # Link lookalike block
 
-An unsaved contact who sends a lookalike host, or a short link that also asks for a code, impersonates, or urgently demands money, is blocked and the chat is archived. The WhatsApp contact name becomes `封鎖·假域名` or `封鎖·短連結索取`. An allowlisted host such as `sf-express.com` does not hit. A saved contact is not auto-blocked.
+An unsaved contact who sends a lookalike host, or a short link that also asks for a code, impersonates, or urgently demands money, is blocked and the chat is archived. The WhatsApp contact name becomes `封鎖·假域名` or `封鎖·短連結索取`. An allowlisted host such as `sf-express.com` does not hit. A host on `github.io`, `medium.com`, or `blogspot.com` does not hit. A bare `whatsapp-secure.com/login` does. `youtu.be` is not a short link. A saved contact is not auto-blocked.
 
 ## Sub-features
 
