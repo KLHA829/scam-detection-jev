@@ -172,6 +172,35 @@ describe('heuristics', () => {
       matchObviousScam('順豐包裹清關費 http://bit.ly/x').id,
       'sf_customs_link',
     );
+    assert.equal(
+      matchObviousScam('您的驗證碼即將過期，請到櫃檯').hit,
+      false,
+    );
+    assert.equal(
+      matchObviousScam('您的驗證碼即將過期 https://example.com/pay').id,
+      'otp_expiry',
+    );
+    assert.equal(
+      matchObviousScam('順豐包裹清關 https://www.sf-express.com/hk').hit,
+      false,
+    );
+    assert.equal(
+      matchObviousScam('順豐包裹清關 https://hkt.sf-express.com/hk').hit,
+      false,
+    );
+    assert.equal(
+      matchObviousScam(
+        `順豐包裹清關 ${'。'.repeat(120)} https://bit.ly/later`,
+      ).hit,
+      false,
+    );
+    assert.equal(
+      matchObviousScam(
+        '順豐包裹清關 https://www.sf-express.com/hk 同埋 http://bit.ly/fee',
+      ).id,
+      'sf_customs_link',
+    );
+    assert.equal(matchObviousScam('驗證碼過期，切勿提供給他人').hit, false);
   });
 
   it('does not fire on ordinary chat', () => {
@@ -468,7 +497,7 @@ describe('processIncomingMessage', () => {
     const out = await processIncomingMessage(
       {
         type: 'chat',
-        body: '請立即把驗證碼發給我並轉帳',
+        body: '今晚食飯嗎',
         chatId: '85261234567@c.us',
         savedContact: true,
         messageId: 'm1',
