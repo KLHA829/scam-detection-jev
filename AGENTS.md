@@ -23,6 +23,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 | `lib/block-policy.js`, `lib/wa-actions.js`, `lib/action-pacer.js` | graded block, paced WhatsApp writes |
 | `lib/operator-mode.js`, `lib/review-queue.js` | self-chat choice: automatic, or ask before archive/block |
 | `lib/review-prompt.js`, `lib/review-guide.js`, `lib/deliver-review.js` | local facts, masked Cantonese explanation, poll card |
+| `lib/action-notice.js` | self-chat receipt after archive/block; name and phone stay on the machine |
 | `stub-jevlike.js` | fixed probabilities for offline tests |
 
 ## Invariants — do not break
@@ -32,7 +33,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   secrecy) beats that heuristic and is left alone. A jevlike score, including one ≥ `BLOCK_THRESHOLD` (80),
   only archives. Archive line `ARCHIVE_THRESHOLD` (42), safe line `SAFE_THRESHOLD` (18).
 - Scorer timeout / 5xx / invalid JSON → `unknown`, and `unknown` alone never archives (fail closed).
-- **Every** outbound LLM call is masked by jevlike `POST /v1/mask` first. The bot writes `XXX` over those spans and never sends the raw text or the span list. If the PII head is missing or the mask call fails, the LLM call is skipped. The offline stub in `lib/mask-spans.js` stands in for the head so `npm test` does not load the encoder. Guided-mode explanations use the same mask.
+- **Every** outbound LLM call is masked by jevlike `POST /v1/mask` first. The bot writes `XXX` over those spans and never sends the raw text or the span list. If the PII head is missing or the mask call fails, the LLM call is skipped. The offline stub in `lib/mask-spans.js` stands in for the head so `npm test` does not load the encoder. Guided-mode explanations use the same mask. Archive/block receipts attach the chat-list name and phone locally; those fields are not added to the prompt.
 - Context LLM (`CONTEXT_LLM_ENABLED`, default off) may archive from the latest inbound messages
   (`CONTEXT_LLM_MESSAGES`, default 10). The current message is always included.
   It does not block on its own: saved contacts stay unblockable, and an unsaved contact is blocked
@@ -84,7 +85,10 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   does not delay that block. `guided` forwards a suspicious DM to the operator, explains it only after
   `/v1/mask`, and waits for 封鎖並封存 / 只封存 / 留低. A failed mask skips the explanation and still shows
   the poll. The explanation model cannot take that action. An explicit 封鎖並封存 is the only way a saved
-  contact is blocked.
+  contact is blocked. After every completed archive or block (automatic, or a guided 封鎖並封存 / 只封存),
+  the bot messages the operator's own chat with the chat-list name, the phone, and the local reason. The
+  optional Cantonese paragraph on an automatic receipt uses the masked transcript only; the name and phone
+  are attached locally and are not sent to the chat API. A failed mask still sends the receipt. Choosing 留低 does not.
 
 ## Landmines
 

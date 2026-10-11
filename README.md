@@ -132,14 +132,14 @@ npm run stub
 
 Include `[stub:scam]` in a message body to force the stub’s high-risk preset.
 
-Keep `.wwebjs_auth/` across restarts. Deleting it forces a new QR login, which is a common way to get the session logged out. The only chats this bot messages are your own (setup and, if you opt in, a review of a suspicious DM). Block, rename, mute, and archive run one chat at a time, with `WA_ACTION_GAP_MS` between each call. The contact is saved only after the block succeeds.
+Keep `.wwebjs_auth/` across restarts. Deleting it forces a new QR login, which is a common way to get the session logged out. The only chats this bot messages are your own: setup, a review when you ask first, and a receipt after each archive or block. Block, rename, mute, and archive run one chat at a time, with `WA_ACTION_GAP_MS` between each call. The contact is saved only after the block succeeds.
 
 ### First-time choice
 
 On the first ready session the bot sends a poll to your own WhatsApp chat:
 
-- **自動封鎖同封存** — today's behaviour.
-- **逐條問我** — the same suspicion line, but nothing is archived or blocked until you choose. The original message is forwarded to you. A local note gives the score, the lure label, and whether the contact would have been blocked. A separate Cantonese explanation is requested only after `POST /v1/mask`. That call uses `LLM_REVIEW_API_URL` / `LLM_REVIEW_MODEL` and does not require `LLM_REVIEW_ENABLED`. If masking or the model fails, the poll still appears and the model section says the explanation is unavailable. The model cannot press a choice for you.
+- **自動封鎖同封存** — today's behaviour. After each archive or block, your own chat gets a receipt: the chat-list name, the phone, the score, and the local reason. A Cantonese note is requested only after `POST /v1/mask`, using `LLM_REVIEW_API_URL` / `LLM_REVIEW_MODEL`. It does not require `LLM_REVIEW_ENABLED`. The name and phone are attached on this machine and are not sent to the chat API. If masking or the model fails, the receipt still arrives and the model section says the explanation is unavailable.
+- **逐條問我** — the same suspicion line, but nothing is archived or blocked until you choose. The original message is forwarded to you. A local note gives the score, the lure label, and whether the contact would have been blocked. A separate Cantonese explanation is requested only after `POST /v1/mask`. That call uses `LLM_REVIEW_API_URL` / `LLM_REVIEW_MODEL` and does not require `LLM_REVIEW_ENABLED`. If masking or the model fails, the poll still appears and the model section says the explanation is unavailable. The model cannot press a choice for you. After you pick **封鎖並封存** or **只封存**, the confirmation repeats the chat-list name, the phone, and the local reason. It does not call the model again.
 
 Until you answer, suspicious chats are archived and nobody is blocked. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Send `設定` in your own chat to choose again. Saved contacts are still never blocked unless you explicitly pick **封鎖並封存**. The first choice on a review poll is the one that runs.
 

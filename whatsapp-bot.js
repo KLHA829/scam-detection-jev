@@ -31,6 +31,7 @@ const { createOperatorState } = require('./lib/operator-mode');
 const { createReviewQueue } = require('./lib/review-queue');
 const { deliverGuidedReview } = require('./lib/deliver-review');
 const { applyReviewChoice } = require('./lib/apply-review-choice');
+const { chatListName, composeActionNotice } = require('./lib/action-notice');
 const {
   SETUP_INTRO,
   SETUP_POLL_NAME,
@@ -56,6 +57,39 @@ function createWhatsAppClient() {
 
 function selfWid(client) {
   return serializedId(client && client.info && client.info.wid);
+}
+
+async function sendActionNotice(client, result, { scoreClient, llmReview, rubric, listName } = {}) {
+  const action = result && result.decision && result.decision.action;
+  if (!result || result.ignored || result.deferred) return;
+  if (action !== 'archive' && action !== 'block') return;
+  const wid = selfWid(client);
+  if (!wid) {
+    log.warn('self chat unavailable; action notice not sent', { chatId: result.chatId });
+    return;
+  }
+  try {
+    const notice = await composeActionNotice({
+      messages: result.reviewMessages,
+      scoreClient,
+      llmOptions: llmReview,
+      env: process.env,
+      rubric,
+      action,
+      blocked: action === 'block' ? Boolean(result.blocked) : false,
+      listName,
+      digits: result.formattedNumber,
+      scoreResult: result.scoreResult,
+      decision: result.decision,
+      heuristic: result.heuristic,
+    });
+    await client.sendMessage(wid, notice.text);
+  } catch (err) {
+    log.error('action notice failed', {
+      chatId: result.chatId,
+      error: err && err.message ? err.message : String(err),
+    });
+  }
 }
 
 async function sendSetupPoll(client, operator, { reconfigure = false } = {}) {
@@ -204,6 +238,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
 
   const chatId = (chat.id && chat.id._serialized) || msg.from;
   const contactId = contact.id && contact.id._serialized;
+  const listName = chatListName(contact, msg);
 
   const result = await processIncomingMessage(
     {
@@ -245,6 +280,9 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
         }),
     },
   );
+  if (result && !result.deferred) {
+    await sendActionNotice(client, result, { scoreClient, llmReview, rubric, listName });
+  }
   if (!result || !result.deferred || !reviewQueue) return result;
   const wid = selfWid(client);
   if (!wid) {
@@ -253,7 +291,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
   }
   try {
     const delivered = await deliverGuidedReview({
-      result,
+      result: { ...result, listName },
       scoreClient,
       llmReview,
       env: process.env,
