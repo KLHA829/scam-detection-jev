@@ -16,7 +16,7 @@ Machine-readable copy: [scoring-rubric.json](scoring-rubric.json). Thresholds ca
 - Prefer **fewer false archives** on normal chat (dinner plans, splitting a bill, sharing a link) over catching every weak hint.
 - Keep **urgency** and **links** weak on their own; they should not archive a saved friend.
 
-jevlike probabilities are **not calibrated**. Thresholds are operational, not scientific. Heuristics and optional LLM review exist because a single binary score can be wrong on ordinary language.
+jevlike probabilities are **not calibrated**. Thresholds are operational, not scientific. Link rules and optional LLM review exist because a single binary score can be wrong on ordinary language.
 
 ## Labels and thresholds
 
@@ -37,40 +37,33 @@ Timeout / 5xx / 401 / 422 / invalid response: `unknown`, `ok: false`.
 Expected: low `P(scam)` → `not_scam` → ignore (even if unsaved).
 
 **Benign (ZH):** 「今晚食飯嗎？我轉帳比你 AA。」  
-Money talk without OTP/impersonation should stay below 42. Heuristic does **not** match (no payee ask).
+Money talk without a lookalike or soliciting short link should stay below 42. The link rule does **not** match.
 
 **Scam (ZH OTP + bank):** 「我係銀行職員。你個戶口異常，請即回覆驗證碼並用轉數快轉帳核實。」  
-High `P(scam)` → `scam` → archive `jevlike_score`. Heuristic OTP harvest also archives if the score is low.
+High `P(scam)` → `scam` → archive `jevlike_score`. The wording alone does not archive when the score is low.
 
 **Scam (EN):** “WhatsApp Official: your account will be banned. Click http://bit.ly/x and send the OTP.”  
-The ban sentence alone is not a hard hit. The short link plus the OTP ask archives even if jevlike is low.
+The ban sentence alone is not a hard hit. The short link plus the OTP ask is `short_link_solicit` even if jevlike is low.
 
 **Scam (parcel):** 「順豐包裹清關費未付 http://bit.ly/fee」  
-Heuristic `sf_customs_link` archives.
+The 順豐 wording is not a hard hit. A lookalike host would be. This short link without an OTP, impersonation, or urgent account ask is left to the score.
 
 **Urgency only:** 「快啲覆我，立即。」  
 Should stay `not_scam` / `unknown`. Saved or unsaved → ignore.
 
 **Clean DM from any number:** unsaved `+1 415 …`, body “Hi” with low score → **ignore** (no foreign-number archive rule). High jevlike score or a heuristic still archives.
 
-## Heuristic backup (archive only)
+## Link backup (archive only)
 
-Tight regexes in `lib/heuristics.js` (disable with `HEURISTIC_ENABLED=false`):
+`lib/heuristics.js` calls `lib/link-rules.js` (disable with `HEURISTIC_ENABLED=false`). Text tropes are not hard hits.
 
-- 驗證碼 / OTP / verification code **and** 過期 / expire, **and** an ask to hand the code over. A link by itself is not this hit
-- OTP / 密碼 **and** 提供 / 轉發 / 發給我 (harvest)
-- 我係防騙／銀行／警察… **and** OTP harvest or money ask
-- 轉數快 / FPS **and** 立即/立刻 **and** 轉帳/transfer **and** a payee (`到此帳戶`, `俾我`, `我的戶口`). The phrase without a payee does not match
-- 順豐 / SF Express + 清關/customs + a link whose host is not an allowlisted official site (`sf-express.com` does not match)
 - Lookalike hostname: a hostname label **is** the brand (`whatsapp`, `hsbc`, `sf-express`, …), or the site name is that brand plus a hyphen (`whatsapp-secure`, `sf-express-hk`), or the site name is one character off a brand of at least 6 letters (`whatspp`). A longer word that merely contains the brand (`bestwhatsapp.com`, `whatsapp-tips.medium.com`) does not match, and neither does a short near-miss (`hsb.com`). Allowlisted suffixes: `whatsapp.com`, `wa.me`, `sf-express.com`, `hsbc.com`, `hsbc.com.hk`, `hangseng.com`, `payme.hsbc.com.hk`.
 - Short link (`bit.ly`, `tinyurl.com`, `t.co`, `cutt.ly`, `rb.gy`, `is.gd`, `t.cn`, `dwz.cn`, `url.cn`, `youtu.be`, with or without `https://`) **and** an OTP ask, impersonation, or an urgent transfer into an account. A short link alone, or with ordinary bill-splitting, does not match.
 
-WhatsApp + 官方/official + 封號/ban, and USDT/bitcoin + wallet + send, are not hard hits. The scorer decides those lines, including when a news article quotes them.
+驗證碼, 轉數快, 封號, USDT, and 順豐清關 wording are not hard hits, including when a news article quotes them. The scorer decides those lines. An explicit context-model `block` can still block an unsaved contact.
 
-These set `archiveReason: 'obvious_scam'` even when the jevlike score is low. On an unsaved contact they also block, but only when **this message** matches. A high score or a regex hit that appears only after joining earlier messages can archive; it does not block. The heuristic label is written into the contact name (`封鎖·索取驗證碼`, `封鎖·轉數快即轉`, …). A score never blocks.
-
-A message that is itself an OTP delivery (`您的驗證碼是 …`, `don't share this code`) is not archived when it does not also solicit. `防騙` / `小心` / `新聞` do not suppress a score and do not clear a hard hit. Fake anti-scam bait that also asks for a password, OTP forward, or a transfer still archives and can still block.
+Link hits set `archiveReason: 'obvious_scam'` even when the jevlike score is low. On an unsaved contact they also block, but only when **this message** matches. A high score can archive; it does not block. The link label is written into the contact name (`封鎖·假域名`, `封鎖·短連結索取`). A score never blocks.
 
 ## Tuning
 
-Raise `ARCHIVE_THRESHOLD` if friends’ money talk is archived. Lower it if OTP lures slip through as `unknown` (and consider tightening heuristics rather than relying on the binary score alone).
+Raise `ARCHIVE_THRESHOLD` if friends’ money talk is archived. Lower it if OTP lures slip through as `unknown`. Link rules stay the only hardcoded backup.

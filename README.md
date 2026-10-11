@@ -4,7 +4,7 @@ Local **WhatsApp Web** bot that scores each 1:1 DM, **archives** risky chats, an
 
 **Primary (and only) scorer:** [jevlike](https://github.com/vinnylarouge/jevlike) with a frozen Hugging Face encoder `hfl/chinese-roberta-wwm-ext` and choice labels `not_scam` / `scam`. The fine-tuned head (`jevlike_hf_chinese_roberta_r1.pt`, ~2.3 MB) is already on GitHub Release tag [`jevlike-hf-r1`](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1); the encoder (~400 MB) downloads from the Hub on first run. This is the path meant for a **Raspberry Pi** and other CPU machines. There is **no** LightJev / `SCORER=model_v2` fallback.
 
-**Blocking** is separate from archive. Unsaved contacts are blocked only when a tight scam regex hits on the current message. That hit is a solicit or an unsafe link, not a phrase such as 封號 or 轉數快 quoted from the news. A jevlike score, including one at or above `BLOCK_THRESHOLD` (default **80**), only archives. The reason is written onto the WhatsApp contact name (`封鎖·索取驗證碼`, …) and appended to `blocks.jsonl` (number, score, reason, time). Saved contacts are never auto-blocked. Grey scores and scorer failures do not block. It does **not** call Scameter or any phone/URL registry.
+**Blocking** is separate from archive. Unsaved contacts are blocked only by a link rule on the current message (a lookalike host, or a short link that also solicits) or by an explicit context-model `block`. A jevlike score, including one at or above `BLOCK_THRESHOLD` (default **80**), only archives. The reason is written onto the WhatsApp contact name (`封鎖·假域名`, …) and appended to `blocks.jsonl` (number, score, reason, time). Saved contacts are never auto-blocked. Grey scores and scorer failures do not block. It does **not** call Scameter or any phone/URL registry.
 
 Eval note (does not block shipping): measured on a 366-message real HK set (179 scam / 187 innocent), the current head wrongly flags 18/187 innocents (9.6%) at the archive line and 10/187 (5.3%) at the block line; the older `hn800` head flagged 43/187 (23.0%) and 38/187 (20.3%) on the same set. 187 innocents is a small sample, so read those rates as a point estimate rather than a guarantee. Pi portability is the reason this deploy is jevlike-only.
 
@@ -12,9 +12,9 @@ Eval note (does not block shipping): measured on a 366-message real HK set (179 
 
 1. Reads 1:1 message bodies (including saved contacts).
 2. **jevlike:** one forward pass over options `not_scam` / `scam`; `P(scam) × 100` is the 0–100 score.
-3. **Archives** when the score is at or above the archive threshold, or when a tight regex heuristic fires.
-4. **Blocks** an unsaved contact only when the current message's heuristic fired. Also mutes the chat. A high score stays archive-only. Saved contacts stay archive-only.
-4. Optional OpenAI-compatible LLM second pass (default **off**). Grey/high unless `LLM_REVIEW_ALL=1`.
+3. **Archives** when the score is at or above the archive threshold, or when a link rule fires.
+4. **Blocks** an unsaved contact only when the current message's link rule fired, or when the context model answers `block`. Also mutes the chat. A high score stays archive-only. Saved contacts stay archive-only.
+5. Optional OpenAI-compatible LLM second pass (default **off**). Grey/high unless `LLM_REVIEW_ALL=1`.
 
 Filters drop `fromMe`, groups, notification types, your own account, and official WhatsApp names. `@lid` chats are resolved to a real number for logs and LLM context; LID digits are never used as a phone.
 
@@ -167,7 +167,7 @@ See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rub
 - `LLM_REVIEW_API_KEY` or `OPENAI_API_KEY` — **optional**; omit for local servers with no auth; when set, sent as `Authorization: Bearer …`
 - `LLM_REVIEW_MODEL` (default `gpt-4o-mini`; use the model id your server expects)
 - `LLM_REVIEW_TIMEOUT_MS` (default `8000`)
-- `CONTEXT_LLM_ENABLED` (default `false`) — replace the single-message second pass with a review of the latest inbound messages. The local worker returns PII-head spans (`POST /v1/mask`); the bot writes `XXX`, then asks the chat model for `archive` / `block` / `no_action`. A model `block` still has to pass the graded block gate. A missing head, a failed mask, or a bad model reply does not archive.
+- `CONTEXT_LLM_ENABLED` (default `false`) — replace the single-message second pass with a review of the latest inbound messages. The local worker returns PII-head spans (`POST /v1/mask`); the bot writes `XXX`, then asks the chat model for `archive` / `block` / `no_action`. An explicit `block` blocks an unsaved contact and only archives a saved one. A missing head, a failed mask, or a bad model reply does not archive or block.
 - `JEVLIKE_MASK_CKPT` — second jevlike head trained to mark personal-data characters (`python scripts/train_pii_mask.py`). It does not replace the scam scorer. Without it, `/v1/mask` returns 503 and the bot does not send the text. See [models/README.md](models/README.md).
 - `CONTEXT_LLM_MESSAGES` (default `10`, capped at 10) — how many of the latest inbound messages are sent. The message that just arrived is always included.
 
@@ -178,14 +178,14 @@ If the scorer times out, returns 5xx, or sends invalid JSON, the label is **`unk
 Primary scoring is unchanged. After it, obvious heuristics, and optional local/RAG matchers, a **second pass** can run when `LLM_REVIEW_ENABLED=true` **or** `LLM_REVIEW_ALL=1`:
 
 1. **Non-score hard archive** (`obvious_scam`, `rag_scam_match`, `local_classifier`) → archive immediately. No LLM. Heuristic/RAG hits also skip the LLM even if the scorer already chose `jevlike_score`.
-2. **Self-OTP suppress** — a message that is itself an OTP delivery (`您的驗證碼是 …` / `don't share this code`) is **not** archived when it does not also solicit. Words such as `防騙` / `小心` / `新聞` do not suppress a score. Fake 「我係防騙協調中心…請提供密碼/轉帳」 is **not** suppressed, because it solicits OTP, money, or impersonation+secrecy. A heuristic, RAG, or local-classifier hit is **not** suppressed.
+2. **No keyword suppress.** OTP, money, and impersonation wording do not archive or block. A link-rule, RAG, or local-classifier hit is not sent to this pass.
 3. **When `LLM_REVIEW_ALL=0` (default):** grey / conflict / high → mask → LLM:
    - score in grey band `LLM_REVIEW_GREY_MIN`–`LLM_REVIEW_GREY_MAX` (defaults **0.40–0.85**, score/100)
    - high primary score when `LLM_REVIEW_ON_HIGH=true` (default): **score/100 > `LLM_REVIEW_GREY_MAX`**
    - scorer vs local/heuristic conflict (including money/OTP solicitation vs a `not_scam` label)
    - short OTP-ish message (`LLM_REVIEW_OTP_MAX_CHARS`, default 96)
    - money ask from an unsaved / new number
-4. **When `LLM_REVIEW_ALL=1`:** every remaining message after the scorer goes to the LLM (same mask + merge). Hard archives and a suppressed self-OTP delivery still skip.
+4. **When `LLM_REVIEW_ALL=1`:** every remaining message after the scorer goes to the LLM (same mask + merge). Link-rule archives still skip.
 5. Desensitisation is the jevlike PII head (`POST /v1/mask`). The bot replaces those character spans with `XXX`. The span list stays local and is **never** sent. If the head is not loaded, the LLM call is skipped.
 6. OpenAI-compatible `POST …/v1/chat/completions` (`lib/llm-review.js`) must return JSON `{ label, confidence, signals, should_archive, reason }`.
 
@@ -232,13 +232,13 @@ Aliases if `LLM_REVIEW_API_URL` / `LLM_REVIEW_API_KEY` are unset: `OPENAI_BASE_U
 
 ## 第二輪覆核（灰帶／高分／可選全部）
 
-流程維持：**jevlike／heuristic／本地分類／RAG** 先跑；**唔會為咗 LLM 拆走現有計分**。已儲存聯絡人只會 archive。未儲存聯絡人先會 block：當前句係索取或者危險連結，而唔係新聞引述嘅封號／轉數快字眼。分數達到 `BLOCK_THRESHOLD`（預設 80）只會封存，唔會封鎖。封鎖原因會寫入 WhatsApp 聯絡人名（`封鎖·…`），並追加到 `blocks.jsonl`。灰帶同分數失敗唔會 block。LLM 若把高分放行，就唔會 block。對外 LLM 之前用 jevlike 脱敏頭把個人資料換成 `XXX`；頭未載入就唔送。假冒兼索取驗證碼、轉帳，或者假冒加保密，仍然封鎖。
+流程維持：**jevlike／連結規則／本地分類／RAG** 先跑；**唔會為咗 LLM 拆走現有計分**。已儲存聯絡人只會 archive。未儲存聯絡人先會 block：當前句係假域名或者索取式短連結，或者上文模型明確答 `block`。轉數快、驗證碼呢類字眼本身唔會封鎖。分數達到 `BLOCK_THRESHOLD`（預設 80）只會封存，唔會封鎖。封鎖原因會寫入 WhatsApp 聯絡人名（`封鎖·…`），並追加到 `blocks.jsonl`。灰帶同分數失敗唔會 block。LLM 若把高分放行，就唔會 block。對外 LLM 之前用 jevlike 脱敏頭把個人資料換成 `XXX`；頭未載入就唔送。
 
 - heuristic／RAG hard archive → **立刻 archive，不呼叫 LLM**（`LLM_REVIEW_ALL=1` 都一樣）
 - 主模型高分 archive（分數/100 **高過** `LLM_REVIEW_GREY_MAX`，預設 0.85）→ **LLM 第二輪**（`LLM_REVIEW_ON_HIGH=true`，預設開）。LLM `not_scam` 可以 **放行** 分數誤報；`unknown`／失敗則 **維持 archive**
 - 灰帶（預設分數/100 介乎 0.40–0.85）、與本地規則衝突、短 OTP、未知號碼要錢 → 大模型覆核。灰帶原本未 archive 嘅，LLM 失敗仍然 fail-open
 - `LLM_REVIEW_ALL=1`（預設 `0`）→ 計分之後 **每一則** 剩餘訊息都送 LLM。合併策略預設 `bonsai`（LLM 講 scam 就 archive；LLM 講 not_scam 可以放行分數 archive）
-- 抑制只覆蓋「驗證碼就係呢則訊息」嘅自我 OTP。`防騙`／`小心`／`新聞` 唔會壓過分數。假冒「防騙」兼要驗證碼／轉帳仍會 archive
+- 冇關鍵詞抑制。假冒「防騙」或者轉數快字眼跟分數同可選上文模型，唔會因為正則而 archive 或 block
 
 第二輪係 **任何 OpenAI-compatible Chat Completions API**。詳見 `.env.example`。
 
@@ -273,7 +273,7 @@ QR login still needs a terminal that can show the code (or inspect container log
 - `lib/jevlike-client.js` — `{text}` → `{prob_scam}`
 - `lib/mask-spans.js` — offline stand-in for the PII head (`POST /v1/mask` on the worker is the live path)
 - `lib/llm-review.js` — optional OpenAI-compatible second pass
-- `lib/scam-intent.js` — solicit detectors and self-OTP suppress
+- `lib/scam-intent.js` — solicit helpers used by short-link rules, not as an archive gate
 - `jevlike_serve.py` — persistent HF-encoder jevlike worker (`POST /v1/score`)
 - `stub-jevlike.js` — fixed probabilities for tests
 - `models/README.md` — GitHub Release download for the `.pt` head

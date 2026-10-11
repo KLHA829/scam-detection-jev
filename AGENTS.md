@@ -14,7 +14,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 | `lib/scorer.js` → `lib/jevlike-client.js` | `{text}` → `{prob_scam}` over HTTP |
 | `jevlike_serve.py` | persistent HF-encoder worker, `POST /v1/score` (start before the bot) |
 | `lib/filters.js`, `lib/lid.js` | which messages count, `@lid` resolution |
-| `lib/heuristics.js`, `lib/link-rules.js`, `lib/scam-intent.js` | solicit-gated regex, lookalike hosts, self-OTP suppress |
+| `lib/heuristics.js`, `lib/link-rules.js`, `lib/scam-intent.js` | link-only hard hits; solicit helpers for short links |
 | `lib/thread-context.js` | current body plus last `CONTEXT_TURNS` inbound bodies |
 | `lib/mask-spans.js` | offline stand-in for the PII head; live `POST /v1/mask` does not use it |
 | `POST /v1/mask` | jevlike PII head spans; the bot replaces them with `XXX` before any external LLM |
@@ -28,23 +28,20 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 
 ## Invariants — do not break
 
-- Saved contacts are **never** auto-blocked. Unsaved contacts block only on an obvious-scam heuristic
-  in the current message. That hit has to be a real solicit or an unsafe link (OTP handoff, impersonation
-  plus solicit, 轉數快 with a payee, non-allowlisted 順豐 link, lookalike, or soliciting short link).
-  A phrase-only trope does not hard-hit. A jevlike score, including one ≥ `BLOCK_THRESHOLD` (80),
-  only archives. Archive line `ARCHIVE_THRESHOLD` (42), safe line `SAFE_THRESHOLD` (18).
+- Saved contacts are **never** auto-blocked. Unsaved contacts block only on a current-message link rule
+  (lookalike host or soliciting short link) or an explicit context-model `block`. A jevlike score,
+  including one ≥ `BLOCK_THRESHOLD` (80), only archives. Archive line `ARCHIVE_THRESHOLD` (42),
+  safe line `SAFE_THRESHOLD` (18). Text such as 轉數快 or 驗證碼 does not archive or block by itself.
 - Scorer timeout / 5xx / invalid JSON → `unknown`, and `unknown` alone never archives (fail closed).
 - **Every** outbound LLM call is masked by jevlike `POST /v1/mask` first. The bot writes `XXX` over those spans and never sends the raw text or the span list. If the PII head is missing or the mask call fails, the LLM call is skipped. The offline stub in `lib/mask-spans.js` stands in for the head so `npm test` does not load the encoder. Guided-mode explanations use the same mask. Archive/block receipts attach the chat-list name and phone locally; those fields are not added to the prompt.
 - Context LLM (`CONTEXT_LLM_ENABLED`, default off) may archive from the latest inbound messages
   (`CONTEXT_LLM_MESSAGES`, default 10). The current message is always included.
-  It does not block on its own: saved contacts stay unblockable, and an unsaved contact is blocked
-  only by the existing heuristic on this message. A score does not block. Mask failure or a bad model reply
-  does not archive. Heuristic hard archives still skip it.
+  An explicit `block` blocks an unsaved contact. Saved contacts stay unblockable. A score does not block.
+  Mask failure or a bad model reply does not archive or block. Link-rule archives still skip it.
 - Heuristic / RAG / local-classifier hard archives skip the decision-changing LLM.
   Guided mode may still ask the chat API for a Cantonese explanation after the same mask, and that reply cannot archive, block, or hide the card.
-- Suppress only a message that is itself an OTP delivery (`您的驗證碼是 …`, `don't share this code`)
-  and does not also solicit. Words such as `防騙`, `小心`, `新聞`, or `警方提醒` do not suppress a score
-  and do not clear a hard hit. A solicit still archives.
+- No keyword list suppresses a score. OTP, money, impersonation, and secrecy detectors do not archive
+  or block. They are used only to recognise a soliciting short link, and as optional LLM-review triggers.
 - No network lookup of phone numbers or URLs (no Scameter, no third-party registry).
 - Thresholds and toggles change through `scoring-rubric.json` / env, never by editing constants in code.
 
@@ -57,7 +54,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 
 ## Current state (update with the date when it changes) — 2026-10-11
 
-- No warning-word table decides suppress or a hard hit. Phrase-only tropes (封號, USDT wallet send, 轉數快 without a payee, 驗證碼過期 without an OTP handoff) are not hard hits, so a news quote of them does not block. The scorer decides whether that quote archives. Lookalike and short-link hits still block an unsaved contact, including when the text says 這不是詐騙. An official host such as `sf-express.com` does not trip `sf_customs_link`. A later message whose own score is already at the archive line still archives.
+- Hardcoded decisions are link rules only: lookalike hosts and a short link that also solicits. Allowlisted hosts such as `sf-express.com` are not lookalikes. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block. Those lines follow the jevlike score, and the optional context LLM when it is on. An explicit context-model `block` blocks an unsaved contact. A score alone does not.
 - A mask response that is truncated, short a row, or has a non-integer span is a failed mask. The LLM call is skipped. Empty span lists (no PII) are still success.
 
 - **Deployed head is `r1`**: `models/jevlike_hf_chinese_roberta_r1.pt`, published on release tag
@@ -75,8 +72,8 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   flag 34-41% of innocents.
 - Optional `CONTEXT_LLM_ENABLED` (default off) asks the local worker `POST /v1/mask` which characters
   to hide, replaces those spans with `XXX`, then sends the latest inbound messages (default 10,
-  current message included) to the same OpenAI-compatible chat API. A context-model `block` does not
-  override the graded block gate. The single-message second pass uses the same mask.
+  current message included) to the same OpenAI-compatible chat API. An explicit `block` blocks an
+  unsaved contact. Saved contacts stay unblockable. A score does not block. The single-message second pass uses the same mask.
 - PII masking is a **separate** jevlike `AttentionHead` (`scripts/train_pii_mask.py` →
   `models/jevlike_hf_pii_mask.pt`, gitignored). It is initialised from the r1 head and trained with
   token-level labels, not the stock whole-message scam loss. The scam checkpoint is not overwritten.
@@ -86,7 +83,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   `find_mask_spans` remains the training-label helper and the offline stub, not a live fallback.
   Its digit classes are ASCII `[0-9]`, the same characters JavaScript `\d` matches. Fullwidth phones
   and Chinese-numeral phones stay on the training-only extra gold, not on that shared stub.
-- Unsaved contacts are blocked only by a current-message obvious-scam heuristic. Score ≥ 80 archives and does not block. `otp_expiry` needs an OTP handoff ask. `fps_urgent_transfer` needs a payee (`到此帳戶`, `俾我`, `我的戶口`). `sf_customs_link` ignores an allowlisted official host such as `sf-express.com`. A news quote of 封號 / USDT / 轉數快 / 驗證碼過期 does not hard-hit by itself. Lookalike and short-link hits still block an unsaved contact, including when the text says 這不是詐騙. A later message whose own score is already at the archive line still archives.
+- Unsaved contacts are blocked only by a current-message link rule (lookalike or soliciting short link) or an explicit context-model `block`. Score ≥ 80 archives and does not block. `sf-express.com` and the other allowlisted hosts are not lookalikes. A news quote of 封號 / USDT / 轉數快 / 驗證碼 / 順豐清關 does not hard-hit. Lookalike hits still block an unsaved contact, including when the text says 這不是詐騙.
 - Operator mode archives without blocking until the self-chat poll is answered (or `OPERATOR_MODE` is set).
   An obvious-scam heuristic on the current message is acted on before the scorer is called, so a slow score
   does not delay that block. `guided` forwards a suspicious DM to the operator, explains it only after

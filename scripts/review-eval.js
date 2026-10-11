@@ -21,7 +21,6 @@ const path = require('path');
 
 const { decideIncomingAction } = require('../lib/decide-incoming');
 const { matchObviousScam } = require('../lib/heuristics');
-const { shouldSuppress } = require('../lib/scam-intent');
 const { applyBlockPolicy } = require('../lib/block-policy');
 const { maskMessagesForLlm } = require('../lib/context-llm');
 const { createStubJevlikeClient } = require('../stub-jevlike');
@@ -114,10 +113,7 @@ async function main() {
       thresholds: { archive: ARCHIVE_THRESHOLD, block: BLOCK_THRESHOLD, safe: SAFE_THRESHOLD },
     };
     const heuristic = matchObviousScam(text, env);
-    let decision = decideIncomingAction(scoreResult, '+85200000000', false, heuristic, null, null);
-    if (decision.action === 'archive' && !heuristic.hit && shouldSuppress(text)) {
-      decision = { action: 'ignore', archiveReason: null, suppressed: true };
-    }
+    const decision = decideIncomingAction(scoreResult, '+85200000000', false, heuristic, null, null);
 
     // stage 2 — the repo's own trigger + redaction + merge
     const trig = shouldTriggerLlmReview({
