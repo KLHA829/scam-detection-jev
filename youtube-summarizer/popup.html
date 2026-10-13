@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Summarize YouTube</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Summarize</h1>
+      <p>Sends the video's captions to your OpenCode Go account.</p>
+    </header>
+    <label>
+      API key
+      <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="From opencode.ai/auth" />
+    </label>
+    <label>
+      Model
+      <select id="model"></select>
+    </label>
+    <p id="video"></p>
+    <button id="go" type="button">Summarize this video</button>
+    <p id="status" role="status"></p>
+    <article id="summary"></article>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

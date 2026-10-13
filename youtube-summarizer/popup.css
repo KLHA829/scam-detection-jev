@@ -1,0 +1,71 @@
+:root {
+  color-scheme: light;
+  font: 13px/1.4 system-ui, sans-serif;
+  color: #1c1b19;
+}
+
+body {
+  width: 360px;
+  margin: 0;
+  padding: 14px;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 16px;
+}
+
+header p,
+#video,
+#status {
+  margin: 6px 0 0;
+  color: #5c5852;
+}
+
+label {
+  display: block;
+  margin-top: 12px;
+  font-weight: 600;
+}
+
+input,
+select,
+button {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  font: inherit;
+}
+
+input,
+select {
+  padding: 7px 8px;
+  border: 1px solid #c9c3b8;
+  border-radius: 6px;
+  background: #fff;
+}
+
+button {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: #b42318;
+  color: #fff;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+#summary {
+  white-space: pre-wrap;
+  margin-top: 12px;
+}
+
+#status.error {
+  color: #9f1239;
+}
