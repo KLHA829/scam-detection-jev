@@ -4,7 +4,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { extractDigits } = require('./lib/foreign-number');
-const { isLidId, lidUserPart, phoneFromLidMapping, resolveRealNumber } = require('./lib/lid');
+const { isLidId, lidUserPart, phoneLookupId, phoneFromLidMapping, resolveRealNumber } = require('./lib/lid');
 const { shouldIgnoreMessage, isOfficialWhatsAppId } = require('./lib/filters');
 const { matchObviousScam } = require('./lib/heuristics');
 const { decideIncomingAction, resolveIncomingMessageLabel } = require('./lib/decide-incoming');
@@ -91,6 +91,26 @@ describe('LID handling', () => {
     assert.equal(resolved.unresolvedLid, false);
     assert.equal(resolved.digits, '85261234567');
     assert.notEqual(resolved.digits, '27028229202012');
+  });
+
+  it('keeps a known phone jid when the other id is a LID', async () => {
+    assert.equal(phoneLookupId('27028229202012@lid', '85260001111@c.us'), '85260001111@c.us');
+    assert.equal(phoneLookupId('85260001111@c.us', '27028229202012@lid'), '85260001111@c.us');
+    assert.equal(phoneLookupId('27028229202012@lid', '888@lid'), '27028229202012@lid');
+    const resolved = await resolveRealNumber(
+      {
+        async getContactLidAndPhone() {
+          throw new Error('phone jid should not need a lookup');
+        },
+      },
+      '85260001111@c.us',
+      {
+        number: '27028229202012',
+        id: { user: '27028229202012', server: 'lid', _serialized: '27028229202012@lid' },
+      },
+    );
+    assert.equal(resolved.digits, '85260001111');
+    assert.equal(resolved.unresolvedLid, false);
   });
 });
 
