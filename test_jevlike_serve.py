@@ -143,6 +143,20 @@ class ResolveCheckpointTests(unittest.TestCase):
                 self.assertEqual(serve.resolve_checkpoint(), r1)
 
 
+class EnvDefaultTests(unittest.TestCase):
+    def test_blank_bind_settings_stay_on_loopback(self):
+        with patch.dict(
+            os.environ,
+            {"JEVLIKE_PORT": "", "JEVLIKE_HOST": "  ", "JEVLIKE_MAX_BODY": ""},
+        ):
+            self.assertEqual(serve.env_int("JEVLIKE_PORT", 8766), 8766)
+            self.assertEqual(serve.env_str("JEVLIKE_HOST", "127.0.0.1"), "127.0.0.1")
+            self.assertEqual(serve.env_int("JEVLIKE_MAX_BODY", 65536), 65536)
+        with patch.dict(os.environ, {"JEVLIKE_PORT": "9001"}):
+            self.assertEqual(serve.env_int("JEVLIKE_PORT", 8766), 9001)
+        self.assertEqual(serve.env_int("JEVLIKE_PORT_UNSET_FOR_TEST", 8766), 8766)
+
+
 class PiiMaskLabelTests(unittest.TestCase):
     def test_called_name_chinese_numeral_and_fullwidth_are_gold(self):
         import pii_mask_data as data

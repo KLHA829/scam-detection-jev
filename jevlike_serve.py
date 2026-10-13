@@ -32,6 +32,23 @@ DEFAULT_ENCODER = "hfl/chinese-roberta-wwm-ext"
 DEFAULT_OPTIONS = ("not_scam", "scam")
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8766
+
+
+def env_str(name: str, default: str) -> str:
+    """Blank systemd Environment= lines are empty strings, not unset."""
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    return str(raw).strip()
+
+
+def env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    return int(str(raw).strip())
+
+
 RELEASE_TAG = "jevlike-hf-r1"
 RELEASE_ASSET = "jevlike_hf_chinese_roberta_r1.pt"
 RELEASE_DOWNLOAD_URL = (
@@ -49,10 +66,10 @@ ENCODER_DOWNLOAD_NOTE = (
 DEFAULT_CKPT = ROOT / "models" / "jevlike_hf_chinese_roberta_r1.pt"
 
 DEVICE = os.environ.get("JEVLIKE_DEVICE", "cpu")
-HOST = os.environ.get("JEVLIKE_HOST", DEFAULT_HOST)
-PORT = int(os.environ.get("JEVLIKE_PORT", str(DEFAULT_PORT)))
+HOST = env_str("JEVLIKE_HOST", DEFAULT_HOST)
+PORT = env_int("JEVLIKE_PORT", DEFAULT_PORT)
 API_KEY = os.environ.get("JEVLIKE_API_KEY", "")
-MAX_BODY = int(os.environ.get("JEVLIKE_MAX_BODY", "65536"))
+MAX_BODY = env_int("JEVLIKE_MAX_BODY", 65536)
 
 _MODEL = None
 _COLLATOR = None
@@ -698,8 +715,22 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, result)
 
 
+def warn_if_open_bind(host: str) -> None:
+    if host in ("127.0.0.1", "localhost", "::1"):
+        return
+    if API_KEY:
+        return
+    print(
+        f"[WARN] jevlike is listening on {host} without JEVLIKE_API_KEY. "
+        "Message text posted to /v1/score and /v1/mask is unauthenticated.",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 def main() -> None:
     load_runtime()
+    warn_if_open_bind(HOST)
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(
         f"[INFO] jevlike worker listening on http://{HOST}:{PORT}/v1/score",

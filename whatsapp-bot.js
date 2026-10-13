@@ -13,7 +13,7 @@ const { TtlCache } = require('./lib/cache');
 const {
   processIncomingMessage,
 } = require('./lib/handle-incoming');
-const { resolveRealNumber, isLidId } = require('./lib/lid');
+const { resolveRealNumber, phoneLookupId } = require('./lib/lid');
 const {
   decideIncomingAction,
   resolveIncomingMessageLabel,
@@ -231,7 +231,7 @@ async function handleSelfMessage(msg, deps) {
   }
 }
 
-async function handleWaMessage(msg, { client, pacer, threadContext, recentContext, scoreClient, rubric, cache, llmReview, operator, reviewQueue }) {
+async function handleWaMessage(msg, { client, pacer, threadContext, recentContext, scoreClient, rubric, cache, llmReview, operator, reviewQueue, isEdit }) {
   let chat;
   let contact;
   try {
@@ -267,7 +267,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
       threadContext,
       recentContext,
       resolveNumber: () =>
-        resolveRealNumber(client, isLidId(chatId) ? chatId : contactId || chatId, contact),
+        resolveRealNumber(client, phoneLookupId(chatId, contactId), contact),
       archiveChat: async () => {
         await chat.archive();
       },
@@ -312,6 +312,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
           wid,
           new Poll(name, options, { allowMultipleAnswers: false }),
         ),
+      allowDuplicate: Boolean(isEdit),
     }));
     if (delivered && delivered.forwardError) {
       log.warn('guided forward or poll failed', {
@@ -352,6 +353,18 @@ function attachHandlers(client, deps) {
       await handleWaMessage(msg, { client, ...deps });
     } catch (err) {
       log.error('message handler failed', { error: err.message });
+    }
+  });
+
+  client.on('message_edit', async (msg, newBody, prevBody) => {
+    try {
+      if (typeof newBody === 'string') {
+        if (newBody === prevBody) return;
+        if (msg) msg.body = newBody;
+      }
+      await handleWaMessage(msg, { client, ...deps, isEdit: true });
+    } catch (err) {
+      log.error('message edit handler failed', { error: err.message });
     }
   });
 
