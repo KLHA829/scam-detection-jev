@@ -43,7 +43,7 @@ node --test --test-reporter tap \
   lib/operator-review.test.js
 ```
 
-Exit code `0`. The lookalike DM returns `deferred: true`, decision action `block`, and empty archive/block callback lists. An ordinary DM is left alone.
+Exit code `0`. The lookalike DM returns `deferred: true`, decision action `archive`, and empty archive/block callback lists. An ordinary DM is left alone.
 
 - **Poll survives a failed mask.** Run:
 
@@ -70,8 +70,8 @@ Exit code `0`. The first 封鎖並封存 confirmation matches `已封鎖並封�
 ## Gotchas
 
 - The explanation is requested only after `/v1/mask`. A failed mask skips the explanation and still shows the poll. The model cannot archive, block, or hide the card.
-- An explicit 封鎖並封存 is the only path that blocks a saved contact. Link rules and the context model do not.
+- An explicit 封鎖並封存 is the only path that blocks a saved contact. Link heuristics and models do not auto-block.
 - The first choice on a review poll is the one that runs. A second vote is ignored.
 - Until the setup poll is answered, the bot archives and does not block. That is a different wait from guided mode, which archives nothing until you choose.
-- `自動封鎖同封存` is today's automatic path: link rules and an explicit context-model `block` still block unsaved contacts, and a score only archives. The receipt feature then messages your own chat.
+- `自動封鎖同封存` is today's automatic path: malicious-host list may block unsaved contacts; lookalike/short-link and scores archive only. The receipt feature then messages your own chat.
 - Replying `今日食飯` does not select a choice.

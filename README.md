@@ -4,7 +4,7 @@ Local **WhatsApp Web** bot that scores each 1:1 DM, **archives** risky chats, an
 
 **Primary (and only) scorer:** [jevlike](https://github.com/vinnylarouge/jevlike) with a frozen Hugging Face encoder `hfl/chinese-roberta-wwm-ext` and choice labels `not_scam` / `scam`. The fine-tuned head (`jevlike_hf_chinese_roberta_r1.pt`, ~2.3 MB) is already on GitHub Release tag [`jevlike-hf-r1`](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1); the encoder (~400 MB) downloads from the Hub on first run. This is the path meant for a **Raspberry Pi** and other CPU machines. There is **no** LightJev / `SCORER=model_v2` fallback.
 
-**Blocking** is separate from archive. Unsaved contacts are blocked only by a link rule on the current message (a lookalike host, or a short link that also solicits) or by an explicit context-model `block`. A jevlike score, including one at or above `BLOCK_THRESHOLD` (default **80**), only archives. The reason is written onto the WhatsApp contact name (`封鎖·假域名`, …) and appended to `blocks.jsonl` (number, score, reason, time). Saved contacts are never auto-blocked. Grey scores and scorer failures do not block. It does **not** call Scameter or any phone/URL registry.
+**Blocking** is separate from archive and tuned for **elderly primary users** (near-zero false block). Unsaved contacts are **auto-blocked only** when the current message URL matches a host in [`data/malicious-hosts.json`](data/malicious-hosts.json) (maintained list; subdomains match). Lookalike hosts and soliciting short links **archive** and notify you, but do **not** auto-block. Optional LLM passes (default **off**) never auto-block. A jevlike score, including one at or above `BLOCK_THRESHOLD` (default **80**), only archives. Auto-block writes `封鎖·惡意域名` onto the WhatsApp contact name and appends `blocks.jsonl`. Saved contacts are never auto-blocked. Grey scores and scorer failures do not block. It does **not** call Scameter or any phone/URL registry.
 
 Eval note (does not block shipping): measured on a 366-message real HK set (179 scam / 187 innocent), the current head wrongly flags 18/187 innocents (9.6%) at the archive line and 10/187 (5.3%) at the block line; the older `hn800` head flagged 43/187 (23.0%) and 38/187 (20.3%) on the same set. 187 innocents is a small sample, so read those rates as a point estimate rather than a guarantee. Pi portability is the reason this deploy is jevlike-only.
 
@@ -13,7 +13,7 @@ Eval note (does not block shipping): measured on a 366-message real HK set (179 
 1. Reads 1:1 message bodies (including saved contacts).
 2. **jevlike:** one forward pass over options `not_scam` / `scam`; `P(scam) × 100` is the 0–100 score.
 3. **Archives** when the score is at or above the archive threshold, or when a link rule fires.
-4. **Blocks** an unsaved contact only when the current message's link rule fired, or when the context model answers `block`. Also mutes the chat. A high score stays archive-only. Saved contacts stay archive-only.
+4. **Blocks** an unsaved contact only when the current message matches the malicious-host list. Also mutes the chat. Link-rule archives (lookalike, soliciting short link) stay archive-only. A high score stays archive-only. Saved contacts stay archive-only.
 5. Optional OpenAI-compatible LLM second pass (default **off**). Grey/high unless `LLM_REVIEW_ALL=1`.
 
 Filters drop `fromMe`, groups, notification types, your own account, and official WhatsApp names. `@lid` chats are resolved to a real number for logs and LLM context; LID digits are never used as a phone.
@@ -148,7 +148,8 @@ Until you answer, suspicious chats are archived and nobody is blocked. `OPERATOR
 See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rubric.json).
 
 - `ARCHIVE_THRESHOLD` (default `42`) — label `scam` / archive from score
-- `BLOCK_THRESHOLD` (default `80`) — still the line context review will not release. A score at this line archives and does **not** block. Heuristic hits block unsaved contacts.
+- `BLOCK_THRESHOLD` (default `80`) — still the line context review will not release. A score at this line archives and does **not** block. Auto-block uses the malicious-host list only.
+- `MALICIOUS_HOSTS_PATH` — optional path to JSON `{ "hosts": ["evil.example", …] }`. Default: `data/malicious-hosts.json`. Add registrable host strings; subdomains match (e.g. `pay.evil.example` matches `evil.example`).
 - `BLOCK_ENABLED` (default `true`) — `false` restores archive-only
 - `WA_ACTION_GAP_MS` (default `3000`) — minimum gap between WhatsApp account changes (block, rename, mute, archive). Chats are changed one at a time. Rename runs only after a successful block.
 - `CONTEXT_TURNS` (default `4`) — score the current message, and also the last N inbound messages when that window scores higher. `1` disables the window.
@@ -167,7 +168,7 @@ See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rub
 - `LLM_REVIEW_API_KEY` or `OPENAI_API_KEY` — **optional**; omit for local servers with no auth; when set, sent as `Authorization: Bearer …`
 - `LLM_REVIEW_MODEL` (default `gpt-4o-mini`; use the model id your server expects)
 - `LLM_REVIEW_TIMEOUT_MS` (default `8000`)
-- `CONTEXT_LLM_ENABLED` (default `false`) — replace the single-message second pass with a review of the latest inbound messages. The local worker returns PII-head spans (`POST /v1/mask`); the bot writes `XXX`, then asks the chat model for `archive` / `block` / `no_action`. An explicit `block` blocks an unsaved contact and only archives a saved one. A missing head, a failed mask, or a bad model reply does not archive or block.
+- `CONTEXT_LLM_ENABLED` (default `false`) — replace the single-message second pass with a review of the latest inbound messages. The local worker returns PII-head spans (`POST /v1/mask`); the bot writes `XXX`, then asks the chat model for `archive` / `block` / `no_action`. Model answers archive only; they do not auto-block. A missing head, a failed mask, or a bad model reply does not archive or block.
 - `JEVLIKE_MASK_CKPT` — second jevlike head trained to mark personal-data characters (`python scripts/train_pii_mask.py`). It does not replace the scam scorer. Without it, `/v1/mask` returns 503 and the bot does not send the text. See [models/README.md](models/README.md).
 - `CONTEXT_LLM_MESSAGES` (default `10`, capped at 10) — how many of the latest inbound messages are sent. The message that just arrived is always included.
 
@@ -284,6 +285,7 @@ QR login still needs a terminal that can show the code (or inspect container log
 - `lib/mask-spans.js` — offline stand-in for the PII head (`POST /v1/mask` on the worker is the live path)
 - `lib/llm-review.js` — optional OpenAI-compatible second pass
 - `lib/scam-intent.js` — solicit helpers used by short-link rules, not as an archive gate
+- `lib/malicious-hosts.js`, `data/malicious-hosts.json` — operator-maintained hosts that may auto-block unsaved contacts
 - `jevlike_serve.py` — persistent HF-encoder jevlike worker (`POST /v1/score`)
 - `stub-jevlike.js` — fixed probabilities for tests
 - `models/README.md` — GitHub Release download for the `.pt` head

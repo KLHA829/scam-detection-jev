@@ -1,0 +1,11 @@
+{
+  "feature": "malicious-host-block",
+  "entry": "node --test lib/malicious-hosts.test.js lib/block-policy.test.js",
+  "scorer": "in-process stub client (no HTTP worker)",
+  "whatsapp": "not started",
+  "nodeTestExit": 0,
+  "passLine": "# pass 5",
+  "failLine": "# fail 0",
+  "missingTests": [],
+  "proved": true
+}

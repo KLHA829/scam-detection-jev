@@ -280,18 +280,26 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('primary action stays archive; unsaved high-risk is blocked afterwards', () => {
+  it('primary action stays archive; only malicious_host auto-blocks afterwards', () => {
     const high = scoreResult({ score: 99, label: 'scam' });
-    const heuristic = { hit: true, id: 'lookalike_domain', archiveReason: 'obvious_scam' };
-    const d = decideIncomingAction(high, '14155550123', false, heuristic);
+    const lookalike = { hit: true, id: 'lookalike_domain', archiveReason: 'obvious_scam' };
+    const d = decideIncomingAction(high, '14155550123', false, lookalike);
     assert.equal(d.action, 'archive');
+    const notBlocked = applyBlockPolicy(d, {
+      savedContact: false,
+      scoreResult: high,
+      heuristic: lookalike,
+    });
+    assert.equal(notBlocked.action, 'archive');
+
+    const malicious = { hit: true, id: 'malicious_host', archiveReason: 'obvious_scam' };
     const blocked = applyBlockPolicy(d, {
       savedContact: false,
       scoreResult: high,
-      heuristic,
+      heuristic: malicious,
     });
     assert.equal(blocked.action, 'block');
-    assert.equal(blocked.contactName, '封鎖·假域名');
+    assert.equal(blocked.contactName, '封鎖·惡意域名');
   });
 
 });

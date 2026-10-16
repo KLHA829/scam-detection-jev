@@ -1,0 +1,55 @@
+TAP version 13
+# [SCAN] message scored {"chatId":"hold-mal@c.us","score":0,"label":"unknown","ok":true,"bonus":0,"breakdown":[],"scoreSource":"heuristic","singleScore":0,"windowScore":null,"heuristic":"malicious_host","digits":"85260001234","savedContact":false}
+# [OK] archived chat (obvious_scam) {"chatId":"hold-mal@c.us","score":0,"label":"unknown"}
+# [SCAN] message scored {"chatId":"fast-heur@c.us","score":0,"label":"unknown","ok":true,"bonus":0,"breakdown":[],"scoreSource":"heuristic","singleScore":0,"windowScore":null,"heuristic":"malicious_host","digits":"85260004321","savedContact":false}
+# [OK] blocked contact (malicious_host) {"chatId":"fast-heur@c.us","digits":"85260004321","score":0,"contactName":"封鎖·惡意域名","renamed":true,"blocked":true,"muted":true}
+# Subtest: processIncomingMessage block actions
+    # Subtest: holds auto-block while the setup choice is unanswered (malicious host only)
+    ok 1 - holds auto-block while the setup choice is unanswered (malicious host only)
+      ---
+      duration_ms: 4.35457
+      ...
+    # Subtest: blocks a malicious host without waiting for the scorer
+    ok 2 - blocks a malicious host without waiting for the scorer
+      ---
+      duration_ms: 0.580551
+      ...
+    1..2
+ok 1 - processIncomingMessage block actions
+  ---
+  duration_ms: 5.775769
+  type: 'suite'
+  ...
+# [SCAN] message scored {"chatId":"mal@c.us","score":0,"label":"unknown","ok":true,"bonus":0,"breakdown":[],"scoreSource":"heuristic","singleScore":0,"windowScore":null,"heuristic":"malicious_host","digits":"85260009999","savedContact":false}
+# [OK] blocked contact (malicious_host) {"chatId":"mal@c.us","digits":"85260009999","score":0,"contactName":"封鎖·惡意域名","renamed":true,"blocked":true,"muted":true}
+# Subtest: malicious host list
+    # Subtest: matches exact host and subdomains from the data file
+    ok 1 - matches exact host and subdomains from the data file
+      ---
+      duration_ms: 0.739993
+      ...
+    # Subtest: archives via link rules and blocks only unsaved contacts through block policy
+    ok 2 - archives via link rules and blocks only unsaved contacts through block policy
+      ---
+      duration_ms: 2.01492
+      ...
+    # Subtest: blocks an unsaved contact on a listed host without waiting for the scorer
+    ok 3 - blocks an unsaved contact on a listed host without waiting for the scorer
+      ---
+      duration_ms: 1.849061
+      ...
+    1..3
+ok 2 - malicious host list
+  ---
+  duration_ms: 5.492016
+  type: 'suite'
+  ...
+1..2
+# tests 5
+# suites 2
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 49.445407

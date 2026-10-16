@@ -1,11 +1,11 @@
 ---
 name: verify-scam-bot
-description: "Drive the local WhatsApp scam-DM bot (scam-detection-jev) the way an operator would. Smoke proof uses the stub jevlike HTTP worker (GET /health, POST /v1/score, POST /v1/mask) and the offline node:test subset. Use when proving score archive, AGENTS.md block/archive invariants, link-rule block, mask-before-LLM, action receipts, or the guided self-chat poll. Live WhatsApp Web QR is a separate session and is not required."
+description: "Drive the local WhatsApp scam-DM bot (scam-detection-jev) the way an operator would. Smoke proof uses the stub jevlike HTTP worker (GET /health, POST /v1/score, POST /v1/mask) and the offline node:test subset. Use when proving score archive, AGENTS.md block/archive invariants, link-rule archive (no auto-block), malicious-host auto-block, mask-before-LLM, action receipts, or the guided self-chat poll. Live WhatsApp Web QR is a separate session and is not required."
 ---
 
 # Verify scam-detection-jev
 
-This skill proves the operator-facing behavior of the local WhatsApp scam-DM bot. The bot scores each 1:1 DM with HF-encoder jevlike, archives from the score, blocks an unsaved contact only on a current-message link rule or an explicit context-model `block`, and can ask the operator in their own chat before acting.
+This skill proves the operator-facing behavior of the local WhatsApp scam-DM bot. The bot scores each 1:1 DM with HF-encoder jevlike, archives from the score and from link rules (lookalike, soliciting short link), and **auto-blocks** an unsaved contact only when the current message URL matches `data/malicious-hosts.json`. Models do not auto-block. The bot can ask the operator in their own chat before acting.
 
 The smoke path does not open Chrome or WhatsApp. It starts `stub-jevlike.js` (the same process as `npm run stub`) on `127.0.0.1:18766` and runs the `node --test` cases that call `processIncomingMessage`, which is the function the bot uses for each DM. Live WhatsApp (`npm start`) needs a human QR scan and one `.wwebjs_auth/` session. Do not start it for a smoke proof.
 
@@ -90,13 +90,19 @@ A `[stub:scam]` tag is honored only by `stub-jevlike.js`. The real worker scores
 
 Other features are driven with the `node --test` commands in their feature files. They use the in-process stub client and do not need the HTTP worker, except the mask feature's `POST /v1/mask` check, which uses the same launched stub.
 
-AGENTS.md decision invariants (saved never auto-block, score alone never block, fail-closed unknown) are offline-only:
+AGENTS.md decision invariants (saved never auto-block, lookalike/short-link never auto-block, malicious-host block, score alone never block, fail-closed unknown) are offline-only:
 
 ```bash
 .cursor/skills/verify-scam-bot/bin/drive-agents-invariants
 ```
 
-That runs `lib/agents-invariants.test.js` and writes evidence under `evidence/<UTC-stamp>-agents-md-invariants/`. Doctor and `launch-stub` are not required.
+Malicious-host auto-block (offline):
+
+```bash
+.cursor/skills/verify-scam-bot/bin/drive-malicious-host-block
+```
+
+Those run `node --test` subsets and write evidence under `evidence/<UTC-stamp>-<feature-id>/`. Doctor and `launch-stub` are not required.
 
 Do not point this smoke drive at a live `jevlike_serve.py`. Doctor rejects a health body whose `model` is not `stub-jevlike`.
 
@@ -144,9 +150,10 @@ All paths are from the repo root. Each helper is executable.
 | Read-only health | `.cursor/skills/verify-scam-bot/bin/doctor` |
 | Score-archive proof | `.cursor/skills/verify-scam-bot/bin/drive-score-archive` |
 | AGENTS.md invariants proof | `.cursor/skills/verify-scam-bot/bin/drive-agents-invariants` |
+| Malicious-host block proof | `.cursor/skills/verify-scam-bot/bin/drive-malicious-host-block` |
 | Stop stub, keep evidence | `.cursor/skills/verify-scam-bot/bin/cleanup` |
 
-`drive-score-archive` needs a healthy stub. `drive-agents-invariants` is pure `node --test`. Other feature files carry their own `node --test` and `curl` commands.
+`drive-score-archive` needs a healthy stub. `drive-agents-invariants` and `drive-malicious-host-block` are pure `node --test`. Other feature files carry their own `node --test` and `curl` commands.
 
 ## Maintenance
 

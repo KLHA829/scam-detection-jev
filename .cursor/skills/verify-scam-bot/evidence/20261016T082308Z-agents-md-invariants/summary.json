@@ -1,0 +1,11 @@
+{
+  "feature": "agents-md-invariants",
+  "entry": "node --test lib/agents-invariants.test.js",
+  "scorer": "in-process stub client (no HTTP worker)",
+  "whatsapp": "not started",
+  "nodeTestExit": 0,
+  "passLine": "# pass 15",
+  "failLine": "# fail 0",
+  "missingTests": [],
+  "proved": true
+}

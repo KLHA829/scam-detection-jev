@@ -15,6 +15,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 | `jevlike_serve.py` | persistent HF-encoder worker, `POST /v1/score` (start before the bot) |
 | `lib/filters.js`, `lib/lid.js` | which messages count, `@lid` resolution |
 | `lib/link-rules.js`, `lib/scam-intent.js` | link-only hard hits; solicit helpers for short links |
+| `lib/malicious-hosts.js`, `data/malicious-hosts.json` | maintained known-malicious hosts; only path that auto-blocks unsaved contacts |
 | `lib/thread-context.js` | current body plus last `CONTEXT_TURNS` inbound bodies |
 | `lib/mask-spans.js` | offline stand-in for the PII head; live `POST /v1/mask` does not use it |
 | `POST /v1/mask` | jevlike PII head spans; the bot replaces them with `XXX` before any external LLM |
@@ -28,16 +29,18 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 
 ## Invariants — do not break
 
-- Saved contacts are **never** auto-blocked. Unsaved contacts block only on a current-message link rule
-  (lookalike host or soliciting short link) or an explicit context-model `block`. A jevlike score,
-  including one ≥ `BLOCK_THRESHOLD` (80), only archives. Archive line `ARCHIVE_THRESHOLD` (42),
-  safe line `SAFE_THRESHOLD` (18). Text such as 轉數快 or 驗證碼 does not archive or block by itself.
+- **Primary users are elderly; false block cost is extreme.** Saved contacts are **never** auto-blocked.
+  Unsaved contacts block **only** when the current message URL matches a host in `data/malicious-hosts.json`
+  (exact or suffix). Lookalike hosts and soliciting short links **archive only** — they do not block.
+  Models (context LLM, LLM review) do not auto-block. A jevlike score, including one ≥ `BLOCK_THRESHOLD` (80),
+  only archives. Archive line `ARCHIVE_THRESHOLD` (42), safe line `SAFE_THRESHOLD` (18). Text such as 轉數快
+  or 驗證碼 does not archive or block by itself.
 - Scorer timeout / 5xx / invalid JSON → `unknown`, and `unknown` alone never archives (fail closed).
 - **Every** outbound LLM call is masked by jevlike `POST /v1/mask` first. The bot writes `XXX` over those spans and never sends the raw text or the span list. If the PII head is missing or the mask call fails, the LLM call is skipped. The offline stub in `lib/mask-spans.js` stands in for the head so `npm test` does not load the encoder. Guided-mode explanations use the same mask. Archive/block receipts attach the chat-list name and phone locally; those fields are not added to the prompt.
 - Context LLM (`CONTEXT_LLM_ENABLED`, default off) may archive from the latest inbound messages
-  (`CONTEXT_LLM_MESSAGES`, default 10). The current message is always included.
-  An explicit `block` blocks an unsaved contact. Saved contacts stay unblockable. A score does not block.
-  Mask failure or a bad model reply does not archive or block. Link-rule archives still skip it.
+  (`CONTEXT_LLM_MESSAGES`, default 10). The current message is always included. A model `block` answer
+  is treated as archive only. Saved contacts stay unblockable. A score does not block. Mask failure or a
+  bad model reply does not archive or block. Link-rule archives still skip it.
 - Heuristic / RAG / local-classifier hard archives skip the decision-changing LLM.
   Guided mode may still ask the chat API for a Cantonese explanation after the same mask, and that reply cannot archive, block, or hide the card.
 - No keyword list suppresses a score. OTP, money, impersonation, and secrecy detectors do not archive
@@ -52,9 +55,9 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 - `python jevlike_serve.py` (or `npm run jevlike`) in terminal 1, then `npm start` in terminal 2.
 - `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — run the bot against fixed probabilities.
 
-## Current state (update with the date when it changes) — 2026-10-13
+## Current state (update with the date when it changes) — 2026-10-16
 
-- Hardcoded decisions are link rules only: lookalike hosts and a short link that also solicits. A bare host with no scheme counts. Allowlisted hosts such as `sf-express.com` are not lookalikes, and neither are `github.io`, `medium.com`, or `blogspot.com`. The brand has to start the label, on the registrable name or a subdomain, so `not-hangseng.com` and `not-hangseng.evil.com` do not match; `hsbc.evil.com` and `whatsapp-secure.evil.com` do. A hyphen stays inside the label, so `not-bit.ly` is not a short link. Fullwidth URLs are folded before the check. `youtu.be` is not a short link. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block. Those lines follow the jevlike score, and the optional context LLM when it is on. An explicit context-model `block` blocks an unsaved contact. A score alone does not. A context-model `no_action` cannot release a window score that is already at the block line. Edited messages are scored again. A phone JID is kept when the paired id is `@lid`.
+- Hard archive hits are link rules: lookalike hosts, a soliciting short link, or a URL on the malicious-host list (same `obvious_scam` archive path). Lookalike and short-link hits **do not** auto-block. Only a malicious-host match on an unsaved contact blocks (`封鎖·惡意域名`). Extend the list in `data/malicious-hosts.json` (optional `MALICIOUS_HOSTS_PATH`). A bare host with no scheme counts. Allowlisted hosts such as `sf-express.com` are not lookalikes, and neither are `github.io`, `medium.com`, or `blogspot.com`. The brand has to start the label, on the registrable name or a subdomain, so `not-hangseng.com` and `not-hangseng.evil.com` do not match; `hsbc.evil.com` and `whatsapp-secure.evil.com` do. A hyphen stays inside the label, so `not-bit.ly` is not a short link. Fullwidth URLs are folded before the check. `youtu.be` is not a short link. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block. Those lines follow the jevlike score, and the optional context LLM when it is on. A score alone does not block. A context-model `no_action` cannot release a window score that is already at the block line. Edited messages are scored again. A phone JID is kept when the paired id is `@lid`.
 - A failed archive still messages the operator. The receipt says the archive did not happen. Block, rename, mute, archive, the receipt, and the guided card share one WhatsApp write queue.
 - A mask response that is truncated, short a row, or has a non-integer span is a failed mask. The LLM call is skipped. Empty span lists (no PII) are still success.
 
@@ -73,8 +76,8 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   flag 34-41% of innocents.
 - Optional `CONTEXT_LLM_ENABLED` (default off) asks the local worker `POST /v1/mask` which characters
   to hide, replaces those spans with `XXX`, then sends the latest inbound messages (default 10,
-  current message included) to the same OpenAI-compatible chat API. An explicit `block` blocks an
-  unsaved contact. Saved contacts stay unblockable. A score does not block. The single-message second pass uses the same mask.
+  current message included) to the same OpenAI-compatible chat API. Model answers do not auto-block.
+  Saved contacts stay unblockable. A score does not block. The single-message second pass uses the same mask.
 - PII masking is a **separate** jevlike `AttentionHead` (`scripts/train_pii_mask.py` →
   `models/jevlike_hf_pii_mask.pt`, gitignored). It is initialised from the r1 head and trained with
   token-level labels, not the stock whole-message scam loss. The scam checkpoint is not overwritten.
@@ -84,10 +87,10 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   `find_mask_spans` remains the training-label helper and the offline stub, not a live fallback.
   Its digit classes are ASCII `[0-9]`, the same characters JavaScript `\d` matches. Fullwidth phones
   and Chinese-numeral phones stay on the training-only extra gold, not on that shared stub.
-- Unsaved contacts are blocked only by a current-message link rule (lookalike or soliciting short link) or an explicit context-model `block`. Score ≥ 80 archives and does not block. `sf-express.com` and the other allowlisted hosts are not lookalikes. A news quote of 封號 / USDT / 轉數快 / 驗證碼 / 順豐清關 does not hard-hit. Lookalike hits still block an unsaved contact, including when the text says 這不是詐騙.
+- Unsaved contacts auto-block only on a current-message malicious-host match. Lookalike and short-link rules archive and still trigger operator receipts; they do not block. Score ≥ 80 archives and does not block. `sf-express.com` and the other allowlisted hosts are not lookalikes. A news quote of 封號 / USDT / 轉數快 / 驗證碼 / 順豐清關 does not hard-hit.
 - Operator mode archives without blocking until the self-chat poll is answered (or `OPERATOR_MODE` is set).
   An obvious-scam heuristic on the current message is acted on before the scorer is called, so a slow score
-  does not delay that block. `guided` forwards a suspicious DM to the operator, explains it only after
+  does not delay archive (or malicious-host block). `guided` forwards a suspicious DM to the operator, explains it only after
   `/v1/mask`, and waits for 封鎖並封存 / 只封存 / 留低. A failed mask skips the explanation and still shows
   the poll. The explanation model cannot take that action. An explicit 封鎖並封存 is the only way a saved
   contact is blocked. After every completed archive or block (automatic, or a guided 封鎖並封存 / 只封存),

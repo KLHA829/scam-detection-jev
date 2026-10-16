@@ -6,10 +6,10 @@ This repository started empty (`README` title only). Product invariants (graded 
 
 | Decision | Why |
 |----------|-----|
-| **Graded block** — `contact.block()` only for unsaved contacts, and only on a current-message link rule or an explicit context-model `block` | A score, including one at `BLOCK_THRESHOLD` (80), only archives. Saved contacts are never auto-blocked. The reason is saved as the WhatsApp contact name and in `blocks.jsonl`. |
+| **Graded block (elderly precision-first)** — `contact.block()` only for unsaved contacts, and only when the current message URL matches `data/malicious-hosts.json` | Lookalike and soliciting short-link hits archive only. Models do not auto-block. A score, including one at `BLOCK_THRESHOLD` (80), only archives. Saved contacts are never auto-blocked. The reason is saved as the WhatsApp contact name and in `blocks.jsonl`. |
 | Score **every** non-ignored live 1:1 body, including **saved contacts** | Saved ≠ safe; ATO and investment scams often arrive from hijacked contacts. |
 | **LID**: resolve `@lid` for logs / LLM context; never use LID digits as a phone | LID identifiers are not country codes. Unresolved LID still scores. |
-| **Link rules only** | The hardcoded hard hit is a lookalike host, or a short link that also solicits. A bare host counts. Allowlisted hosts (`sf-express.com`, `whatsapp.com`, `hsbc.com`, …) and public hosts (`github.io`, `medium.com`, `blogspot.com`) are not lookalikes. On an unsaved contact that hit blocks. |
+| **Link rules + malicious-host list** | Hard archive hits: lookalike host, soliciting short link, or URL on the malicious-host list. A bare host counts. Allowlisted hosts (`sf-express.com`, `whatsapp.com`, `hsbc.com`, …) and public hosts (`github.io`, `medium.com`, `blogspot.com`) are not lookalikes. Only the malicious-host list may auto-block an unsaved contact. |
 | Filters: `fromMe`, groups, notification types, official WhatsApp names, `isMe` | Avoids looping on your own chats and WhatsApp system accounts. |
 | Session in **`.wwebjs_auth`** via `LocalAuth` | Same operator workflow as a typical `whatsapp-web.js` bot. |
 | Optional **Docker** for WhatsApp Web Chromium | jevlike runs as a sibling Python process so the Node image stays small. |
@@ -33,9 +33,9 @@ This repository started empty (`README` title only). Product invariants (graded 
 
 ## Why this scorer
 
-HK/TW/CN DM scams cluster on a few tropes: **FPS/轉數快 payment**, **OTP harvest**, **courier customs**, **government/WhatsApp impersonation**, **crypto deposit**. jevlike answers a single `not_scam` / `scam` choice. Text without an unsafe link follows that score, and the optional context LLM when it is on. The only hardcoded backup is a lookalike host or a soliciting short link.
+HK/TW/CN DM scams cluster on a few tropes: **FPS/轉數快 payment**, **OTP harvest**, **courier customs**, **government/WhatsApp impersonation**, **crypto deposit**. jevlike answers a single `not_scam` / `scam` choice. Text without an unsafe link follows that score, and the optional context LLM when it is on. Hardcoded backup archives are lookalike hosts and soliciting short links; **auto-block** is limited to operator-maintained malicious hosts so elderly users are not locked out by heuristic false positives.
 
-Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high `P(scam)`. Mild lures without an unsafe link stay `unknown` until the score or the context LLM flags them. That is accepted so ordinary Cantonese chat is not swept into archive.
+Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high `P(scam)`. Auto-block is stricter still — only confirmed malicious domains on the list. Mild lures without an unsafe link stay `unknown` until the score or the context LLM flags them. That is accepted so ordinary Cantonese chat is not swept into archive.
 
 ## Deferred
 
@@ -55,7 +55,7 @@ Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high
 | chinese-roberta multi-label `model_v2` server | Same: gone for this Pi/jevlike deploy. |
 | **Foreign-number / unsaved non-local hard archive** (`foreign_number`, `STARTUP_FOREIGN_SCAN`) | User request: remove the 外國號碼 archive rule. Clean low-score DMs from any country code are ignored. Score, heuristic, RAG, and optional LLM still apply. |
 | llama-cpp / GGUF **chat** as the primary classifier | jevlike is a frozen-encoder choice scorer, not a chat completion API. LLM review remains optional and separate. |
-| Blocking saved contacts, or blocking from a jevlike score alone | A score false positive must not lock a real person out. Unsaved contacts block on a link rule or an explicit context-model `block`. |
+| Blocking saved contacts, blocking from a jevlike score alone, or auto-blocking on lookalike/short-link heuristics | A score or heuristic false positive must not lock a real person out. Unsaved auto-block is malicious-host-only. |
 | **Warning-word table** and **phrase-trope regexes** (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording, self-OTP suppress) as archive or block gates | User request: those rules must not decide. The score and the optional context LLM decide text that has no unsafe link. |
 | CAPTCHA solving or scraping third-party sites | Rejected unless asked. |
 | Committing API keys or model weight files | `.env` gitignored; jevlike head via GitHub Release; encoder downloaded at worker start. |
@@ -65,19 +65,19 @@ Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high
 Live DM, after filters:
 
 1. `score >= ARCHIVE_THRESHOLD` (label `scam`) → archive `jevlike_score` (any sender). If LLM review is enabled, this **score-only** archive still goes to the second pass when the score is in the grey band, (with `LLM_REVIEW_ON_HIGH`, default true) **score/100 > GREY_MAX**, or `LLM_REVIEW_ALL=1`.
-2. Else a link rule → archive `obvious_scam`. Skip LLM. The link rule is a lookalike host or a soliciting short link, including when the text says 這不是詐騙. An allowlisted host such as `sf-express.com` is not a lookalike. Wording such as 轉數快, 驗證碼, 封號, or 順豐清關 is not this step.
+2. Else a link rule → archive `obvious_scam`. Skip LLM. The link rule is a lookalike host, a soliciting short link, or a malicious-host URL, including when the text says 這不是詐騙. An allowlisted host such as `sf-express.com` is not a lookalike. Wording such as 轉數快, 驗證碼, 封號, or 順豐清關 is not this step.
 3. Else if LLM review is enabled and a **trigger** fires (grey band 0.40–0.85 of score/100, high score above `GREY_MAX`, scorer vs local conflict, short OTP-ish DM, money ask from unknown/new number, **or** `LLM_REVIEW_ALL=1`) → mask PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. `not_scam` **releases** a score-only archive unless `LLM_REVIEW_MERGE=archive_only`. LLM failure → keep a score archive; otherwise `unknown` and do not archive.
 4. Else ignore.
 
 After that, if the final action is still archive **and** the contact is unsaved:
 
-5. Current-message link rule → **block**. Or, when context LLM is on and answers `block`, **block**. Write `封鎖·<reason>` as the WhatsApp contact name, mute, archive, append `blocks.jsonl`. A score at or above `BLOCK_THRESHOLD` stays an archive.
+5. Current-message URL on the malicious-host list → **block** (unsaved only). Write `封鎖·惡意域名` as the WhatsApp contact name, mute, archive, append `blocks.jsonl`. Lookalike and short-link archives stay archive-only. Context LLM and LLM review never auto-block.
 6. Otherwise leave the archive as archive. Scores and `unknown` do not block.
 
-Saved contacts never take the block step. LLM `not_scam` can **release** a score-only archive before the block policy runs, so a released chat is not blocked. Link-rule hits skip the LLM and still block when the contact is unsaved.
+Saved contacts never take the block step. LLM `not_scam` can **release** a score-only archive before the block policy runs, so a released chat is not blocked. Link-rule hits skip the LLM; they do not auto-block unless the URL is also on the malicious-host list.
 
 `OPERATOR_MODE=guided` (or the self-chat poll) stops after this decision. The steps above still decide that the DM is suspicious, including an enabled decision-changing LLM, but the WhatsApp write waits for **封鎖並封存**, **只封存**, or **留低**. The explanation call is not that LLM: it cannot release the card, and a mask or model failure still shows the local facts. After **封鎖並封存** or **只封存**, the confirmation repeats the chat-list name, the phone, and the local reason, and does not call the model again.
 
 Automatic mode still performs the steps itself. When that write finishes, the same self chat receives one receipt. An unresolved `@lid` says the phone was not resolved. The receipt is not sent to the other person.
 
-`CONTEXT_LLM_ENABLED` (default off) replaces the single-message second pass. The worker's `POST /v1/mask` returns spans from the PII head (not the r1 scam head, and not the identifier rules). The bot substitutes `XXX` and sends the latest `CONTEXT_LLM_MESSAGES` inbound bodies (default 10, current message included). Older messages fall off the front. The model may answer `archive`, `block`, or `no_action`. `block` blocks an unsaved contact and only archives a saved one. `no_action` can release a score-only archive below the block line, and cannot release a block-line score. Link-rule archives still skip the call. A missing head, a failed mask, and an unusable reply leave the primary decision unchanged. The single-message second pass uses the same mask.
+`CONTEXT_LLM_ENABLED` (default off) replaces the single-message second pass. The worker's `POST /v1/mask` returns spans from the PII head (not the r1 scam head, and not the identifier rules). The bot substitutes `XXX` and sends the latest `CONTEXT_LLM_MESSAGES` inbound bodies (default 10, current message included). Older messages fall off the front. The model may answer `archive`, `block`, or `no_action`; all are treated as archive-only (no auto-block). `no_action` can release a score-only archive below the block line, and cannot release a block-line score. Link-rule archives still skip the call. A missing head, a failed mask, and an unusable reply leave the primary decision unchanged. The single-message second pass uses the same mask.
