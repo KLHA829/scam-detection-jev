@@ -18,8 +18,9 @@ const evidenceRoot = path.join(skillDir, 'evidence');
 const TEST_NAMES = [
   'invariant: saved contacts are never auto-blocked (blockEligibility stays null)',
   'invariant: unsaved jevlike score at or above BLOCK_THRESHOLD alone does not block',
-  'invariant: unsaved current-message link rule (lookalike host) may block',
-  'invariant: unsaved explicit context-model block may block',
+  'invariant: unsaved lookalike link rule does not auto-block (archive only)',
+  'invariant: unsaved short_link_solicit does not auto-block',
+  'invariant: unsaved malicious_host on the current message may block',
   'invariant: applyBlockPolicy archives saved contacts even with link heuristic on current message',
   'invariant: applyBlockPolicy archives unsaved block-line score without link rule or context block',
   'invariant: scorer unknown (ok:false) never promotes to block via applyBlockPolicy',
@@ -28,8 +29,8 @@ const TEST_NAMES = [
   'invariant: scorer failure alone never archives in the live decision path',
   'invariant: unsaved block-line stub score archives and never calls blockContact',
   'invariant: saved contact at block-line score archives without blockContact',
-  'invariant: unsaved context-model block is a permitted auto-block path',
-  'invariant: unsaved current-message lookalike link rule blocks without waiting on score',
+  'invariant: context-model block archives only and never auto-blocks',
+  'invariant: unsaved lookalike archives without waiting on score and does not block',
 ];
 
 const TEST_FILES = ['lib/agents-invariants.test.js'];
@@ -44,6 +45,7 @@ const UNSET_ENV = [
   'CONTEXT_LLM_ENABLED',
   'LLM_REVIEW_ENABLED',
   'SCORER',
+  'MALICIOUS_HOSTS_PATH',
 ];
 
 function die(message) {
