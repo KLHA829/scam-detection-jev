@@ -1,0 +1,313 @@
+{
+  "base_source": "/workspace/scam-finetune/data",
+  "base_counts": {
+    "train": 1524,
+    "val": 238,
+    "test": 238
+  },
+  "hard_total": 646,
+  "hard_new": 646,
+  "hard_dropped_dup": 0,
+  "hard_split": {
+    "train": 582,
+    "val": 32,
+    "test": 32
+  },
+  "v2": {
+    "train": {
+      "n": 2106,
+      "labels": {
+        "scam": 842,
+        "not_scam": 1264
+      },
+      "langs": {
+        "yue": 1414,
+        "zh": 692
+      },
+      "regions": {
+        "hk": 1414,
+        "mainland": 692
+      },
+      "sources": {
+        "synthetic_scam_variant": 620,
+        "hard_neg_v2": 502,
+        "synthetic_benign": 716,
+        "hard_scam_v2": 80,
+        "adapted_telecom_fraud_texts_gpl_research": 94,
+        "adapted_public_elder_cc_by_4": 85,
+        "paraphrase_public_advisory": 9
+      },
+      "tropes_top": [
+        [
+          "benign",
+          762
+        ],
+        [
+          "impersonation",
+          356
+        ],
+        [
+          "aa_split",
+          239
+        ],
+        [
+          "self_otp",
+          88
+        ],
+        [
+          "customs",
+          81
+        ],
+        [
+          "soft_otp_fps",
+          80
+        ],
+        [
+          "legit_alert",
+          77
+        ],
+        [
+          "police",
+          63
+        ],
+        [
+          "otp",
+          62
+        ],
+        [
+          "tax",
+          51
+        ],
+        [
+          "casual_money",
+          50
+        ],
+        [
+          "scam_warning",
+          48
+        ],
+        [
+          "job",
+          46
+        ],
+        [
+          "crypto",
+          32
+        ],
+        [
+          "urgency",
+          26
+        ],
+        [
+          "delivery",
+          18
+        ],
+        [
+          "romance",
+          16
+        ],
+        [
+          "other",
+          11
+        ]
+      ]
+    },
+    "val": {
+      "n": 270,
+      "labels": {
+        "not_scam": 148,
+        "scam": 122
+      },
+      "langs": {
+        "yue": 176,
+        "zh": 94
+      },
+      "regions": {
+        "hk": 176,
+        "mainland": 94
+      },
+      "sources": {
+        "hard_neg_v2": 29,
+        "synthetic_benign": 112,
+        "synthetic_scam_variant": 95,
+        "adapted_public_elder_cc_by_4": 17,
+        "hard_scam_v2": 3,
+        "adapted_telecom_fraud_texts_gpl_research": 13,
+        "paraphrase_public_advisory": 1
+      },
+      "tropes_top": [
+        [
+          "benign",
+          119
+        ],
+        [
+          "impersonation",
+          62
+        ],
+        [
+          "aa_split",
+          10
+        ],
+        [
+          "job",
+          10
+        ],
+        [
+          "police",
+          9
+        ],
+        [
+          "customs",
+          8
+        ],
+        [
+          "tax",
+          7
+        ],
+        [
+          "otp",
+          7
+        ],
+        [
+          "legit_alert",
+          6
+        ],
+        [
+          "self_otp",
+          5
+        ],
+        [
+          "scam_warning",
+          4
+        ],
+        [
+          "casual_money",
+          4
+        ],
+        [
+          "crypto",
+          4
+        ],
+        [
+          "romance",
+          4
+        ],
+        [
+          "soft_otp_fps",
+          3
+        ],
+        [
+          "delivery",
+          3
+        ],
+        [
+          "urgency",
+          3
+        ],
+        [
+          "other",
+          2
+        ]
+      ]
+    },
+    "test": {
+      "n": 270,
+      "labels": {
+        "scam": 122,
+        "not_scam": 148
+      },
+      "langs": {
+        "zh": 91,
+        "yue": 179
+      },
+      "regions": {
+        "mainland": 91,
+        "hk": 179
+      },
+      "sources": {
+        "synthetic_scam_variant": 96,
+        "hard_neg_v2": 29,
+        "synthetic_benign": 106,
+        "adapted_public_elder_cc_by_4": 20,
+        "adapted_telecom_fraud_texts_gpl_research": 15,
+        "hard_scam_v2": 3,
+        "paraphrase_public_advisory": 1
+      },
+      "tropes_top": [
+        [
+          "benign",
+          119
+        ],
+        [
+          "impersonation",
+          56
+        ],
+        [
+          "customs",
+          18
+        ],
+        [
+          "aa_split",
+          14
+        ],
+        [
+          "police",
+          13
+        ],
+        [
+          "otp",
+          9
+        ],
+        [
+          "tax",
+          8
+        ],
+        [
+          "casual_money",
+          6
+        ],
+        [
+          "legit_alert",
+          5
+        ],
+        [
+          "crypto",
+          4
+        ],
+        [
+          "scam_warning",
+          3
+        ],
+        [
+          "job",
+          3
+        ],
+        [
+          "soft_otp_fps",
+          3
+        ],
+        [
+          "romance",
+          3
+        ],
+        [
+          "other",
+          2
+        ],
+        [
+          "urgency",
+          2
+        ],
+        [
+          "self_otp",
+          1
+        ],
+        [
+          "delivery",
+          1
+        ]
+      ]
+    }
+  },
+  "train_growth": 582
+}

@@ -6,7 +6,7 @@ Local **WhatsApp Web** bot that scores each 1:1 DM, **archives** risky chats, an
 
 **Blocking** is separate from archive. Unsaved contacts are blocked only by a link rule on the current message (a lookalike host, or a short link that also solicits) or by an explicit context-model `block`. A jevlike score, including one at or above `BLOCK_THRESHOLD` (default **80**), only archives. The reason is written onto the WhatsApp contact name (`封鎖·假域名`, …) and appended to `blocks.jsonl` (number, score, reason, time). Saved contacts are never auto-blocked. Grey scores and scorer failures do not block. It does **not** call Scameter or any phone/URL registry.
 
-Eval note (does not block shipping): measured on a 366-message real HK set (179 scam / 187 innocent), the current head wrongly flags 18/187 innocents (9.6%) at the archive line and 10/187 (5.3%) at the block line; the older `hn800` head flagged 43/187 (23.0%) and 38/187 (20.3%) on the same set. 187 innocents is a small sample, so read those rates as a point estimate rather than a guarantee. Pi portability is the reason this deploy is jevlike-only.
+Eval note (does not block shipping): in-repo fixtures under `evals/` (`hk50` + `data_v2` test, 320 labelled rows). Re-run with `npm run eval:hk` after `scripts/download_jevlike_ckpt.sh` and a Python env with `requirements.txt`. Frozen baseline: `evals/baselines/r1-hk50-data_v2-test.json` (r1 head, archive threshold 42). At the **archive line**, combined FP on innocents is **16/173 (9.3%)** and recall **0.91**; `hk50` alone is a small, pattern-reconstructed slice (FP **6/25**). **Block-line** counts in the baseline are score-only — the bot does not auto-block on score (see blocking paragraph above). A historical 366-row private WA export is not in this repo; see `evals/README.md`.
 
 ## What it does
 
@@ -258,7 +258,7 @@ Offline stage-1+2 pipeline check (stub mask, dry LLM transport, no API key):
 node scripts/review-eval.js --llm dry --mode triggers
 ```
 
-The default fixture is `fixtures/review-eval-smoke.json` (`ci_smoke` split). For the full labelled HK run, pass `--from-run` to your `jevlike-lab` export and `--split real_test`.
+The default fixture is `fixtures/review-eval-smoke.json` (`ci_smoke` split). For jevlike **stage-1** metrics on vendored corpora, use `npm run eval:hk` (see `evals/README.md`). `review-eval.js` still accepts a pre-scored `--from-run` JSON for LLM second-pass experiments.
 
 ## Docker (optional)
 
@@ -289,6 +289,7 @@ QR login still needs a terminal that can show the code (or inspect container log
 - `models/README.md` — GitHub Release download for the `.pt` head
 - `scripts/download_jevlike_ckpt.sh` — pulls `jevlike-hf-r1` via `/releases/download/…/jevlike_hf_chinese_roberta_r1.pt`
 - `scripts/run-py-tests.js` — portable Python 3 launcher for the unittest half of `npm test`
+- `evals/` — vendored labelled corpora (`hk50`, `data_v2` test), baseline JSON, `npm run eval:hk`
 - [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) — kept / improved / deferred / rejected
 
 ## Known security advisories

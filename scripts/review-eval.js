@@ -7,7 +7,8 @@
  *
  * Usage:
  *   node scripts/review-eval.js [--from-run fixtures/review-eval-smoke.json] [--split ci_smoke] \
- *   node scripts/review-eval.js --from-run ../jevlike-lab/runs/r1_head_only.json --split real_test \
+ *   node scripts/review-eval.js --from-run path/to/pre-scored.json --split real_test \
+ *   npm run eval:hk   # live jevlike r1 scores on evals/hk50 + evals/data_v2/test.jsonl
  *        [--mode off|triggers|all] [--llm off|dry|live] [--sample 3]
  *
  *   --mode  stage-2 gating: off (LLM_REVIEW_ENABLED=false), triggers (grey/high/conflict), all (LLM_REVIEW_ALL=1)

@@ -1,0 +1,119 @@
+{
+  "generated_at": "2026-10-16T08:45:26.916012+00:00",
+  "head": "jevlike-hf-r1",
+  "scorer_mode": "in_process",
+  "thresholds": {
+    "archive": 42.0,
+    "block": 80.0,
+    "safe": 18.0
+  },
+  "corpora": [
+    {
+      "name": "hk50",
+      "path": "evals/hk50/hk50_real_eval.jsonl",
+      "n": 50,
+      "labels": {
+        "scam": 25,
+        "not_scam": 25
+      },
+      "archive_line": {
+        "threshold": 42.0,
+        "tp": 23,
+        "fp": 6,
+        "fn": 2,
+        "tn": 19,
+        "n_scam": 25,
+        "n_innocent": 25,
+        "precision": 0.7931034482758621,
+        "recall": 0.92,
+        "fp_rate_on_innocents": 0.24,
+        "fp_on_innocents": "6/25",
+        "fn_on_scams": "2/25"
+      },
+      "block_line_score_only": {
+        "threshold": 80.0,
+        "tp": 19,
+        "fp": 3,
+        "fn": 6,
+        "tn": 22,
+        "n_scam": 25,
+        "n_innocent": 25,
+        "precision": 0.8636363636363636,
+        "recall": 0.76,
+        "fp_rate_on_innocents": 0.12,
+        "fp_on_innocents": "3/25",
+        "fn_on_scams": "6/25",
+        "note": "Score ≥ block threshold only; the bot does not auto-block on score alone (unsaved block = link rule or explicit context-model block)."
+      }
+    },
+    {
+      "name": "data_v2_test",
+      "path": "evals/data_v2/test.jsonl",
+      "n": 270,
+      "labels": {
+        "scam": 122,
+        "not_scam": 148
+      },
+      "archive_line": {
+        "threshold": 42.0,
+        "tp": 111,
+        "fp": 10,
+        "fn": 11,
+        "tn": 138,
+        "n_scam": 122,
+        "n_innocent": 148,
+        "precision": 0.9173553719008265,
+        "recall": 0.9098360655737705,
+        "fp_rate_on_innocents": 0.06756756756756757,
+        "fp_on_innocents": "10/148",
+        "fn_on_scams": "11/122"
+      },
+      "block_line_score_only": {
+        "threshold": 80.0,
+        "tp": 95,
+        "fp": 6,
+        "fn": 27,
+        "tn": 142,
+        "n_scam": 122,
+        "n_innocent": 148,
+        "precision": 0.9405940594059405,
+        "recall": 0.7786885245901639,
+        "fp_rate_on_innocents": 0.04054054054054054,
+        "fp_on_innocents": "6/148",
+        "fn_on_scams": "27/122",
+        "note": "Score ≥ block threshold only; the bot does not auto-block on score alone (unsaved block = link rule or explicit context-model block)."
+      }
+    }
+  ],
+  "combined": {
+    "n": 320,
+    "archive_line": {
+      "threshold": 42.0,
+      "tp": 134,
+      "fp": 16,
+      "fn": 13,
+      "tn": 157,
+      "n_scam": 147,
+      "n_innocent": 173,
+      "precision": 0.8933333333333333,
+      "recall": 0.9115646258503401,
+      "fp_rate_on_innocents": 0.09248554913294797,
+      "fp_on_innocents": "16/173",
+      "fn_on_scams": "13/147"
+    },
+    "block_line_score_only": {
+      "threshold": 80.0,
+      "tp": 114,
+      "fp": 9,
+      "fn": 33,
+      "tn": 164,
+      "n_scam": 147,
+      "n_innocent": 173,
+      "precision": 0.926829268292683,
+      "recall": 0.7755102040816326,
+      "fp_rate_on_innocents": 0.05202312138728324,
+      "fp_on_innocents": "9/173",
+      "fn_on_scams": "33/147"
+    }
+  }
+}

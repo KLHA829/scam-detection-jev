@@ -1,0 +1,7 @@
+{
+  "n": 50,
+  "scam": 25,
+  "not_scam": 25,
+  "note": "Reconstructed from publicly reported HK scam patterns (police/ADCC/news) and public Cantonese everyday chat patterns. Not private WhatsApp exports.",
+  "path": "/workspace/scam-finetune/hk50_real_eval.jsonl"
+}

@@ -8,7 +8,8 @@
     "start": "node whatsapp-bot.js",
     "test": "node --test && node scripts/run-py-tests.js",
     "stub": "node stub-jevlike.js",
-    "jevlike": "python jevlike_serve.py"
+    "jevlike": "python jevlike_serve.py",
+    "eval:hk": "node scripts/run-eval-jevlike.js"
   },
   "engines": {
     "node": ">=20"

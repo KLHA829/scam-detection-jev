@@ -1,0 +1,50 @@
+{"id": "hk50_01", "label": "scam", "source": "police/守網者 8字代碼", "trope": "wa_hijack_code", "text": "【WhatsApp官方安全驗證中心】你個帳戶長時間未做安全認證，請即輸入一次性8字代碼完成驗證，否則帳戶將停用。"}
+{"id": "hk50_02", "label": "scam", "source": "文匯報/女兒騎劫", "trope": "family_fps", "text": "爸，我換咗WhatsApp號碼，急住要20萬周轉，你用轉數快過畀我得唔得？而家唔方便講電話。"}
+{"id": "hk50_03", "label": "scam", "source": "星島/上司騎劫", "trope": "boss_transfer", "text": "我係老闆，而家喺會議唔方便講電話，你跟指示分幾次過數去呢幾個戶口，急用。"}
+{"id": "hk50_04", "label": "scam", "source": "星島/朋友搬家", "trope": "friend_loan", "text": "喂，我喺度搬屋急住要錢，可唔可以轉數快借我18,000？聽日還你。"}
+{"id": "hk50_05", "label": "scam", "source": "ADCC假警察", "trope": "fake_police_crypto", "text": "本人係香港警務處高級督察，你涉嫌參與非法活動，請將款項轉入指定加密貨幣帳戶作為清案費用以配合調查。"}
+{"id": "hk50_06", "label": "scam", "source": "ADCC假ADCC", "trope": "fake_adcc", "text": "我係防騙協調中心職員，你涉及洗黑錢調查，請立即提供銀行交易紀錄同網上銀行密碼協助調查。"}
+{"id": "hk50_07", "label": "scam", "source": "標準/假委任證", "trope": "warrant_card", "text": "我係防騙協調中心高級督察，附件係我委任證，請配合調查並按指示轉帳。"}
+{"id": "hk50_08", "label": "scam", "source": "gotrip FB截圖慣用句", "trope": "friend_limit", "text": "手頭上有無$9,800？幫我過數先，聽日十點過翻畀你。轉咗發圖同我講。"}
+{"id": "hk50_09", "label": "scam", "source": "gotrip 讀者妹妹", "trope": "sister_loan", "text": "家姐，有無兩萬蚊幫我過筆數？係借畀朋友找卡數，你唔好問咁多，肯唔肯就得。"}
+{"id": "hk50_10", "label": "scam", "source": "HK01 借一萬", "trope": "friend_10000", "text": "我賬戶限額，而家要轉比朋友。你戶口有冇10000方便幫我過下數嗎？我等陣去櫃員機轉返畀你，或者拎現金畀你都得。"}
+{"id": "hk50_11", "label": "scam", "source": "星頭條 Threads", "trope": "colleague_fps", "text": "你戶口有冇1萬港幣？可唔可以幫手過數吓，我個戶口限額滿咗，聽日俾返你。轉數快得唔得？"}
+{"id": "hk50_12", "label": "scam", "source": "Lapcom 過錯錢", "trope": "wrong_transfer", "text": "喂，我啱啱轉數快錯咗700蚊入你戶口，可唔可以轉返畀我？交易編號同SMS你應該收到。"}
+{"id": "hk50_13", "label": "scam", "source": "警察Offbeat 驗證碼", "trope": "wa_otp_phish", "text": "【WhatsApp客服】偵測到帳戶異常登入，請立即提供驗證碼／轉移代碼完成身份核實。"}
+{"id": "hk50_14", "label": "scam", "source": "常見假銀行", "trope": "bank_phish", "text": "【恆生銀行】你個帳戶有異常交易，請撳連結驗證並輸入短訊OTP，否則將凍結帳戶。"}
+{"id": "hk50_15", "label": "scam", "source": "常見海關", "trope": "customs", "text": "你件快遞清關失敗，請即撳連結繳付手續費HK$1,280，否則包裹將被充公。"}
+{"id": "hk50_16", "label": "scam", "source": "常見兼職保證金", "trope": "job_deposit", "text": "兼職日結$600，開工前請先交保證金$300到指定戶口。"}
+{"id": "hk50_17", "label": "scam", "source": "常見禮品卡", "trope": "gift_card", "text": "我係阿頭，而家開會，幫我買$3,000禮品卡，code影相send返嚟。"}
+{"id": "hk50_18", "label": "scam", "source": "常見廉署", "trope": "icac", "text": "廉署調查通知：你戶口將被凍結，請即提供網上銀行OTP並轉賬到監察帳戶。"}
+{"id": "hk50_19", "label": "scam", "source": "常見換號", "trope": "new_number", "text": "哥，舊號冇得用喇，而家用呢個新號。急住，幫我FPS $2,800先，開會唔好call。"}
+{"id": "hk50_20", "label": "scam", "source": "常見USDT", "trope": "usdt", "text": "先把USDT打到这个钱包马上返利，验证码也发我核对。"}
+{"id": "hk50_21", "label": "scam", "source": "常見假稅務", "trope": "tax", "text": "稅務局退稅通知：你有可退款項，請撳連結填表並上載銀行OTP完成核實。"}
+{"id": "hk50_22", "label": "scam", "source": "常見假入境", "trope": "imm", "text": "入境處：你名下電話涉及案件，請立即轉保證金到指定戶口以證明清白，並勿告知他人。"}
+{"id": "hk50_23", "label": "scam", "source": "常見PayMe急借", "trope": "payme_urgent", "text": "Bro急住，幫我PayMe/FPS轉$1,500，返屋企先解釋，而家唔好打電話。"}
+{"id": "hk50_24", "label": "scam", "source": "常見WA停用", "trope": "wa_suspend", "text": "系統提示：你嘅WhatsApp將於2小時後停用，請即去安全中心驗證並將轉移碼send畀本助理。"}
+{"id": "hk50_25", "label": "scam", "source": "常見假客服短", "trope": "otp_short", "text": "帳戶安全驗證，請立即回覆短訊OTP。"}
+{"id": "hk50_26", "label": "not_scam", "source": "cantonese.hk 晚飯對話", "trope": "dinner", "text": "今晚得唔得閒呀？一齊食飯啦。我想食火鍋，七點先放工，你睇吓邊度訂位。"}
+{"id": "hk50_27", "label": "not_scam", "source": "cantonese.hk/AA習慣", "trope": "aa_payme", "text": "好呀，今次AA喎。我先埋單，食完大家PayMe返畀我。冚數$660，三個人每人$220。"}
+{"id": "hk50_28", "label": "not_scam", "source": "日常還飯錢", "trope": "repay_meal", "text": "尋晚食飯我唔記得畀錢，你FPS我戶口，我轉$180返你。唔使急。"}
+{"id": "hk50_29", "label": "not_scam", "source": "防騙提醒（新聞口吻）", "trope": "warn_news", "text": "新聞話而家好多WhatsApp騎劫，叫人轉數快借錢，大家收到親友借錢都要先打電話核實。"}
+{"id": "hk50_30", "label": "not_scam", "source": "勸人勿轉OTP", "trope": "warn_otp", "text": "如果有人叫你send WhatsApp驗證碼或者8字代碼就係騙局，千祈唔好轉發。"}
+{"id": "hk50_31", "label": "not_scam", "source": "自己入OTP", "trope": "self_otp", "text": "銀行叫我輸入驗證碼，我喺官方App入，唔會send畀第二個人。"}
+{"id": "hk50_32", "label": "not_scam", "source": "正常銀行SMS風格", "trope": "bank_alert", "text": "你嘅信用卡喺百佳消費HK$86.50。如非本人交易請致電銀行熱線。"}
+{"id": "hk50_33", "label": "not_scam", "source": "正常物流", "trope": "delivery", "text": "順豐：你嘅包裹今日下午派送，請保持電話暢通。無需點擊任何連結。"}
+{"id": "hk50_34", "label": "not_scam", "source": "約Zoom", "trope": "work", "text": "Standup改咗朝早十點，Zoom link喺calendar，agenda稍後send。"}
+{"id": "hk50_35", "label": "not_scam", "source": "家人", "trope": "family", "text": "媽咪，我返到屋企喇，唔使擔心。今晚食咩？"}
+{"id": "hk50_36", "label": "not_scam", "source": "傾計天氣", "trope": "chat", "text": "今日好熱呀，飲唔飲嘢啊？旺角見得唔得？"}
+{"id": "hk50_37", "label": "not_scam", "source": "面試", "trope": "interview", "text": "面試約咗星期三下晝三點，帶CV同身分證副本就得，不用交任何費用。"}
+{"id": "hk50_38", "label": "not_scam", "source": "購物出貨", "trope": "shopping", "text": "你個淘寶訂單已出貨，預計星期三到。"}
+{"id": "hk50_39", "label": "not_scam", "source": "加班", "trope": "overtime", "text": "今晚加班，晚饭自己点外卖，不用等我。"}
+{"id": "hk50_40", "label": "not_scam", "source": "感謝", "trope": "thanks", "text": "多謝晒！文件收到，聽日再傾。"}
+{"id": "hk50_41", "label": "not_scam", "source": "真正AA問收", "trope": "aa_ask", "text": "AA制，我哋一人$120，你用PayMe收我得唔得？"}
+{"id": "hk50_42", "label": "not_scam", "source": "約飲茶", "trope": "yumcha", "text": "聽日去飲茶？我想食蝦餃同燒賣，你喺邊個站上？"}
+{"id": "hk50_43", "label": "not_scam", "source": "傾足球", "trope": "sports", "text": "昨晚球賽勁呀，下個禮拜再一齊睇得唔得？"}
+{"id": "hk50_44", "label": "not_scam", "source": "請假", "trope": "leave", "text": "聽日請半天假睇醫生，啲工我返嚟再跟。"}
+{"id": "hk50_45", "label": "not_scam", "source": "分享防騙App", "trope": "scameter", "text": "匯款前記得用防騙視伏器睇吓個戶口，警方都叫大家小心WhatsApp借錢騙案。"}
+{"id": "hk50_46", "label": "not_scam", "source": "同事正常過數說明", "trope": "legit_reimburse", "text": "公司報銷我已批，你用轉數快收返交通費$85就得，reference寫返日期。"}
+{"id": "hk50_47", "label": "not_scam", "source": "問地址", "trope": "meetup", "text": "七點尖沙咀M1出口見，我着藍衫。"}
+{"id": "hk50_48", "label": "not_scam", "source": "短回覆", "trope": "ok", "text": "ok 得"}
+{"id": "hk50_49", "label": "not_scam", "source": "傾戲", "trope": "movie", "text": "星期日睇戲？我想睇新出嗰套，你買飛定我買？"}
+{"id": "hk50_50", "label": "not_scam", "source": "父母關心", "trope": "parent", "text": "記得食藥，早啲瞓。有事WhatsApp我。"}

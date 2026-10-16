@@ -26,3 +26,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: node scripts/review-eval.js --llm dry --mode triggers
+      - name: eval fixture files present
+        run: |
+          test -f evals/hk50/hk50_real_eval.jsonl
+          test -f evals/data_v2/test.jsonl
+          test -f evals/baselines/r1-hk50-data_v2-test.json
