@@ -2,7 +2,7 @@
   "name": "scam-detection-jev",
   "version": "1.0.0",
   "private": true,
-  "description": "Local WhatsApp Web scam-risk bot using HF-encoder jevlike. Archives risky chats and blocks unsaved high-risk contacts.",
+  "description": "Local WhatsApp Web scam-risk bot: PII mask (jevlike worker) + OpenAI-compatible LLM judgment; malicious-host auto-block only.",
   "main": "whatsapp-bot.js",
   "scripts": {
     "start": "node whatsapp-bot.js",

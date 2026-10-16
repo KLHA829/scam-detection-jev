@@ -220,15 +220,15 @@ describe('heuristics', () => {
 });
 
 describe('decideIncomingAction matrix', () => {
-  it('archives on score >= T for any sender', () => {
+  it('ignores non-heuristic messages before LLM merge', () => {
     const high = scoreResult({ score: 50, label: 'scam' });
     assert.deepEqual(
       decideIncomingAction(high, '85261234567', true, { hit: false }),
-      { action: 'archive', archiveReason: 'jevlike_score' },
+      { action: 'ignore', archiveReason: null },
     );
     assert.deepEqual(
       decideIncomingAction(high, '14155550123', false, { hit: true }),
-      { action: 'archive', archiveReason: 'jevlike_score' },
+      { action: 'archive', archiveReason: 'obvious_scam' },
     );
   });
 
@@ -280,11 +280,12 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('primary action stays archive; only malicious_host auto-blocks afterwards', () => {
+  it('primary action stays archive on heuristic; only malicious_host auto-blocks afterwards', () => {
     const high = scoreResult({ score: 99, label: 'scam' });
     const lookalike = { hit: true, id: 'lookalike_domain', archiveReason: 'obvious_scam' };
     const d = decideIncomingAction(high, '14155550123', false, lookalike);
     assert.equal(d.action, 'archive');
+    assert.equal(d.archiveReason, 'obvious_scam');
     const notBlocked = applyBlockPolicy(d, {
       savedContact: false,
       scoreResult: high,
@@ -305,7 +306,7 @@ describe('decideIncomingAction matrix', () => {
 });
 
 describe('resolveIncomingMessageLabel', () => {
-  it('promotes heuristic to scam without changing jevlike fail-closed unknown otherwise', () => {
+  it('promotes heuristic to scam; otherwise unknown until LLM', () => {
     const promoted = resolveIncomingMessageLabel(
       scoreResult({ label: 'not_scam', score: 2 }),
       '登入 https://whatsapp-secure.com/login',
@@ -313,10 +314,7 @@ describe('resolveIncomingMessageLabel', () => {
     assert.equal(promoted.label, 'scam');
     assert.equal(promoted.archiveReason, 'obvious_scam');
 
-    const unknown = resolveIncomingMessageLabel(
-      scoreResult({ label: 'unknown', score: 0, ok: false }),
-      'hello',
-    );
+    const unknown = resolveIncomingMessageLabel(null, 'hello');
     assert.equal(unknown.label, 'unknown');
     assert.equal(unknown.archiveReason, null);
   });
@@ -482,7 +480,8 @@ describe('processIncomingMessage', () => {
     assert.equal(scored, false);
   });
 
-  it('archives via callback on high stub score', async () => {
+  it('archives via callback when LLM says scam', async () => {
+    const { primaryPathDeps, scamLlmFetch } = require('./lib/test-llm');
     const reasons = [];
     const out = await processIncomingMessage(
       {
@@ -492,9 +491,8 @@ describe('processIncomingMessage', () => {
         savedContact: true,
         messageId: 'm1',
       },
-      {
-        scoreClient: createStubJevlikeClient('scam'),
-        rubric,
+      primaryPathDeps({
+        fetchImpl: scamLlmFetch(),
         resolveNumber: async () => ({
           digits: '85261234567',
           unresolvedLid: false,
@@ -502,15 +500,15 @@ describe('processIncomingMessage', () => {
         archiveChat: async (reason) => {
           reasons.push(reason);
         },
-      },
+      }),
     );
     assert.equal(out.ignored, false);
     assert.equal(out.decision.action, 'archive');
-    assert.equal(out.decision.archiveReason, 'jevlike_score');
-    assert.deepEqual(reasons, ['jevlike_score']);
+    assert.equal(out.decision.archiveReason, 'llm_review_scam');
+    assert.deepEqual(reasons, ['llm_review_scam']);
   });
 
-  it('does not archive fail-closed unknown for local unsaved', async () => {
+  it('does not archive when mask fails for local unsaved', async () => {
     const reasons = [];
     const out = await processIncomingMessage(
       {
@@ -521,11 +519,12 @@ describe('processIncomingMessage', () => {
       },
       {
         scoreClient: {
-          async scoreText() {
-            throw new Error('jevlike timeout');
+          async maskMessages() {
+            throw new Error('mask timeout');
           },
         },
         rubric,
+        llmReview: { enabled: true, apiUrl: 'http://llm.test/v1', fetchImpl: async () => { throw new Error('no'); } },
         resolveNumber: async () => ({
           digits: '85261234567',
           unresolvedLid: false,
@@ -533,12 +532,12 @@ describe('processIncomingMessage', () => {
         archiveChat: async (reason) => reasons.push(reason),
       },
     );
-    assert.equal(out.scoreResult.label, 'unknown');
     assert.equal(out.decision.action, 'ignore');
     assert.deepEqual(reasons, []);
   });
 
-  it('does not archive an unsaved non-local number on a clean low score', async () => {
+  it('does not archive an unsaved non-local number when LLM says not_scam', async () => {
+    const { primaryPathDeps, notScamLlmFetch } = require('./lib/test-llm');
     const reasons = [];
     const out = await processIncomingMessage(
       {
@@ -548,15 +547,14 @@ describe('processIncomingMessage', () => {
         savedContact: false,
         messageId: 'foreign-hi',
       },
-      {
-        scoreClient: createStubJevlikeClient('benign'),
-        rubric,
+      primaryPathDeps({
+        fetchImpl: notScamLlmFetch(),
         resolveNumber: async () => ({
           digits: '14155550123',
           unresolvedLid: false,
         }),
         archiveChat: async (reason) => reasons.push(reason),
-      },
+      }),
     );
     assert.equal(out.decision.action, 'ignore');
     assert.equal(out.decision.archiveReason, null);

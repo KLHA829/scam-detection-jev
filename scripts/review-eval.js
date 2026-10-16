@@ -2,15 +2,16 @@
 'use strict';
 
 /**
- * Offline end-to-end evaluation of stage 1 (jevlike score) + stage 2 (mask -> llm-review -> merge)
- * against a labelled real HK corpus. Uses the repo's own modules, not a reimplementation.
+ * Offline evaluation against a labelled HK corpus. **Product path (2026-10-16):** link heuristics
+ * then mask → LLM (no live jevlike score). This script can still replay fixture `prob_scam` as a
+ * legacy stage-1 input for `--mode triggers`; use `--mode all` to mirror production primary review.
  *
  * Usage:
  *   node scripts/review-eval.js [--from-run fixtures/review-eval-smoke.json] [--split ci_smoke] \
  *   node scripts/review-eval.js --from-run ../jevlike-lab/runs/r1_head_only.json --split real_test \
  *        [--mode off|triggers|all] [--llm off|dry|live] [--sample 3]
  *
- *   --mode  stage-2 gating: off (LLM_REVIEW_ENABLED=false), triggers (grey/high/conflict), all (LLM_REVIEW_ALL=1)
+ *   --mode  off (no LLM), triggers (legacy grey/high/conflict on fixture scores), all (primary: every non-heuristic DM)
  *   --llm   off   = no call, merge is skipped        (numbers are meaningful)
  *           dry   = mask with the offline stub, capture the payload, DO NOT send, treat LLM as
  *                   unknown so every number stays honest ("what would have been asked")
