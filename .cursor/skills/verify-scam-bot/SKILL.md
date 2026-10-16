@@ -1,6 +1,6 @@
 ---
 name: verify-scam-bot
-description: "Drive the local WhatsApp scam-DM bot (scam-detection-jev) the way an operator would. Smoke proof uses the stub jevlike HTTP worker (GET /health, POST /v1/score, POST /v1/mask) and the offline node:test subset. Use when proving score archive, link-rule block, mask-before-LLM, action receipts, or the guided self-chat poll. Live WhatsApp Web QR is a separate session and is not required."
+description: "Drive the local WhatsApp scam-DM bot (scam-detection-jev) the way an operator would. Smoke proof uses the stub jevlike HTTP worker (GET /health, POST /v1/score, POST /v1/mask) and the offline node:test subset. Use when proving score archive, AGENTS.md block/archive invariants, link-rule block, mask-before-LLM, action receipts, or the guided self-chat poll. Live WhatsApp Web QR is a separate session and is not required."
 ---
 
 # Verify scam-detection-jev
@@ -90,6 +90,14 @@ A `[stub:scam]` tag is honored only by `stub-jevlike.js`. The real worker scores
 
 Other features are driven with the `node --test` commands in their feature files. They use the in-process stub client and do not need the HTTP worker, except the mask feature's `POST /v1/mask` check, which uses the same launched stub.
 
+AGENTS.md decision invariants (saved never auto-block, score alone never block, fail-closed unknown) are offline-only:
+
+```bash
+.cursor/skills/verify-scam-bot/bin/drive-agents-invariants
+```
+
+That runs `lib/agents-invariants.test.js` and writes evidence under `evidence/<UTC-stamp>-agents-md-invariants/`. Doctor and `launch-stub` are not required.
+
 Do not point this smoke drive at a live `jevlike_serve.py`. Doctor rejects a health body whose `model` is not `stub-jevlike`.
 
 Thresholds and toggles change through `scoring-rubric.json` and env (`ARCHIVE_THRESHOLD`, `SAFE_THRESHOLD`, `BLOCK_THRESHOLD`, `BLOCK_ENABLED`, `HEURISTIC_ENABLED`, `OPERATOR_MODE`, `CONTEXT_LLM_ENABLED`). Do not edit numeric constants in code to make a proof pass.
@@ -135,9 +143,10 @@ All paths are from the repo root. Each helper is executable.
 | Start stub | `.cursor/skills/verify-scam-bot/bin/launch-stub` |
 | Read-only health | `.cursor/skills/verify-scam-bot/bin/doctor` |
 | Score-archive proof | `.cursor/skills/verify-scam-bot/bin/drive-score-archive` |
+| AGENTS.md invariants proof | `.cursor/skills/verify-scam-bot/bin/drive-agents-invariants` |
 | Stop stub, keep evidence | `.cursor/skills/verify-scam-bot/bin/cleanup` |
 
-`drive-score-archive` is the only feature with a helper. The other feature files carry their own `node --test` and `curl` commands.
+`drive-score-archive` needs a healthy stub. `drive-agents-invariants` is pure `node --test`. Other feature files carry their own `node --test` and `curl` commands.
 
 ## Maintenance
 
