@@ -25,8 +25,8 @@ jevlike probabilities are **not calibrated**. Thresholds are operational, not sc
 | Label | Rule (defaults) | Archives from score? | Blocks an unsaved contact? |
 |-------|-----------------|----------------------|------------------------------|
 | `scam` | `score >= 42` (`ARCHIVE_THRESHOLD`) | Yes (`jevlike_score`) | No. A score never blocks. |
-| `not_scam` | `score <= 18` (`SAFE_THRESHOLD`) | No | No (unless an obvious-scam heuristic hits) |
-| `unknown` | in between, **or** empty text, **or** jevlike failure | No (unless a link-rule heuristic hits) | No from the score. A link-rule hit can still block an unsaved contact. |
+| `not_scam` | `score <= 18` (`SAFE_THRESHOLD`) | No | No |
+| `unknown` | in between, **or** empty text, **or** jevlike failure | No (unless a link-rule heuristic hits) | No from the score. Auto-block uses the malicious-host list only. |
 
 Saved contacts are never auto-blocked. `BLOCK_ENABLED=false` turns the block column off.
 
@@ -62,9 +62,13 @@ Should stay `not_scam` / `unknown`. Saved or unsaved → ignore.
 - Lookalike hostname: any hostname label **is** the brand (`hsbc.evil.com`), or **starts** with that brand (`whatsapp-secure.com`, `whatsapp-secure.evil.com`, `sf-express-hk.evil.com`), or is one character off a brand of at least 6 letters (`whatspp`, `whatspp.evil.com`). A bare host counts (`whatsapp-secure.com/login` with no scheme). Fullwidth lookalikes are folded first. A hyphen is part of the label, so `not-bit.ly` is not `bit.ly`. A longer word that merely contains the brand (`bestwhatsapp.com`), a brand that does not start the label (`not-hangseng.com`, `not-hangseng.evil.com`, `my-whatsapp.example.com`), and a short near-miss (`hsb.com`) do not match. Allowlisted suffixes: `whatsapp.com`, `wa.me`, `sf-express.com`, `hsbc.com`, `hsbc.com.hk`, `hangseng.com`, `payme.hsbc.com.hk`. Public hosts `github.io`, `medium.com`, and `blogspot.com` are not lookalikes (`whatsapp.github.io`).
 - Short link (`bit.ly`, `tinyurl.com`, `t.co`, `cutt.ly`, `rb.gy`, `is.gd`, `t.cn`, `dwz.cn`, `url.cn`, with or without `https://`) **and** an OTP ask, impersonation, or an urgent transfer into an account. A short link alone, or with ordinary bill-splitting, does not match. `youtu.be` is not a short link.
 
-驗證碼, 轉數快, 封號, USDT, and 順豐清關 wording are not hard hits, including when a news article quotes them. The scorer decides those lines. An explicit context-model `block` can still block an unsaved contact.
+驗證碼, 轉數快, 封號, USDT, and 順豐清關 wording are not hard hits, including when a news article quotes them. The scorer decides those lines. Optional context LLM and LLM review (default off) never auto-block; a model `block` answer is treated as archive only.
 
-Link hits set `archiveReason: 'obvious_scam'` even when the jevlike score is low. On an unsaved contact they also block, but only when **this message** matches. A high score can archive; it does not block. The link label is written into the contact name (`封鎖·假域名`, `封鎖·短連結索取`). A score never blocks.
+Link hits set `archiveReason: 'obvious_scam'` even when the jevlike score is low. Lookalike and soliciting short-link hits **archive only**; they do not auto-block. A high score can archive; it does not block.
+
+## Malicious-host list (auto-block, unsaved only)
+
+[`data/malicious-hosts.json`](data/malicious-hosts.json) (`MALICIOUS_HOSTS_PATH` optional) holds operator-maintained registrable hosts. A current-message URL whose host matches (exact or suffix) may **block** an unsaved contact and rename the contact `封鎖·惡意域名`. Saved contacts are never auto-blocked. This list is separate from lookalike detection; extend it only for confirmed-malicious domains.
 
 ## Tuning
 

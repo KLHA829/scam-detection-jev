@@ -1,6 +1,6 @@
 # scam-detection-jev
 
-Local **WhatsApp Web** bot that scores each 1:1 DM, **archives** risky chats, and **blocks** unsaved high-risk contacts.
+Local **WhatsApp Web** bot that scores each 1:1 DM, **archives** risky chats, and may **block** unsaved contacts only when a URL matches the malicious-host list.
 
 **Primary (and only) scorer:** [jevlike](https://github.com/vinnylarouge/jevlike) with a frozen Hugging Face encoder `hfl/chinese-roberta-wwm-ext` and choice labels `not_scam` / `scam`. The fine-tuned head (`jevlike_hf_chinese_roberta_r1.pt`, ~2.3 MB) is already on GitHub Release tag [`jevlike-hf-r1`](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1); the encoder (~400 MB) downloads from the Hub on first run. This is the path meant for a **Raspberry Pi** and other CPU machines. There is **no** LightJev / `SCORER=model_v2` fallback.
 
@@ -235,7 +235,7 @@ Aliases if `LLM_REVIEW_API_URL` / `LLM_REVIEW_API_KEY` are unset: `OPENAI_BASE_U
 
 ## 第二輪覆核（灰帶／高分／可選全部）
 
-流程同 [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented)：**jevlike 同連結規則** 先跑；**唔會為咗 LLM 拆走現有計分**。已儲存聯絡人只會 archive。未儲存聯絡人先會 block：當前句係假域名或者索取式短連結，或者上文模型明確答 `block`。轉數快、驗證碼呢類字眼本身唔會封鎖。分數達到 `BLOCK_THRESHOLD`（預設 80）只會封存，唔會封鎖。封鎖原因會寫入 WhatsApp 聯絡人名（`封鎖·…`），並追加到 `blocks.jsonl`。灰帶同分數失敗唔會 block。LLM 若把高分放行，就唔會 block。對外 LLM 之前用 jevlike 脱敏頭把個人資料換成 `XXX`；頭未載入就唔送。
+流程同 [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented)：**jevlike 同連結規則** 先跑；**唔會為咗 LLM 拆走現有計分**。已儲存聯絡人只會 archive。未儲存聯絡人**自動 block** 只會喺當前句 URL 命中 [`data/malicious-hosts.json`](data/malicious-hosts.json) 維護名單（子域名亦計）。假域名同索取式短連結只會 hard archive，唔會自動 block。可選上文模型同第二輪 LLM（預設關）唔會自動 block；模型答 `block` 只當 archive。轉數快、驗證碼呢類字眼本身唔會封鎖。分數達到 `BLOCK_THRESHOLD`（預設 80）只會封存，唔會封鎖。惡意域名 block 會寫 `封鎖·惡意域名` 入 WhatsApp 聯絡人名，並追加到 `blocks.jsonl`。灰帶同分數失敗唔會 block。LLM 若把高分放行，就唔會 block。對外 LLM 之前用 jevlike 脱敏頭把個人資料換成 `XXX`；頭未載入就唔送。
 
 - 連結規則 hard archive → **立刻 archive，不呼叫 LLM**（`LLM_REVIEW_ALL=1` 都一樣）
 - 主模型高分 archive（分數/100 **高過** `LLM_REVIEW_GREY_MAX`，預設 0.85）→ **LLM 第二輪**（`LLM_REVIEW_ON_HIGH=true`，預設開）。LLM `not_scam` 可以 **放行** 分數誤報；`unknown`／失敗則 **維持 archive**

@@ -10,7 +10,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 | Path | Role |
 |---|---|
 | `whatsapp-bot.js` | WhatsApp Web client: QR, orchestration, archive + graded block |
-| `lib/decide-incoming.js` | primary action from score + heuristic + rag + local classifier |
+| `lib/decide-incoming.js` | primary action from jevlike score + link heuristics |
 | `lib/jevlike-client.js`, `lib/score-message.js` | `{text}` → `{prob_scam}` over HTTP |
 | `jevlike_serve.py` | persistent HF-encoder worker, `POST /v1/score` (start before the bot) |
 | `lib/filters.js`, `lib/lid.js` | which messages count, `@lid` resolution |
@@ -41,7 +41,7 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
   (`CONTEXT_LLM_MESSAGES`, default 10). The current message is always included. A model `block` answer
   is treated as archive only. Saved contacts stay unblockable. A score does not block. Mask failure or a
   bad model reply does not archive or block. Link-rule archives still skip it.
-- Heuristic / RAG / local-classifier hard archives skip the decision-changing LLM.
+- Link-rule hard archives (lookalike, soliciting short link, malicious-host URL) skip the decision-changing LLM.
   Guided mode may still ask the chat API for a Cantonese explanation after the same mask, and that reply cannot archive, block, or hide the card.
 - No keyword list suppresses a score. OTP, money, impersonation, and secrecy detectors do not archive
   or block. They are used only to recognise a soliciting short link, and as optional LLM-review triggers.
