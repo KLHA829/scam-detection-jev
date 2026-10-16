@@ -24,7 +24,7 @@ jevlike probabilities are **not calibrated**. Thresholds are operational, not sc
 |-------|-----------------|----------------------|------------------------------|
 | `scam` | `score >= 42` (`ARCHIVE_THRESHOLD`) | Yes (`jevlike_score`) | No. A score never blocks. |
 | `not_scam` | `score <= 18` (`SAFE_THRESHOLD`) | No | No (unless an obvious-scam heuristic hits) |
-| `unknown` | in between, **or** empty text, **or** jevlike failure | No (unless heuristic / RAG / local classifier) | No from the score. A heuristic hit still blocks an unsaved contact. |
+| `unknown` | in between, **or** empty text, **or** jevlike failure | No (unless a link-rule heuristic hits) | No from the score. A link-rule hit can still block an unsaved contact. |
 
 Saved contacts are never auto-blocked. `BLOCK_ENABLED=false` turns the block column off.
 

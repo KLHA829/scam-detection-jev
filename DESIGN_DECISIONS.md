@@ -65,7 +65,7 @@ Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high
 Live DM, after filters:
 
 1. `score >= ARCHIVE_THRESHOLD` (label `scam`) → archive `jevlike_score` (any sender). If LLM review is enabled, this **score-only** archive still goes to the second pass when the score is in the grey band, (with `LLM_REVIEW_ON_HIGH`, default true) **score/100 > GREY_MAX**, or `LLM_REVIEW_ALL=1`.
-2. Else a link rule (or optional local classifier / RAG) → archive `obvious_scam` / `local_classifier` / `rag_scam_match`. Skip LLM. The link rule is a lookalike host or a soliciting short link, including when the text says 這不是詐騙. An allowlisted host such as `sf-express.com` is not a lookalike. Wording such as 轉數快, 驗證碼, 封號, or 順豐清關 is not this step.
+2. Else a link rule → archive `obvious_scam`. Skip LLM. The link rule is a lookalike host or a soliciting short link, including when the text says 這不是詐騙. An allowlisted host such as `sf-express.com` is not a lookalike. Wording such as 轉數快, 驗證碼, 封號, or 順豐清關 is not this step. (RAG / local-classifier hooks were removed from the live bot; `decideIncomingAction` still accepts them for unit tests only.)
 3. Else if LLM review is enabled and a **trigger** fires (grey band 0.40–0.85 of score/100, high score above `GREY_MAX`, scorer vs local conflict, short OTP-ish DM, money ask from unknown/new number, **or** `LLM_REVIEW_ALL=1`) → mask PII → LLM. `should_archive` or `label=scam` → archive `llm_review_scam`. `not_scam` **releases** a score-only archive unless `LLM_REVIEW_MERGE=archive_only`. LLM failure → keep a score archive; otherwise `unknown` and do not archive.
 4. Else ignore.
 

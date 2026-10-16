@@ -25,3 +25,4 @@ jobs:
           python-version: "3.12"
       - run: npm ci
       - run: npm test
+      - run: node scripts/review-eval.js --llm dry --mode triggers

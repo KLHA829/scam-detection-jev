@@ -6,7 +6,8 @@
  * against a labelled real HK corpus. Uses the repo's own modules, not a reimplementation.
  *
  * Usage:
- *   node scripts/review-eval.js --from-run ../jevlike-lab/runs/r1_head_only.json [--split real_test] \
+ *   node scripts/review-eval.js [--from-run fixtures/review-eval-smoke.json] [--split ci_smoke] \
+ *   node scripts/review-eval.js --from-run ../jevlike-lab/runs/r1_head_only.json --split real_test \
  *        [--mode off|triggers|all] [--llm off|dry|live] [--sample 3]
  *
  *   --mode  stage-2 gating: off (LLM_REVIEW_ENABLED=false), triggers (grey/high/conflict), all (LLM_REVIEW_ALL=1)
@@ -36,8 +37,11 @@ function arg(name, fallback) {
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
 
-const FROM_RUN = arg('from-run', path.join(__dirname, '..', '..', 'jevlike-lab', 'runs', 'r1_head_only.json'));
-const SPLIT = arg('split', 'real_test');
+const FROM_RUN = arg(
+  'from-run',
+  path.join(__dirname, '..', 'fixtures', 'review-eval-smoke.json'),
+);
+const SPLIT = arg('split', 'ci_smoke');
 const MODE = arg('mode', 'triggers');
 const LLM = arg('llm', 'off');
 const SAMPLE = Number(arg('sample', '3'));
