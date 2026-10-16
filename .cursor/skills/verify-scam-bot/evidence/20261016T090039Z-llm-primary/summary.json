@@ -1,0 +1,14 @@
+{
+  "feature": "llm-primary",
+  "entry": "stub POST /v1/mask plus node --test subset",
+  "baseUrl": "http://127.0.0.1:18766",
+  "worker": "stub-jevlike",
+  "whatsapp": "not started",
+  "maskSampleSpans": 2,
+  "nodeTestExit": 0,
+  "passLine": "# pass 11",
+  "failLine": "# fail 0",
+  "missingTests": [],
+  "httpErrors": [],
+  "proved": true
+}

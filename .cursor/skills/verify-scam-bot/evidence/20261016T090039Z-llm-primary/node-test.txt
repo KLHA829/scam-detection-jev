@@ -1,0 +1,146 @@
+TAP version 13
+# [SCAN] message inbound {"chatId":"85269998888@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85269998888","savedContact":false,"llmOn":true,"contextOn":false}
+# [INFO] llm review skipped {"chatId":"85269998888@c.us","skipped":"mask_failed","error":"mask 503"}
+# [SCAN] message inbound {"chatId":"85269997777@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85269997777","savedContact":false,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85269997777@c.us","reasons":["primary_review"],"redacted":"請立即轉帳到這個戶口"}
+# [SCAN] llm review archive {"chatId":"85269997777@c.us","label":"scam","reason":"test"}
+# [OK] archived chat (llm_review_scam) {"chatId":"85269997777@c.us","score":0,"label":"unknown"}
+# Subtest: AGENTS.md invariants — processIncomingMessage integration
+    # Subtest: invariant: mask failure alone never archives in the live decision path
+    ok 1 - invariant: mask failure alone never archives in the live decision path
+      ---
+      duration_ms: 3.07265
+      ...
+    # Subtest: invariant: LLM scam archives unsaved contact and never calls blockContact
+    ok 2 - invariant: LLM scam archives unsaved contact and never calls blockContact
+      ---
+      duration_ms: 18.199214
+      ...
+    1..2
+ok 1 - AGENTS.md invariants — processIncomingMessage integration
+  ---
+  duration_ms: 21.855295
+  type: 'suite'
+  ...
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"今晚方便傾兩句嗎？我電話 XXX"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"uncertain lure"}
+# [OK] archived chat (llm_review_scam) {"chatId":"85261234567@c.us","score":0,"label":"unknown"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [INFO] llm review skipped {"chatId":"85261234567@c.us","skipped":"mask_failed","error":"mask down"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"heuristic","heuristic":"lookalike_domain","digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [OK] archived chat (obvious_scam) {"chatId":"85261234567@c.us","score":0,"label":"unknown"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"今晚食飯我之後PayMe返你，唔使急"}
+# [SCAN] llm review no archive {"chatId":"85261234567@c.us","label":"unknown","ok":true,"reason":"unsure"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"今晚食飯我之後PayMe返你，唔使急"}
+# [SCAN] llm review no archive {"chatId":"85261234567@c.us","label":"unknown","ok":false,"reason":"llm_timeout"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"今晚飲茶？我電話 XXX"}
+# [SCAN] llm review no archive {"chatId":"85261234567@c.us","label":"not_scam","ok":true,"reason":"tea"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"今晚飲茶？"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"second look"}
+# [OK] archived chat (llm_review_scam) {"chatId":"85261234567@c.us","score":0,"label":"unknown"}
+# Subtest: processIncomingMessage llm second pass
+    # Subtest: archives grey messages when LLM says scam, using redacted text
+    ok 1 - archives grey messages when LLM says scam, using redacted text
+      ---
+      duration_ms: 21.315623
+      ...
+    # Subtest: does not call the LLM when the mask head fails
+    ok 2 - does not call the LLM when the mask head fails
+      ---
+      duration_ms: 0.861906
+      ...
+    # Subtest: skips LLM on heuristic hard archives
+    ok 3 - skips LLM on heuristic hard archives
+      ---
+      duration_ms: 0.833969
+      ...
+    # Subtest: fail-closed: LLM unknown or errors leave ignore (no archive)
+    ok 4 - fail-closed: LLM unknown or errors leave ignore (no archive)
+      ---
+      duration_ms: 1.986238
+      ...
+    1..4
+ok 2 - processIncomingMessage llm second pass
+  ---
+  duration_ms: 25.87134
+  type: 'suite'
+  ...
+# Subtest: LLM_REVIEW_ALL routing
+    # Subtest: processIncomingMessage calls the LLM on every non-heuristic DM by default
+    ok 1 - processIncomingMessage calls the LLM on every non-heuristic DM by default
+      ---
+      duration_ms: 0.974317
+      ...
+    # Subtest: LLM primary path archives when the LLM says scam
+    ok 2 - LLM primary path archives when the LLM says scam
+      ---
+      duration_ms: 0.700297
+      ...
+    1..2
+ok 3 - LLM_REVIEW_ALL routing
+  ---
+  duration_ms: 1.86464
+  type: 'suite'
+  ...
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85269990000","savedContact":false,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"我係防騙協調中心，請提供密碼並轉帳核實，唔好同任何人講。"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"test"}
+# [OK] archived chat (llm_review_scam) {"chatId":"85261234567@c.us","score":0,"label":"unknown"}
+# Subtest: score and link policy
+    # Subtest: archives bait when the LLM flags scam and does not block on the words
+    ok 1 - archives bait when the LLM flags scam and does not block on the words
+      ---
+      duration_ms: 20.619807
+      ...
+    1..1
+ok 4 - score and link policy
+  ---
+  duration_ms: 21.405976
+  type: 'suite'
+  ...
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"請立即轉帳"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"test"}
+# [OK] archived chat (llm_review_scam) {"chatId":"85261234567@c.us","score":0,"label":"unknown"}
+# Subtest: processIncomingMessage primary LLM
+    # Subtest: archives llm_review_scam when the model flags scam
+    ok 1 - archives llm_review_scam when the model flags scam
+      ---
+      duration_ms: 20.321297
+      ...
+    1..1
+ok 5 - processIncomingMessage primary LLM
+  ---
+  duration_ms: 20.820362
+  type: 'suite'
+  ...
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"今晚食飯嗎"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"test"}
+# [OK] archived chat (llm_review_scam) {"chatId":"85261234567@c.us","score":0,"label":"unknown"}
+# Subtest: processIncomingMessage
+    # Subtest: archives via callback when LLM says scam
+    ok 1 - archives via callback when LLM says scam
+      ---
+      duration_ms: 18.629123
+      ...
+    1..1
+ok 6 - processIncomingMessage
+  ---
+  duration_ms: 19.234125
+  type: 'suite'
+  ...
+1..6
+# tests 11
+# suites 6
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 127.111343

@@ -1,0 +1,180 @@
+#!/usr/bin/env node
+'use strict';
+
+/**
+ * Drive the llm-primary feature: stub POST /v1/mask + node --test subset for
+ * mask → LLM archive/ignore. Does not open WhatsApp or Chrome.
+ */
+
+const { spawnSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const skillDir = path.resolve(__dirname, '..');
+const root = path.resolve(skillDir, '../../..');
+const runDir = path.join(skillDir, 'run');
+const evidenceRoot = path.join(skillDir, 'evidence');
+
+const TEST_NAMES = [
+  'archives bait when the LLM flags scam and does not block on the words',
+  'archives grey messages when LLM says scam, using redacted text',
+  'does not call the LLM when the mask head fails',
+  'fail-closed: LLM unknown or errors leave ignore (no archive)',
+  'skips LLM on heuristic hard archives',
+  'processIncomingMessage calls the LLM on every non-heuristic DM by default',
+  'LLM primary path archives when the LLM says scam',
+  'archives via callback when LLM says scam',
+  'archives llm_review_scam when the model flags scam',
+  'invariant: mask failure alone never archives in the live decision path',
+  'invariant: LLM scam archives unsaved contact and never calls blockContact',
+];
+
+const TEST_FILES = [
+  'lib/scam-intent.test.js',
+  'lib/llm-review.test.js',
+  'whatsapp-bot.test.js',
+  'lib/scorer.test.js',
+  'lib/agents-invariants.test.js',
+];
+
+const UNSET_ENV = [
+  'ARCHIVE_THRESHOLD',
+  'SAFE_THRESHOLD',
+  'BLOCK_THRESHOLD',
+  'BLOCK_ENABLED',
+  'HEURISTIC_ENABLED',
+  'OPERATOR_MODE',
+  'CONTEXT_LLM_ENABLED',
+  'SCORER',
+];
+
+function die(message) {
+  console.error(`drive-llm-primary: ${message}`);
+  process.exit(1);
+}
+
+function readText(file) {
+  return fs.readFileSync(file, 'utf8').trim();
+}
+
+function stamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return (
+    `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
+    `T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`
+  );
+}
+
+function postJson(base, pathname, body) {
+  const url = `${base}${pathname}`;
+  const result = spawnSync(
+    'curl',
+    [
+      '-fsS',
+      '--max-time',
+      '5',
+      '-X',
+      'POST',
+      '-H',
+      'content-type: application/json',
+      '--data-binary',
+      '@-',
+      url,
+    ],
+    { input: JSON.stringify(body), encoding: 'utf8' },
+  );
+  if (result.status !== 0) {
+    die(`POST ${url} failed: ${result.stderr || result.stdout || result.error}`);
+  }
+  return result.stdout;
+}
+
+const doctor = spawnSync(path.join(__dirname, 'doctor'), { encoding: 'utf8' });
+process.stdout.write(doctor.stdout || '');
+process.stderr.write(doctor.stderr || '');
+if (doctor.status !== 0) die('doctor failed; not driving');
+
+const base = readText(path.join(runDir, 'base-url'));
+const outDir = path.join(evidenceRoot, `${stamp()}-llm-primary`);
+fs.mkdirSync(outDir, { recursive: true });
+fs.writeFileSync(path.join(outDir, 'doctor.txt'), doctor.stdout);
+
+const health = spawnSync('curl', ['-fsS', '--max-time', '5', `${base}/health`], {
+  encoding: 'utf8',
+});
+if (health.status !== 0) die(`GET ${base}/health failed`);
+fs.writeFileSync(path.join(outDir, 'health.json'), `${health.stdout.trim()}\n`);
+
+const maskBody = {
+  messages: ['我係陳大文 電話 91234567 驗證碼過期請發俾我'],
+};
+const emptyMaskBody = { messages: ['今晚飲茶？'] };
+fs.writeFileSync(path.join(outDir, 'mask.request.json'), `${JSON.stringify(maskBody)}\n`);
+fs.writeFileSync(
+  path.join(outDir, 'mask-empty.request.json'),
+  `${JSON.stringify(emptyMaskBody)}\n`,
+);
+const maskRaw = postJson(base, '/v1/mask', maskBody);
+const emptyRaw = postJson(base, '/v1/mask', emptyMaskBody);
+fs.writeFileSync(path.join(outDir, 'mask.json'), `${maskRaw.trim()}\n`);
+fs.writeFileSync(path.join(outDir, 'mask-empty.json'), `${emptyRaw.trim()}\n`);
+
+const mask = JSON.parse(maskRaw);
+const emptyMask = JSON.parse(emptyRaw);
+const httpErrors = [];
+if (mask.model !== 'stub-jevlike' || !Array.isArray(mask.messages?.[0]?.spans)) {
+  httpErrors.push(`mask response was ${JSON.stringify(mask)}`);
+} else if (mask.messages[0].spans.length === 0) {
+  httpErrors.push('expected non-empty spans for PII sample');
+}
+if (
+  emptyMask.model !== 'stub-jevlike' ||
+  !Array.isArray(emptyMask.messages?.[0]?.spans) ||
+  emptyMask.messages[0].spans.length !== 0
+) {
+  httpErrors.push(`empty mask response was ${JSON.stringify(emptyMask)}`);
+}
+
+const launchLog = path.join(runDir, 'stub.log');
+if (fs.existsSync(launchLog)) {
+  fs.copyFileSync(launchLog, path.join(outDir, 'launch.txt'));
+}
+
+const pattern = TEST_NAMES.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+const env = { ...process.env };
+for (const key of UNSET_ENV) delete env[key];
+const test = spawnSync(
+  'node',
+  ['--test', '--test-reporter', 'tap', `--test-name-pattern=${pattern}`, ...TEST_FILES],
+  { cwd: root, env, encoding: 'utf8' },
+);
+const tap = `${test.stdout || ''}${test.stderr || ''}`;
+fs.writeFileSync(path.join(outDir, 'node-test.txt'), tap);
+
+const missing = TEST_NAMES.filter((name) => {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return !new RegExp(`^\\s*ok \\d+ - ${escaped}$`, 'm').test(tap);
+});
+const failLine = tap.split('\n').find((line) => line.startsWith('# fail ')) || '# fail missing';
+const passLine = tap.split('\n').find((line) => line.startsWith('# pass ')) || '# pass missing';
+const testsOk = test.status === 0 && failLine === '# fail 0' && missing.length === 0;
+
+const summary = {
+  feature: 'llm-primary',
+  entry: 'stub POST /v1/mask plus node --test subset',
+  baseUrl: base,
+  worker: 'stub-jevlike',
+  whatsapp: 'not started',
+  maskSampleSpans: mask.messages?.[0]?.spans?.length ?? null,
+  nodeTestExit: test.status,
+  passLine,
+  failLine,
+  missingTests: missing,
+  httpErrors,
+  proved: testsOk && httpErrors.length === 0,
+};
+fs.writeFileSync(path.join(outDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
+console.log(`evidence: ${outDir}`);
+console.log(JSON.stringify(summary, null, 2));
+if (!summary.proved) process.exit(1);

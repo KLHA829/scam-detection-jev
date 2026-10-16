@@ -4,7 +4,6 @@
 /**
  * Drive the agents-md-invariants feature (offline node:test only).
  * Writes proof under .cursor/skills/verify-scam-bot/evidence/<stamp>-agents-md-invariants/.
- * Does not open WhatsApp, Chrome, or the HTTP stub worker.
  */
 
 const { spawnSync } = require('child_process');
@@ -24,11 +23,11 @@ const TEST_NAMES = [
   'invariant: applyBlockPolicy archives saved contacts even with link heuristic on current message',
   'invariant: applyBlockPolicy archives unsaved block-line score without link rule or context block',
   'invariant: scorer unknown (ok:false) never promotes to block via applyBlockPolicy',
-  'invariant: scorer unknown alone never archives',
-  'invariant: scorer unknown with block-line numeric score still ignores (fail closed)',
-  'invariant: scorer failure alone never archives in the live decision path',
-  'invariant: unsaved block-line stub score archives and never calls blockContact',
-  'invariant: saved contact at block-line score archives without blockContact',
+  'invariant: non-heuristic messages ignore before LLM merge',
+  'invariant: link heuristic archives without a score',
+  'invariant: mask failure alone never archives in the live decision path',
+  'invariant: LLM scam archives unsaved contact and never calls blockContact',
+  'invariant: saved contact LLM archive does not call blockContact',
   'invariant: context-model block archives only and never auto-blocks',
   'invariant: unsaved lookalike archives without waiting on score and does not block',
 ];
@@ -43,7 +42,6 @@ const UNSET_ENV = [
   'HEURISTIC_ENABLED',
   'OPERATOR_MODE',
   'CONTEXT_LLM_ENABLED',
-  'LLM_REVIEW_ENABLED',
   'SCORER',
   'MALICIOUS_HOSTS_PATH',
 ];
@@ -88,7 +86,7 @@ const testsOk = test.status === 0 && failLine === '# fail 0' && missing.length =
 const summary = {
   feature: 'agents-md-invariants',
   entry: 'node --test lib/agents-invariants.test.js',
-  scorer: 'in-process stub client (no HTTP worker)',
+  worker: 'in-process stub client (no HTTP worker)',
   whatsapp: 'not started',
   nodeTestExit: test.status,
   passLine,

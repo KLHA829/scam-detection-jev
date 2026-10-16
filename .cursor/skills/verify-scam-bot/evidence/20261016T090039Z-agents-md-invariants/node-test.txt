@@ -1,0 +1,121 @@
+TAP version 13
+# [SCAN] message inbound {"chatId":"85269998888@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85269998888","savedContact":false,"llmOn":true,"contextOn":false}
+# [INFO] llm review skipped {"chatId":"85269998888@c.us","skipped":"mask_failed","error":"mask 503"}
+# [SCAN] message inbound {"chatId":"85269997777@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85269997777","savedContact":false,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85269997777@c.us","reasons":["primary_review"],"redacted":"請立即轉帳到這個戶口"}
+# [SCAN] llm review archive {"chatId":"85269997777@c.us","label":"scam","reason":"test"}
+# [OK] archived chat (llm_review_scam) {"chatId":"85269997777@c.us","score":0,"label":"unknown"}
+# [SCAN] message inbound {"chatId":"85261230000@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261230000","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261230000@c.us","reasons":["primary_review"],"redacted":"請立即轉帳"}
+# [SCAN] llm review archive {"chatId":"85261230000@c.us","label":"scam","reason":"test"}
+# [OK] archived chat (llm_review_scam) {"chatId":"85261230000@c.us","score":0,"label":"unknown"}
+# [SCAN] message inbound {"chatId":"85269996666@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85269996666","savedContact":false,"llmOn":true,"contextOn":true}
+# [SCAN] context llm {"chatId":"85269996666@c.us","messages":1,"action":"block","ok":true,"reason":"invariant"}
+# [OK] archived chat (context_llm) {"chatId":"85269996666@c.us","score":0,"label":"unknown"}
+# [SCAN] message inbound {"chatId":"85269995555@c.us","scoreSource":"heuristic","heuristic":"lookalike_domain","digits":"85269995555","savedContact":false,"llmOn":false,"contextOn":false}
+# [OK] archived chat (obvious_scam) {"chatId":"85269995555@c.us","score":0,"label":"unknown"}
+# Subtest: AGENTS.md invariants — block eligibility
+    # Subtest: invariant: saved contacts are never auto-blocked (blockEligibility stays null)
+    ok 1 - invariant: saved contacts are never auto-blocked (blockEligibility stays null)
+      ---
+      duration_ms: 0.676581
+      ...
+    # Subtest: invariant: unsaved jevlike score at or above BLOCK_THRESHOLD alone does not block
+    ok 2 - invariant: unsaved jevlike score at or above BLOCK_THRESHOLD alone does not block
+      ---
+      duration_ms: 0.138512
+      ...
+    # Subtest: invariant: unsaved lookalike link rule does not auto-block (archive only)
+    ok 3 - invariant: unsaved lookalike link rule does not auto-block (archive only)
+      ---
+      duration_ms: 0.134734
+      ...
+    # Subtest: invariant: unsaved short_link_solicit does not auto-block
+    ok 4 - invariant: unsaved short_link_solicit does not auto-block
+      ---
+      duration_ms: 0.081953
+      ...
+    # Subtest: invariant: unsaved malicious_host on the current message may block
+    ok 5 - invariant: unsaved malicious_host on the current message may block
+      ---
+      duration_ms: 0.116496
+      ...
+    # Subtest: invariant: applyBlockPolicy archives saved contacts even with link heuristic on current message
+    ok 6 - invariant: applyBlockPolicy archives saved contacts even with link heuristic on current message
+      ---
+      duration_ms: 0.965749
+      ...
+    # Subtest: invariant: applyBlockPolicy archives unsaved block-line score without link rule or context block
+    ok 7 - invariant: applyBlockPolicy archives unsaved block-line score without link rule or context block
+      ---
+      duration_ms: 0.152397
+      ...
+    # Subtest: invariant: scorer unknown (ok:false) never promotes to block via applyBlockPolicy
+    ok 8 - invariant: scorer unknown (ok:false) never promotes to block via applyBlockPolicy
+      ---
+      duration_ms: 0.204532
+      ...
+    1..8
+ok 1 - AGENTS.md invariants — block eligibility
+  ---
+  duration_ms: 3.427003
+  type: 'suite'
+  ...
+# Subtest: AGENTS.md invariants — primary decide (heuristic only)
+    # Subtest: invariant: non-heuristic messages ignore before LLM merge
+    ok 1 - invariant: non-heuristic messages ignore before LLM merge
+      ---
+      duration_ms: 0.686184
+      ...
+    # Subtest: invariant: link heuristic archives without a score
+    ok 2 - invariant: link heuristic archives without a score
+      ---
+      duration_ms: 0.258503
+      ...
+    1..2
+ok 2 - AGENTS.md invariants — primary decide (heuristic only)
+  ---
+  duration_ms: 1.12971
+  type: 'suite'
+  ...
+# Subtest: AGENTS.md invariants — processIncomingMessage integration
+    # Subtest: invariant: mask failure alone never archives in the live decision path
+    ok 1 - invariant: mask failure alone never archives in the live decision path
+      ---
+      duration_ms: 2.600395
+      ...
+    # Subtest: invariant: LLM scam archives unsaved contact and never calls blockContact
+    ok 2 - invariant: LLM scam archives unsaved contact and never calls blockContact
+      ---
+      duration_ms: 16.668921
+      ...
+    # Subtest: invariant: saved contact LLM archive does not call blockContact
+    ok 3 - invariant: saved contact LLM archive does not call blockContact
+      ---
+      duration_ms: 1.662156
+      ...
+    # Subtest: invariant: context-model block archives only and never auto-blocks
+    ok 4 - invariant: context-model block archives only and never auto-blocks
+      ---
+      duration_ms: 0.951333
+      ...
+    # Subtest: invariant: unsaved lookalike archives without waiting on score and does not block
+    ok 5 - invariant: unsaved lookalike archives without waiting on score and does not block
+      ---
+      duration_ms: 0.762947
+      ...
+    1..5
+ok 3 - AGENTS.md invariants — processIncomingMessage integration
+  ---
+  duration_ms: 22.817245
+  type: 'suite'
+  ...
+1..3
+# tests 15
+# suites 3
+# pass 15
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 74.992156

@@ -12,7 +12,7 @@ Before any chat-API call, the bot asks jevlike `POST /v1/mask` which characters 
 
 ## How to get to it (user POV)
 
-- The operator turns on context review with `CONTEXT_LLM_ENABLED` (default off) or sets `LLM_REVIEW_API_URL` for the Cantonese note on a receipt or a guided card. The bot masks first, then calls that API.
+- **Primary path:** every non-heuristic DM masks first, then calls `LLM_REVIEW_API_URL` (default on). Optional `CONTEXT_LLM_ENABLED` uses the same mask over a multi-message transcript. Guided receipts and Cantonese explanations also mask before any chat API call.
 - Live worker: `POST http://127.0.0.1:8766/v1/mask` with `{"messages":["..."]}` (at most 10 strings). Without `models/jevlike_hf_pii_mask.pt` the worker returns 503 `{"error":"pii mask head is not loaded"}` and the bot sends nothing.
 - Smoke path: the same POST against the stub from `bin/launch-stub`. The stub fills spans with the offline helper `find_mask_spans` so the tests do not load the encoder. That 200 is the stub contract, not proof that the PII head is loaded.
 
@@ -50,11 +50,11 @@ Exit code `0`. The user message contains `XXX` and `驗證碼`, and does not con
 
 ```bash
 node --test --test-reporter tap \
-  --test-name-pattern 'does not call the model when masking fails|rejects a mask payload that would leave the text raw' \
-  lib/context-llm.test.js lib/audit-functions.test.js
+  --test-name-pattern 'does not call the LLM when the mask head fails|does not call the model when masking fails|rejects a mask payload that would leave the text raw|invariant: mask failure alone never archives in the live decision path' \
+  lib/llm-review.test.js lib/context-llm.test.js lib/audit-functions.test.js lib/agents-invariants.test.js
 ```
 
-Exit code `0`. The context-LLM case ends `action` `ignore` and `skipped` `mask_failed`. The audit case rejects an empty span object with `incomplete mask` and does not call the chat API.
+Exit code `0`. Primary and context paths end `ignore` with `mask_failed` or equivalent; audit rejects bad span payloads without calling the chat API.
 
 - **Proof.** Save `mask.json` and both TAP transcripts under `evidence/<UTC-stamp>-mask-before-llm/`. The HTTP file shows the spans. The TAP file shows the chat body after `XXX` replacement.
 
