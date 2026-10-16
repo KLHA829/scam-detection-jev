@@ -55,8 +55,8 @@ Never cut: validation at trust boundaries, error handling that prevents data los
 
 When this skill applies to this repo, read [AGENTS.md](../../../AGENTS.md) first. Ponytail does not override its invariants. In particular:
 
-- Hard archive from **link rules** (lookalike host, soliciting short link). Auto-block is **malicious-host list only** (`data/malicious-hosts.json`). Phrase tropes and jevlike score alone do not block; high scores archive only.
-- Scorer failure → `unknown`; **unknown alone never archives**.
+- Hard archive from **link rules** (lookalike, soliciting short link). Auto-block is **malicious-host list only**. Primary path: mask → LLM; no live jevlike score.
+- Mask or LLM failure → **no archive** (fail closed).
 - **Every** outbound LLM call goes through live `POST /v1/mask` first; mask failure skips the LLM, not the operator receipt where applicable.
 - Saved contacts are never auto-blocked. Thresholds change via `scoring-rubric.json` / env, not new magic numbers in code.
 - Offline proof stays `npm test` and [verify-scam-bot](../verify-scam-bot/SKILL.md); do not add a parallel harness.
