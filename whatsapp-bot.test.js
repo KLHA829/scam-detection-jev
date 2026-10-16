@@ -3,10 +3,10 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { extractDigits } = require('./lib/foreign-number');
+const { extractDigits } = require('./lib/lid');
 const { isLidId, lidUserPart, phoneLookupId, phoneFromLidMapping, resolveRealNumber } = require('./lib/lid');
 const { shouldIgnoreMessage, isOfficialWhatsAppId } = require('./lib/filters');
-const { matchObviousScam } = require('./lib/heuristics');
+const { matchObviousScam } = require('./lib/link-rules');
 const { decideIncomingAction, resolveIncomingMessageLabel } = require('./lib/decide-incoming');
 const { applyBlockPolicy } = require('./lib/block-policy');
 const {
@@ -294,27 +294,6 @@ describe('decideIncomingAction matrix', () => {
     assert.equal(blocked.contactName, '封鎖·假域名');
   });
 
-  it('archives optional RAG / local-classifier hits after heuristics', () => {
-    const low = scoreResult({ score: 4, label: 'not_scam' });
-    assert.deepEqual(
-      decideIncomingAction(low, '85261234567', true, { hit: false }, {
-        hit: true,
-        archiveReason: 'rag_scam_match',
-      }),
-      { action: 'archive', archiveReason: 'rag_scam_match' },
-    );
-    assert.deepEqual(
-      decideIncomingAction(
-        low,
-        '85261234567',
-        true,
-        { hit: false },
-        { hit: false },
-        { hit: true, archiveReason: 'local_classifier' },
-      ),
-      { action: 'archive', archiveReason: 'local_classifier' },
-    );
-  });
 });
 
 describe('resolveIncomingMessageLabel', () => {

@@ -10,6 +10,8 @@ Then the same `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` labels as below. There is n
 
 Machine-readable copy: [scoring-rubric.json](scoring-rubric.json). Thresholds can also be overridden with `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` in `.env`. Long messages are capped at `jevlikeMaxChars` (default 2000; override with `JEVLIKE_MAX_CHARS`).
 
+End-to-end decision order (score → link rule → optional LLM → graded block): [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented).
+
 ## Design goals
 
 - Catch typical **HK / TW / CN + English** WhatsApp DM tropes (FPS, 轉數快, OTP, 順豐清關, 官方封號, USDT).
@@ -55,7 +57,7 @@ Should stay `not_scam` / `unknown`. Saved or unsaved → ignore.
 
 ## Link backup (archive only)
 
-`lib/heuristics.js` calls `lib/link-rules.js` (disable with `HEURISTIC_ENABLED=false`). Text tropes are not hard hits.
+`lib/link-rules.js` (`matchObviousScam`; disable with `HEURISTIC_ENABLED=false`). Text tropes are not hard hits.
 
 - Lookalike hostname: any hostname label **is** the brand (`hsbc.evil.com`), or **starts** with that brand (`whatsapp-secure.com`, `whatsapp-secure.evil.com`, `sf-express-hk.evil.com`), or is one character off a brand of at least 6 letters (`whatspp`, `whatspp.evil.com`). A bare host counts (`whatsapp-secure.com/login` with no scheme). Fullwidth lookalikes are folded first. A hyphen is part of the label, so `not-bit.ly` is not `bit.ly`. A longer word that merely contains the brand (`bestwhatsapp.com`), a brand that does not start the label (`not-hangseng.com`, `not-hangseng.evil.com`, `my-whatsapp.example.com`), and a short near-miss (`hsb.com`) do not match. Allowlisted suffixes: `whatsapp.com`, `wa.me`, `sf-express.com`, `hsbc.com`, `hsbc.com.hk`, `hangseng.com`, `payme.hsbc.com.hk`. Public hosts `github.io`, `medium.com`, and `blogspot.com` are not lookalikes (`whatsapp.github.io`).
 - Short link (`bit.ly`, `tinyurl.com`, `t.co`, `cutt.ly`, `rb.gy`, `is.gd`, `t.cn`, `dwz.cn`, `url.cn`, with or without `https://`) **and** an OTP ask, impersonation, or an urgent transfer into an account. A short link alone, or with ordinary bill-splitting, does not match. `youtu.be` is not a short link.

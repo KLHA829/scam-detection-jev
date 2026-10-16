@@ -11,10 +11,10 @@ Human docs: [README.md](README.md) (setup, Pi, env vars), [DESIGN_DECISIONS.md](
 |---|---|
 | `whatsapp-bot.js` | WhatsApp Web client: QR, orchestration, archive + graded block |
 | `lib/decide-incoming.js` | primary action from score + heuristic + rag + local classifier |
-| `lib/scorer.js` → `lib/jevlike-client.js` | `{text}` → `{prob_scam}` over HTTP |
+| `lib/jevlike-client.js`, `lib/score-message.js` | `{text}` → `{prob_scam}` over HTTP |
 | `jevlike_serve.py` | persistent HF-encoder worker, `POST /v1/score` (start before the bot) |
 | `lib/filters.js`, `lib/lid.js` | which messages count, `@lid` resolution |
-| `lib/heuristics.js`, `lib/link-rules.js`, `lib/scam-intent.js` | link-only hard hits; solicit helpers for short links |
+| `lib/link-rules.js`, `lib/scam-intent.js` | link-only hard hits; solicit helpers for short links |
 | `lib/thread-context.js` | current body plus last `CONTEXT_TURNS` inbound bodies |
 | `lib/mask-spans.js` | offline stand-in for the PII head; live `POST /v1/mask` does not use it |
 | `POST /v1/mask` | jevlike PII head spans; the bot replaces them with `XXX` before any external LLM |
