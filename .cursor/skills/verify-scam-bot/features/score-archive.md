@@ -39,7 +39,7 @@ Exit code `0`. TAP includes `archives an unsaved high score without blocking` as
 
 ## Gotchas
 
-- A score at or above 80 archives. It does not block. Blocking is the link-lookalike feature or an explicit context-model `block`.
+- A score at or above 80 archives. It does not block. Auto-block is the malicious-host list only ([malicious-host-block](./malicious-host-block.md)).
 - `unknown` from a timeout, 5xx, or invalid JSON does not archive, even when the payload still contains a high number.
 - There is no foreign-number archive rule. A clean low score from any country code is ignored. Phone digit extraction lives in `lib/lid.js`.
 - `[stub:scam]` changes the stub preset. `jevlike_serve.py` scores the text with the r1 head and ignores the tag.
