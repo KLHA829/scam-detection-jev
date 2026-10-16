@@ -1,5 +1,8 @@
 {
+  "_provenance": "malicious-block-test.invalid: offline smoke tests (RFC 2606 .invalid). malware.testing.google.test: Google Safe Browsing malware-list test host (Chromium safe-browsing dev; .test per RFC 6761). wicar.org: WICAR intentional malware test site for AV validation — not normal browsing.",
   "hosts": [
-    "malicious-block-test.invalid"
+    "malicious-block-test.invalid",
+    "malware.testing.google.test",
+    "wicar.org"
   ]
 }

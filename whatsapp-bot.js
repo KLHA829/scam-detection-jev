@@ -39,6 +39,10 @@ const {
   optionLabels,
 } = require('./lib/review-prompt');
 const { serializedId, routeSelfText, routeVote } = require('./lib/self-chat');
+const {
+  loadMaliciousHosts,
+  startMaliciousHostsWatcher,
+} = require('./lib/malicious-hosts');
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
 
@@ -424,6 +428,24 @@ async function main() {
   const operator = createOperatorState();
   const reviewQueue = createReviewQueue();
   const client = createWhatsAppClient();
+
+  try {
+    const hosts = loadMaliciousHosts();
+    startMaliciousHostsWatcher({
+      onReload: (reloaded) => {
+        log.info('malicious hosts reloaded', { count: reloaded.length });
+      },
+      onError: (err) => {
+        log.warn('malicious hosts reload failed; keeping previous list', {
+          error: err.message,
+        });
+      },
+    });
+    log.info('malicious hosts loaded', { count: hosts.length });
+  } catch (err) {
+    log.error('malicious hosts load failed', { error: err.message });
+    process.exit(1);
+  }
 
   log.info('starting WhatsApp scam-risk bot (mask + LLM primary, malicious-host block)', {
     maskWorker: scoreClient.baseURL,

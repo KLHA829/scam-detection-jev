@@ -149,7 +149,7 @@ See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rub
 
 - `ARCHIVE_THRESHOLD` (default `42`) — label `scam` / archive from score
 - `BLOCK_THRESHOLD` (default `80`) — still the line context review will not release. A score at this line archives and does **not** block. Auto-block uses the malicious-host list only.
-- `MALICIOUS_HOSTS_PATH` — optional path to JSON `{ "hosts": ["evil.example", …] }`. Default: `data/malicious-hosts.json`. Add registrable host strings; subdomains match (e.g. `pay.evil.example` matches `evil.example`).
+- `MALICIOUS_HOSTS_PATH` — optional path to JSON `{ "hosts": ["evil.example", …] }`. Default: `data/malicious-hosts.json`. Add registrable host strings; subdomains match (e.g. `pay.evil.example` matches `evil.example`). The bot watches this file and reloads the in-memory list on save (no restart). A bad edit keeps the previous list and logs a warning.
 - `BLOCK_ENABLED` (default `true`) — `false` restores archive-only
 - `WA_ACTION_GAP_MS` (default `3000`) — minimum gap between WhatsApp account changes (block, rename, mute, archive). Chats are changed one at a time. Rename runs only after a successful block.
 - `CONTEXT_TURNS` (default `4`) — score the current message, and also the last N inbound messages when that window scores higher. `1` disables the window.
