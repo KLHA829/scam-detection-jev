@@ -177,7 +177,7 @@ If the scorer times out, returns 5xx, or sends invalid JSON, the label is **`unk
 
 Primary scoring is unchanged. After it, obvious heuristics, and optional local/RAG matchers, a **second pass** can run when `LLM_REVIEW_ENABLED=true` **or** `LLM_REVIEW_ALL=1`:
 
-1. **Non-score hard archive** (`obvious_scam`, `rag_scam_match`, `local_classifier`) → archive immediately. No LLM. Heuristic/RAG hits also skip the LLM even if the scorer already chose `jevlike_score`.
+1. **Non-score hard archive** (`obvious_scam` link rules only) → archive immediately. No LLM. Link hits also skip the LLM even if the scorer already chose `jevlike_score`.
 2. **No keyword suppress.** OTP, money, and impersonation wording do not archive or block. A link-rule, RAG, or local-classifier hit is not sent to this pass.
 3. **When `LLM_REVIEW_ALL=0` (default):** grey / conflict / high → mask → LLM:
    - score in grey band `LLM_REVIEW_GREY_MIN`–`LLM_REVIEW_GREY_MAX` (defaults **0.40–0.85**, score/100)
@@ -249,6 +249,14 @@ Aliases if `LLM_REVIEW_API_URL` / `LLM_REVIEW_API_KEY` are unset: `OPENAI_BASE_U
 ```bash
 npm test
 ```
+
+Offline stage-1+2 pipeline check (stub mask, dry LLM transport, no API key):
+
+```bash
+node scripts/review-eval.js --llm dry --mode triggers
+```
+
+The default fixture is `fixtures/review-eval-smoke.json` (`ci_smoke` split). For the full labelled HK run, pass `--from-run` to your `jevlike-lab` export and `--split real_test`.
 
 ## Docker (optional)
 
