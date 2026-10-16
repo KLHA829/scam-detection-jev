@@ -171,14 +171,16 @@ See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rub
 - `JEVLIKE_MASK_CKPT` — second jevlike head trained to mark personal-data characters (`python scripts/train_pii_mask.py`). It does not replace the scam scorer. Without it, `/v1/mask` returns 503 and the bot does not send the text. See [models/README.md](models/README.md).
 - `CONTEXT_LLM_MESSAGES` (default `10`, capped at 10) — how many of the latest inbound messages are sent. The message that just arrived is always included.
 
-If the scorer times out, returns 5xx, or sends invalid JSON, the label is **`unknown`**. Unknown **does not archive** unless a heuristic (or optional RAG / local classifier) fires.
+If the scorer times out, returns 5xx, or sends invalid JSON, the label is **`unknown`**. Unknown **does not archive** unless a link rule fires.
+
+For the full inbound decision order (score, link rule, optional LLM, graded block), see [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented).
 
 ## Second-pass review (grey / conflict / high / optional all)
 
-Primary scoring is unchanged. After it, obvious heuristics, and optional local/RAG matchers, a **second pass** can run when `LLM_REVIEW_ENABLED=true` **or** `LLM_REVIEW_ALL=1`:
+When `LLM_REVIEW_ENABLED=true` **or** `LLM_REVIEW_ALL=1`, a **second pass** can run after primary scoring (see action matrix in [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md#action-matrix-implemented)):
 
 1. **Non-score hard archive** (`obvious_scam` link rules only) → archive immediately. No LLM. Link hits also skip the LLM even if the scorer already chose `jevlike_score`.
-2. **No keyword suppress.** OTP, money, and impersonation wording do not archive or block. A link-rule, RAG, or local-classifier hit is not sent to this pass.
+2. **No keyword suppress.** OTP, money, and impersonation wording do not archive or block. A link-rule hit is not sent to this pass.
 3. **When `LLM_REVIEW_ALL=0` (default):** grey / conflict / high → mask → LLM:
    - score in grey band `LLM_REVIEW_GREY_MIN`–`LLM_REVIEW_GREY_MAX` (defaults **0.40–0.85**, score/100)
    - high primary score when `LLM_REVIEW_ON_HIGH=true` (default): **score/100 > `LLM_REVIEW_GREY_MAX`**
@@ -232,9 +234,9 @@ Aliases if `LLM_REVIEW_API_URL` / `LLM_REVIEW_API_KEY` are unset: `OPENAI_BASE_U
 
 ## 第二輪覆核（灰帶／高分／可選全部）
 
-流程維持：**jevlike／連結規則／本地分類／RAG** 先跑；**唔會為咗 LLM 拆走現有計分**。已儲存聯絡人只會 archive。未儲存聯絡人先會 block：當前句係假域名或者索取式短連結，或者上文模型明確答 `block`。轉數快、驗證碼呢類字眼本身唔會封鎖。分數達到 `BLOCK_THRESHOLD`（預設 80）只會封存，唔會封鎖。封鎖原因會寫入 WhatsApp 聯絡人名（`封鎖·…`），並追加到 `blocks.jsonl`。灰帶同分數失敗唔會 block。LLM 若把高分放行，就唔會 block。對外 LLM 之前用 jevlike 脱敏頭把個人資料換成 `XXX`；頭未載入就唔送。
+流程同 [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented)：**jevlike 同連結規則** 先跑；**唔會為咗 LLM 拆走現有計分**。已儲存聯絡人只會 archive。未儲存聯絡人先會 block：當前句係假域名或者索取式短連結，或者上文模型明確答 `block`。轉數快、驗證碼呢類字眼本身唔會封鎖。分數達到 `BLOCK_THRESHOLD`（預設 80）只會封存，唔會封鎖。封鎖原因會寫入 WhatsApp 聯絡人名（`封鎖·…`），並追加到 `blocks.jsonl`。灰帶同分數失敗唔會 block。LLM 若把高分放行，就唔會 block。對外 LLM 之前用 jevlike 脱敏頭把個人資料換成 `XXX`；頭未載入就唔送。
 
-- heuristic／RAG hard archive → **立刻 archive，不呼叫 LLM**（`LLM_REVIEW_ALL=1` 都一樣）
+- 連結規則 hard archive → **立刻 archive，不呼叫 LLM**（`LLM_REVIEW_ALL=1` 都一樣）
 - 主模型高分 archive（分數/100 **高過** `LLM_REVIEW_GREY_MAX`，預設 0.85）→ **LLM 第二輪**（`LLM_REVIEW_ON_HIGH=true`，預設開）。LLM `not_scam` 可以 **放行** 分數誤報；`unknown`／失敗則 **維持 archive**
 - 灰帶（預設分數/100 介乎 0.40–0.85）、與本地規則衝突、短 OTP、未知號碼要錢 → 大模型覆核。灰帶原本未 archive 嘅，LLM 失敗仍然 fail-open
 - `LLM_REVIEW_ALL=1`（預設 `0`）→ 計分之後 **每一則** 剩餘訊息都送 LLM。合併策略預設 `bonsai`（LLM 講 scam 就 archive；LLM 講 not_scam 可以放行分數 archive）
@@ -277,8 +279,8 @@ QR login still needs a terminal that can show the code (or inspect container log
 - `whatsapp-bot.js` — WhatsApp Web client, QR, archive and graded block, self-chat setup poll
 - `lib/operator-mode.js` — `auto` or `guided`, stored in `operator-mode.json`
 - `lib/review-guide.js` — masked Cantonese explanation for guided review
-- `lib/scorer.js` — always builds a jevlike client (`createScoreClient`)
-- `lib/jevlike-client.js` — `{text}` → `{prob_scam}`
+- `lib/jevlike-client.js` — HTTP client and `createScoreClient`
+- `lib/score-message.js` — rubric load, `scoreMessage`, threshold labels
 - `lib/mask-spans.js` — offline stand-in for the PII head (`POST /v1/mask` on the worker is the live path)
 - `lib/llm-review.js` — optional OpenAI-compatible second pass
 - `lib/scam-intent.js` — solicit helpers used by short-link rules, not as an archive gate

@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { decideIncomingAction } = require('../lib/decide-incoming');
-const { matchObviousScam } = require('../lib/heuristics');
+const { matchObviousScam } = require('../lib/link-rules');
 const { applyBlockPolicy } = require('../lib/block-policy');
 const { maskMessagesForLlm } = require('../lib/context-llm');
 const { createStubJevlikeClient } = require('../stub-jevlike');
@@ -117,12 +117,17 @@ async function main() {
       thresholds: { archive: ARCHIVE_THRESHOLD, block: BLOCK_THRESHOLD, safe: SAFE_THRESHOLD },
     };
     const heuristic = matchObviousScam(text, env);
-    const decision = decideIncomingAction(scoreResult, '+85200000000', false, heuristic, null, null);
+    const decision = decideIncomingAction(scoreResult, '+85200000000', false, heuristic);
 
     // stage 2 — the repo's own trigger + redaction + merge
     const trig = shouldTriggerLlmReview({
-      scoreResult, heuristic, rag: null, localClassifier: null,
-      text, formattedNumber: '+85200000000', savedContact: false, decision, env,
+      scoreResult,
+      heuristic,
+      text,
+      formattedNumber: '+85200000000',
+      savedContact: false,
+      decision,
+      env,
     });
     if (trig.trigger) {
       stats.triggered += 1;

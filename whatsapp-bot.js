@@ -7,7 +7,7 @@ const { Client, LocalAuth, Poll } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
 const log = require('./lib/log');
-const { createScoreClient } = require('./lib/scorer');
+const { createScoreClient } = require('./lib/jevlike-client');
 const { loadRubric } = require('./lib/score-message');
 const { TtlCache } = require('./lib/cache');
 const {
