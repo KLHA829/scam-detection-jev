@@ -1,0 +1,42 @@
+{
+  "ingested_at": "2026-10-16",
+  "sources": {
+    "uci_sms": {
+      "path": "data/corpus/normalized/uci_sms.jsonl",
+      "count": 5574,
+      "label": {
+        "benign": 4827,
+        "scam": 747
+      },
+      "split": {
+        "dev": 559,
+        "train": 5015
+      },
+      "license": "research_uci"
+    },
+    "vanila434": {
+      "path": "data/corpus/normalized/vanila434_elder_safety.jsonl",
+      "count": 1059,
+      "cantonese_focus_path": "data/corpus/normalized/cantonese_focus.jsonl",
+      "cantonese_focus_count": 401,
+      "label": {
+        "benign": 594,
+        "scam": 420,
+        "unknown": 45
+      },
+      "split": {
+        "holdout_public": 30,
+        "train": 1029
+      },
+      "license": "cc_by_4"
+    },
+    "paulkm": {
+      "skipped": true,
+      "reason": "gated on Hugging Face; authenticate with HF_TOKEN and re-run ingest"
+    }
+  },
+  "combined": {
+    "train": 6044,
+    "dev": 559
+  }
+}
