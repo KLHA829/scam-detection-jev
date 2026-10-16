@@ -37,6 +37,7 @@ Each feature file starts with an H1 and one paragraph, then exactly four H2 sect
 ## Features
 
 - [Score archive](./score-archive.md) — a jevlike score at the archive line archives; a score alone does not block; a failed score does not archive.
+- [AGENTS.md invariants](./agents-md-invariants.md) — saved contacts are never auto-blocked; unsaved block only on link rule or context `block`; scorer unknown does not archive alone.
 - [Link lookalike block](./link-lookalike-block.md) — an unsaved contact is blocked on a lookalike host or a soliciting short link.
 - [Mask before LLM](./mask-before-llm.md) — personal-data spans become `XXX` before any chat API call; an incomplete mask skips the call.
 - [Action receipt](./action-receipt.md) — the operator's own chat gets the chat-list name, phone, and local reason after archive or block.
