@@ -425,9 +425,8 @@ async function main() {
   const reviewQueue = createReviewQueue();
   const client = createWhatsAppClient();
 
-  log.info('starting WhatsApp scam-risk bot (jevlike scoring, graded block)', {
-    scorer: 'jevlike',
-    baseURL: scoreClient.baseURL,
+  log.info('starting WhatsApp scam-risk bot (mask + LLM primary, malicious-host block)', {
+    maskWorker: scoreClient.baseURL,
     archiveThreshold: rubric.thresholds.archive,
     blockThreshold: rubric.thresholds.block,
     safeThreshold: rubric.thresholds.safe,

@@ -1,20 +1,20 @@
 # scam-detection-jev
 
-Local **WhatsApp Web** bot that scores each 1:1 DM, **archives** risky chats, and may **block** unsaved contacts only when a URL matches the malicious-host list.
+Local **WhatsApp Web** bot that **masks PII locally**, sends masked text to an **OpenAI-compatible LLM** for each 1:1 DM, **archives** risky chats, and **blocks unsaved contacts only** when a URL matches the malicious-host list.
 
-**Primary (and only) scorer:** [jevlike](https://github.com/vinnylarouge/jevlike) with a frozen Hugging Face encoder `hfl/chinese-roberta-wwm-ext` and choice labels `not_scam` / `scam`. The fine-tuned head (`jevlike_hf_chinese_roberta_r1.pt`, ~2.3 MB) is already on GitHub Release tag [`jevlike-hf-r1`](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1); the encoder (~400 MB) downloads from the Hub on first run. This is the path meant for a **Raspberry Pi** and other CPU machines. There is **no** LightJev / `SCORER=model_v2` fallback.
+**Local worker (Pi / CPU):** [jevlike](https://github.com/vinnylarouge/jevlike) serves **`POST /v1/mask`** (PII head). Heavy judgment runs on your **`LLM_REVIEW_*`** API. The frozen scam scorer (`jevlike_hf_chinese_roberta_r1.pt`) remains for **offline lab eval**, not live decisions. There is **no** LightJev / `SCORER=model_v2` fallback.
 
-**Blocking** is separate from archive and tuned for **elderly primary users** (near-zero false block). Unsaved contacts are **auto-blocked only** when the current message URL matches a host in [`data/malicious-hosts.json`](data/malicious-hosts.json) (maintained list; subdomains match). Lookalike hosts and soliciting short links **archive** and notify you, but do **not** auto-block. Optional LLM passes (default **off**) never auto-block. A jevlike score, including one at or above `BLOCK_THRESHOLD` (default **80**), only archives. Auto-block writes `封鎖·惡意域名` onto the WhatsApp contact name and appends `blocks.jsonl`. Saved contacts are never auto-blocked. Grey scores and scorer failures do not block. It does **not** call Scameter or any phone/URL registry.
+**Blocking** is tuned for **elderly primary users** (near-zero false block). Unsaved contacts are **auto-blocked only** on [`data/malicious-hosts.json`](data/malicious-hosts.json). Lookalike and soliciting short links **archive** only. LLM paths never auto-block. Saved contacts are never auto-blocked. It does **not** call Scameter or any phone/URL registry.
 
-Eval note (does not block shipping): measured on a 366-message real HK set (179 scam / 187 innocent), the current head wrongly flags 18/187 innocents (9.6%) at the archive line and 10/187 (5.3%) at the block line; the older `hn800` head flagged 43/187 (23.0%) and 38/187 (20.3%) on the same set. 187 innocents is a small sample, so read those rates as a point estimate rather than a guarantee. Pi portability is the reason this deploy is jevlike-only.
+Historical jevlike archive FPR on a 366-row HK set is documented in git history / lab notes; the **live product bar** is mask → LLM until measured with `scripts/review-eval.js --mode all`.
 
 ## What it does
 
 1. Reads 1:1 message bodies (including saved contacts).
-2. **jevlike:** one forward pass over options `not_scam` / `scam`; `P(scam) × 100` is the 0–100 score.
-3. **Archives** when the score is at or above the archive threshold, or when a link rule fires.
-4. **Blocks** an unsaved contact only when the current message matches the malicious-host list. Also mutes the chat. Link-rule archives (lookalike, soliciting short link) stay archive-only. A high score stays archive-only. Saved contacts stay archive-only.
-5. Optional OpenAI-compatible LLM second pass (default **off**). Grey/high unless `LLM_REVIEW_ALL=1`.
+2. **Link heuristics** on the current message → archive (skip LLM) when matched.
+3. Else **mask** (`POST /v1/mask`) → **LLM** (`LLM_REVIEW_*`, default **on**) → archive or ignore.
+4. **Blocks** an unsaved contact only when the current message matches the malicious-host list. Also mutes the chat. Link-rule archives stay archive-only. Saved contacts stay archive-only.
+5. Optional **`CONTEXT_LLM_ENABLED`** fork: masked multi-message transcript instead of single-message LLM.
 
 Filters drop `fromMe`, groups, notification types, your own account, and official WhatsApp names. `@lid` chats are resolved to a real number for logs and LLM context; LID digits are never used as a phone.
 
