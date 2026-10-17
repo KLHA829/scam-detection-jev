@@ -6,7 +6,7 @@
   "main": "whatsapp-bot.js",
   "scripts": {
     "start": "node whatsapp-bot.js",
-    "test": "node --test && node scripts/run-py-tests.js",
+    "test": "LLM_REVIEW_COOLDOWN_MS=0 node --test && node scripts/run-py-tests.js",
     "stub": "node stub-jevlike.js",
     "jevlike": "python jevlike_serve.py"
   },
