@@ -39,8 +39,8 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
   Models (context LLM, primary LLM) do not auto-block. **No jevlike score** drives live archive/block.
   Text such as 轉數快 or 驗證碼 does not archive or block by itself.
 - **Every** outbound LLM call is masked by jevlike `POST /v1/mask` first. The bot writes `XXX` over those spans and never sends the raw text or the span list. If the PII head is missing or the mask call fails, the LLM call is skipped (**fail closed**: no archive). The offline regex stub (`test/support/mask-spans-stub.js`) feeds `stub-jevlike.js` only so `npm test` does not load the encoder. Guided-mode explanations use the same mask. Archive/block receipts attach the chat-list name and phone locally; those fields are not added to the prompt.
-- Primary LLM (`LLM_REVIEW_ENABLED`, default **on**) runs on every non-heuristic DM: mask → `reviewRedactedMessage` → archive `llm_review_scam` or ignore. LLM failure or `unknown` → ignore.
-- Context LLM (`CONTEXT_LLM_ENABLED`, default **on**) replaces the single-message path with a masked transcript of the latest inbound messages (`CONTEXT_LLM_MESSAGES`, default 10). Set `CONTEXT_LLM_ENABLED=0` or `false` for single-message primary LLM only. A model `block` answer is archive only. Saved contacts stay unblockable. Mask failure or a bad model reply does not archive or block. Link-rule archives still skip it.
+- Primary LLM (`LLM_REVIEW_ENABLED`, default **on**) runs on every non-heuristic DM: mask → `reviewRedactedMessage` → archive `llm_review_scam` only when `confidence >= LLM_REVIEW_MIN_CONFIDENCE` (default **0.7**); lower or missing confidence → ignore. LLM failure or `unknown` → ignore.
+- Context LLM (`CONTEXT_LLM_ENABLED`, default **on**) replaces the single-message path with a masked transcript of the latest inbound messages (`CONTEXT_LLM_MESSAGES`, default 10). Set `CONTEXT_LLM_ENABLED=0` or `false` for single-message primary LLM only. Archive/block answers use the same confidence gate. A model `block` answer is archive only. Saved contacts stay unblockable. Mask failure or a bad model reply does not archive or block. Link-rule archives still skip it.
 - Link-rule hard archives (lookalike, soliciting short link; malicious-host uses same archive path before block policy) skip the LLM.
   Guided mode may still ask the chat API for a Cantonese explanation after the same mask, and that reply cannot archive, block, or hide the card.
 - OTP, money, impersonation, and secrecy detectors do not archive or block. They are used only to recognise a soliciting short link.
@@ -78,8 +78,10 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
   Link heuristics on the current message are acted on before mask/LLM, so a slow LLM does not delay archive (or malicious-host block). `guided` forwards a suspicious DM to the operator, explains it only after
   `/v1/mask`, and waits for 封鎖並封存 / 只封存 / 留低. A failed mask skips the explanation and still shows
   the poll. The explanation model cannot take that action. An explicit 封鎖並封存 is the only way a saved
-  contact is blocked. After every completed archive or block (automatic, or a guided 封鎖並封存 / 只封存),
-  the bot messages the operator's own chat with the chat-list name, the phone, and the local reason. The
+  contact is blocked.  After every completed archive or block (automatic, or a guided 封鎖並封存 / 只封存),
+ the bot messages the operator's own chat with the chat-list name, the phone, and the local reason. When a
+ block actually succeeded, a follow-up self-chat poll offers **解除封鎖** / **保持封鎖** (archive-only: no poll).
+ Unblock does not unarchive; confirmation says the chat may stay archived. The
   optional Cantonese paragraph on an automatic receipt uses the masked transcript only; the name and phone
   are attached locally and are not sent to the chat API. A failed mask still sends the receipt. Choosing 留低 does not.
 
