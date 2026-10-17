@@ -7,7 +7,7 @@ const { Client, LocalAuth, Poll } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
 const log = require('./lib/log');
-const { createScoreClient } = require('./lib/jevlike-client');
+const { createMaskClient } = require('./lib/jevlike-client');
 const { loadRubric } = require('./lib/score-message');
 const { TtlCache } = require('./lib/cache');
 const {
@@ -67,7 +67,7 @@ function selfWid(client) {
   return serializedId(client && client.info && client.info.wid);
 }
 
-async function sendActionNotice(client, result, { scoreClient, llmReview, rubric, listName } = {}) {
+async function sendActionNotice(client, result, { maskClient, llmReview, rubric, listName } = {}) {
   const action = result && result.decision && result.decision.action;
   if (!result || result.ignored || result.deferred) return;
   if (action !== 'archive' && action !== 'block') return;
@@ -79,7 +79,7 @@ async function sendActionNotice(client, result, { scoreClient, llmReview, rubric
   try {
     const notice = await composeActionNotice({
       messages: result.reviewMessages,
-      scoreClient,
+      maskClient,
       llmOptions: llmReview,
       env: process.env,
       rubric,
@@ -235,7 +235,7 @@ async function handleSelfMessage(msg, deps) {
   }
 }
 
-async function handleWaMessage(msg, { client, pacer, threadContext, recentContext, scoreClient, rubric, cache, llmReview, operator, reviewQueue, isEdit }) {
+async function handleWaMessage(msg, { client, pacer, threadContext, recentContext, maskClient, rubric, cache, llmReview, operator, reviewQueue, isEdit }) {
   let chat;
   let contact;
   try {
@@ -264,7 +264,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
       messageId: msg.id?._serialized || msg.id?.id,
     },
     {
-      scoreClient,
+      maskClient,
       rubric,
       cache,
       llmReview,
@@ -292,7 +292,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
   );
   if (result && !result.deferred) {
     await pacer.exclusive(() =>
-      sendActionNotice(client, result, { scoreClient, llmReview, rubric, listName }),
+      sendActionNotice(client, result, { maskClient, llmReview, rubric, listName }),
     );
   }
   if (!result || !result.deferred || !reviewQueue) return result;
@@ -304,7 +304,7 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
   try {
     const delivered = await pacer.exclusive(() => deliverGuidedReview({
       result: { ...result, listName },
-      scoreClient,
+      maskClient,
       llmReview,
       env: process.env,
       rubric,
@@ -415,7 +415,7 @@ function attachHandlers(client, deps) {
 async function main() {
   const rubricPath = process.env.RUBRIC_PATH || undefined;
   const rubric = loadRubric(rubricPath);
-  const scoreClient = createScoreClient();
+  const maskClient = createMaskClient();
   const llmReview = createLlmReviewConfig();
   const contextOn = contextLlmEnabled();
   const ttl = Number(process.env.SCORE_CACHE_TTL_MS || 900000);
@@ -448,7 +448,7 @@ async function main() {
   }
 
   log.info('starting WhatsApp scam-risk bot (mask + LLM primary, malicious-host block)', {
-    maskWorker: scoreClient.baseURL,
+    maskWorker: maskClient.baseURL,
     archiveThreshold: rubric.thresholds.archive,
     blockThreshold: rubric.thresholds.block,
     safeThreshold: rubric.thresholds.safe,
@@ -465,7 +465,7 @@ async function main() {
   });
 
   attachHandlers(client, {
-    scoreClient,
+    maskClient,
     rubric,
     cache,
     llmReview,
@@ -480,7 +480,7 @@ async function main() {
 
 module.exports = {
   AUTH_PATH,
-  createScoreClient,
+  createMaskClient,
   createWhatsAppClient,
   puppeteerArgs,
   handleWaMessage,

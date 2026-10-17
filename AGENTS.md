@@ -12,14 +12,16 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 | `whatsapp-bot.js` | WhatsApp Web client: QR, orchestration, archive + graded block |
 | `lib/decide-incoming.js` | link-heuristic archive only; else ignore until LLM merge |
 | `lib/handle-incoming.js` | inbound orchestration: heuristic fast path → mask → LLM |
-| `lib/jevlike-client.js` | HTTP client to local worker (`/v1/mask`; `/v1/score` lab-only) |
-| `lib/score-message.js` | legacy rubric helpers + offline `scoreMessage` (not live path) |
+| `lib/jevlike-client.js` | HTTP client (`createMaskClient`; `/v1/mask` live; `/v1/score` lab-only) |
+| `lib/score-message.js` | rubric load + threshold helpers (live path) |
+| `lab/score-message.js` | lab-only `scoreMessage` via `/v1/score` |
 | `jevlike_serve.py` | persistent worker: **`POST /v1/mask`** required; `/v1/score` optional for eval |
 | `lib/filters.js`, `lib/lid.js` | which messages count, `@lid` resolution |
 | `lib/link-rules.js`, `lib/scam-intent.js` | link-only hard hits; solicit helpers for short links |
 | `lib/malicious-hosts.js`, `data/malicious-hosts.json` | maintained known-malicious hosts; only path that auto-blocks unsaved contacts |
 | `lib/thread-context.js` | current body plus last `CONTEXT_TURNS` inbound bodies |
-| `lib/mask-spans.js` | offline stand-in for the PII head; live `POST /v1/mask` does not use it |
+| `test/support/mask-spans-stub.js` | offline regex stand-in for stub worker; live inbound must not require it |
+| `lib/pii-xxx.js` | apply mask spans to text (`XXX`); not a live mask fallback |
 | `POST /v1/mask` | jevlike PII head spans; the bot replaces them with `XXX` before any external LLM |
 | `lib/context-llm.js` | optional review of the latest inbound messages (`CONTEXT_LLM_ENABLED`, default off) |
 | `lib/llm-review.js` | **primary** judgment (OpenAI-compatible Chat Completions) after mask |
@@ -36,7 +38,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
   (exact or suffix). Lookalike hosts and soliciting short links **archive only** — they do not block.
   Models (context LLM, primary LLM) do not auto-block. **No jevlike score** drives live archive/block.
   Text such as 轉數快 or 驗證碼 does not archive or block by itself.
-- **Every** outbound LLM call is masked by jevlike `POST /v1/mask` first. The bot writes `XXX` over those spans and never sends the raw text or the span list. If the PII head is missing or the mask call fails, the LLM call is skipped (**fail closed**: no archive). The offline stub in `lib/mask-spans.js` stands in for the head so `npm test` does not load the encoder. Guided-mode explanations use the same mask. Archive/block receipts attach the chat-list name and phone locally; those fields are not added to the prompt.
+- **Every** outbound LLM call is masked by jevlike `POST /v1/mask` first. The bot writes `XXX` over those spans and never sends the raw text or the span list. If the PII head is missing or the mask call fails, the LLM call is skipped (**fail closed**: no archive). The offline regex stub (`test/support/mask-spans-stub.js`) feeds `stub-jevlike.js` only so `npm test` does not load the encoder. Guided-mode explanations use the same mask. Archive/block receipts attach the chat-list name and phone locally; those fields are not added to the prompt.
 - Primary LLM (`LLM_REVIEW_ENABLED`, default **on**) runs on every non-heuristic DM: mask → `reviewRedactedMessage` → archive `llm_review_scam` or ignore. LLM failure or `unknown` → ignore.
 - Context LLM (`CONTEXT_LLM_ENABLED`, default off) replaces the single-message path with a masked transcript of the latest inbound messages (`CONTEXT_LLM_MESSAGES`, default 10). A model `block` answer is archive only. Saved contacts stay unblockable. Mask failure or a bad model reply does not archive or block. Link-rule archives still skip it.
 - Link-rule hard archives (lookalike, soliciting short link; malicious-host uses same archive path before block policy) skip the LLM.
@@ -52,7 +54,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - `python jevlike_serve.py` (or `npm run jevlike`) in terminal 1 — **PII mask head required**; then `npm start` in terminal 2 with `LLM_REVIEW_*` set.
 - `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — stub worker for offline tests (mask + optional fixed scores).
 
-## Current state (update with the date when it changes) — 2026-10-16
+## Current state (update with the date when it changes) — 2026-10-17
 
 - Hard archive hits are link rules: lookalike hosts, a soliciting short link, or a URL on the malicious-host list (same `obvious_scam` archive path). Lookalike and short-link hits **do not** auto-block. Only a malicious-host match on an unsaved contact blocks (`封鎖·惡意域名`). Extend the list in `data/malicious-hosts.json` (optional `MALICIOUS_HOSTS_PATH`). A bare host with no scheme counts. Allowlisted hosts such as `sf-express.com` are not lookalikes, and neither are `github.io`, `medium.com`, or `blogspot.com`. The brand has to start the label, on the registrable name or a subdomain, so `not-hangseng.com` and `not-hangseng.evil.com` do not match; `hsbc.evil.com` and `whatsapp-secure.evil.com` do. A hyphen stays inside the label, so `not-bit.ly` is not a short link. Fullwidth URLs are folded before the check. `youtu.be` is not a short link. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block. All other DMs: mask → primary LLM. No thread window scoring. Edited messages re-run the same path. A phone JID is kept when the paired id is `@lid`.
 - A failed archive still messages the operator. The receipt says the archive did not happen. Block, rename, mute, archive, the receipt, and the guided card share one WhatsApp write queue.
@@ -88,6 +90,21 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - Chromium is not installed by `npm install`: run `npx puppeteer browsers install chrome` before `npm start`.
 - This bot is a personal filter on your own account, not a service. WhatsApp Web automation can log the
   session out; keep `.wwebjs_auth/`.
+
+## Invariant enforcement (tests / CI)
+
+| Invariant | Enforced by |
+|---|---|
+| No live jevlike score on inbound | `lib/agent-trust.test.js` (no `scoreMessage` in `handle-incoming`); `lab/score-message.js` quarantine |
+| Live path uses `maskClient` / `createMaskClient` | `lib/agent-trust.test.js` (no `scoreClient` in `handle-incoming`, `whatsapp-bot.js`) |
+| No model / lookalike / score auto-block | `lib/agents-invariants.test.js`, `lib/block-policy.test.js` |
+| Malicious-host match not starved by lookalike order | `lib/link-rules.js` order; `lib/link-rules.test.js` dual-hit case |
+| Mask fail-closed (no archive on mask fail) | `lib/agents-invariants.test.js` |
+| Production must not import offline mask stub | `lib/agent-trust.test.js` |
+| `data/corpus/` not imported live | `lib/agent-trust.test.js` |
+| README must not regress to score-primary docs | `lib/agent-trust.test.js` |
+| Empty `hosts:[]` reload does not silently wipe list | `lib/malicious-hosts.test.js`; set `MALICIOUS_HOSTS_ALLOW_EMPTY=1` to clear |
+| Test-infra-only malicious hosts warn at load | `lib/malicious-hosts.js` (`warnIfTestInfraOnly`) |
 
 ## Cursor Cloud specific instructions
 

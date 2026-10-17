@@ -60,7 +60,7 @@ npm start
 - 編碼器不在 git。第一次啟動有下載體積與延遲；cache 通常在 `~/.cache/huggingface/`。
 - Pi 記憶體建議 4 GB+。`JEVLIKE_DEVICE=cpu` 為預設。
 - 權重已在 Release **`jevlike-hf-r1`**：https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1 。不要把 `.pt` / encoder 丟進 git history。
-- 可選 LLM 覆核預設關閉（`LLM_REVIEW_ALL=0`、`LLM_REVIEW_ENABLED=false`）。
+- 設定以 [`.env.example`](.env.example) 同 [AGENTS.md](AGENTS.md) Invariants 為準（主線 LLM 預設 **開**）。
 
 ### Windows 注意
 
@@ -111,26 +111,18 @@ Set `JEVLIKE_DEVICE=cuda` only if you have a compatible NVIDIA GPU. CPU is the P
 - Under git-bash, `scripts/download_jevlike_ckpt.sh` now uses a relative `--dir`. The native `gh.exe` does not translate MSYS paths — given `/c/Users/...` it writes to `C:\c\Users\...` and still exits 0.
 - **Do not run `npm audit fix`** — see [Known security advisories](#known-security-advisories).
 
-### jevlike
+### Configuration
 
-| Variable | Default | Meaning |
-|----------|---------|---------|
-| `JEVLIKE_BASE_URL` | `http://127.0.0.1:8766` | Worker root. Client posts `{text}` to `{base}/v1/score`. |
-| `JEVLIKE_API_KEY` | _(empty)_ | Optional Bearer token; must match the worker if set. |
-| `JEVLIKE_TIMEOUT_MS` | `30000` | Per-attempt HTTP timeout. |
-| `JEVLIKE_CKPT` | `models/jevlike_hf_chinese_roberta_r1.pt` | Fine-tuned head (current). Already published at `…/releases/download/jevlike-hf-r1/jevlike_hf_chinese_roberta_r1.pt`; the older baseline is on tag `jevlike-hf-hn800`. |
-| `JEVLIKE_ENCODER` | `hfl/chinese-roberta-wwm-ext` | Frozen encoder id (Hub download, not git). |
-| `JEVLIKE_DEVICE` | `cpu` | `cpu` or `cuda`. Worker only. |
-| `JEVLIKE_OPTIONS` | `not_scam,scam` | Choice labels; `P(scam)` becomes the score. |
+**Single source of truth:** copy [`.env.example`](.env.example) to `.env` and read [AGENTS.md](AGENTS.md) (Invariants + Current state). Live inbound uses **`POST /v1/mask`** then primary LLM judgment; **`POST /v1/score`** is lab/eval only (`lab/score-message.js`, `scripts/review-eval.js`).
 
-Offline scoring without weights:
+Offline worker stub (tests / no encoder):
 
 ```bash
 npm run stub
 # JEVLIKE_BASE_URL=http://127.0.0.1:8766 npm start
 ```
 
-Include `[stub:scam]` in a message body to force the stub’s high-risk preset.
+Include `[stub:scam]` in a message body to force the stub’s high-risk preset on **`/v1/score`** (eval only).
 
 Keep `.wwebjs_auth/` across restarts. Deleting it forces a new QR login, which is a common way to get the session logged out. The only chats this bot messages are your own: setup, a review when you ask first, and a receipt after each archive or block. Block, rename, mute, and archive run one chat at a time, with `WA_ACTION_GAP_MS` between each call. The contact is saved only after the block succeeds.
 
@@ -138,112 +130,23 @@ Keep `.wwebjs_auth/` across restarts. Deleting it forces a new QR login, which i
 
 On the first ready session the bot sends a poll to your own WhatsApp chat:
 
-- **自動封鎖同封存** — today's behaviour. After each archive or block, your own chat gets a receipt: the chat-list name, the phone, the score, and the local reason. A Cantonese note is requested only after `POST /v1/mask`, using `LLM_REVIEW_API_URL` / `LLM_REVIEW_MODEL`. It does not require `LLM_REVIEW_ENABLED`. The name and phone are attached on this machine and are not sent to the chat API. If masking or the model fails, the receipt still arrives and the model section says the explanation is unavailable.
-- **逐條問我** — the same suspicion line, but nothing is archived or blocked until you choose. The original message is forwarded to you. A local note gives the score, the lure label, and whether the contact would have been blocked. A separate Cantonese explanation is requested only after `POST /v1/mask`. That call uses `LLM_REVIEW_API_URL` / `LLM_REVIEW_MODEL` and does not require `LLM_REVIEW_ENABLED`. If masking or the model fails, the poll still appears and the model section says the explanation is unavailable. The model cannot press a choice for you. After you pick **封鎖並封存** or **只封存**, the confirmation repeats the chat-list name, the phone, and the local reason. It does not call the model again.
+- **自動封鎖同封存** — today's behaviour. After each archive or block, your own chat gets a receipt: the chat-list name, the phone, and the local reason. A Cantonese note is requested only after `POST /v1/mask`, using `LLM_REVIEW_API_URL` / `LLM_REVIEW_MODEL`. The name and phone are attached on this machine and are not sent to the chat API. If masking or the model fails, the receipt still arrives and the model section says the explanation is unavailable.
+- **逐條問我** — the same suspicion line, but nothing is archived or blocked until you choose. The original message is forwarded to you. A local note gives the lure label and whether the contact would have been blocked. A separate Cantonese explanation is requested only after `POST /v1/mask`. If masking or the model fails, the poll still appears and the model section says the explanation is unavailable. The model cannot press a choice for you. After you pick **封鎖並封存** or **只封存**, the confirmation repeats the chat-list name, the phone, and the local reason. It does not call the model again.
 
 Until you answer, suspicious chats are archived and nobody is blocked. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Send `設定` in your own chat to choose again. Saved contacts are still never blocked unless you explicitly pick **封鎖並封存**. The first choice on a review poll is the one that runs.
 
-### Scoring knobs (no code change)
+### Knobs (no code change)
 
-See [SCORING_RUBRIC.md](SCORING_RUBRIC.md) and [scoring-rubric.json](scoring-rubric.json).
+See [`.env.example`](.env.example), [AGENTS.md](AGENTS.md), and [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented). Highlights:
 
-- `ARCHIVE_THRESHOLD` (default `42`) — label `scam` / archive from score
-- `BLOCK_THRESHOLD` (default `80`) — still the line context review will not release. A score at this line archives and does **not** block. Auto-block uses the malicious-host list only.
-- `MALICIOUS_HOSTS_PATH` — optional path to JSON `{ "hosts": ["evil.example", …] }`. Default: `data/malicious-hosts.json`. Add registrable host strings; subdomains match (e.g. `pay.evil.example` matches `evil.example`). The bot watches this file and reloads the in-memory list on save (no restart). A bad edit keeps the previous list and logs a warning.
-- `BLOCK_ENABLED` (default `true`) — `false` restores archive-only
-- `WA_ACTION_GAP_MS` (default `3000`) — minimum gap between WhatsApp account changes (block, rename, mute, archive). Chats are changed one at a time. Rename runs only after a successful block.
-- `CONTEXT_TURNS` (default `4`) — score the current message, and also the last N inbound messages when that window scores higher. `1` disables the window.
-- `CONTEXT_BENIGN_MIN_CHARS` (default `24`) — a longer message at or below `SAFE_THRESHOLD` keeps its own score
-- `SAFE_THRESHOLD` (default `18`) — label `not_scam`
-- `HEURISTIC_ENABLED` (default `true`)
-- `SCORE_CACHE_TTL_MS` (default `900000`)
-- `RUBRIC_PATH` — override JSON path
-- `LLM_REVIEW_ENABLED` (default `false`)
-- `LLM_REVIEW_ALL` (default `0`) — `1` sends **every** remaining message to the LLM after the scorer
-- `LLM_REVIEW_MERGE` (default `bonsai`) — disagreement policy (see below)
-- `LLM_REVIEW_ON_HIGH` (default `true` — used only when LLM review is enabled and `LLM_REVIEW_ALL=0`)
-- `LLM_REVIEW_GREY_MIN` / `LLM_REVIEW_GREY_MAX` (defaults `0.40` / `0.85`, score/100)
-- `LLM_REVIEW_OTP_MAX_CHARS` (default `96`)
-- `LLM_REVIEW_API_URL` or `OPENAI_BASE_URL` / `OPENAI_API_BASE` — any OpenAI-compatible Chat Completions base
-- `LLM_REVIEW_API_KEY` or `OPENAI_API_KEY` — **optional**; omit for local servers with no auth; when set, sent as `Authorization: Bearer …`
-- `LLM_REVIEW_MODEL` (default `gpt-4o-mini`; use the model id your server expects)
-- `LLM_REVIEW_TIMEOUT_MS` (default `8000`)
-- `CONTEXT_LLM_ENABLED` (default `false`) — replace the single-message second pass with a review of the latest inbound messages. The local worker returns PII-head spans (`POST /v1/mask`); the bot writes `XXX`, then asks the chat model for `archive` / `block` / `no_action`. Model answers archive only; they do not auto-block. A missing head, a failed mask, or a bad model reply does not archive or block.
-- `JEVLIKE_MASK_CKPT` — second jevlike head trained to mark personal-data characters (`python scripts/train_pii_mask.py`). It does not replace the scam scorer. Without it, `/v1/mask` returns 503 and the bot does not send the text. See [models/README.md](models/README.md).
-- `CONTEXT_LLM_MESSAGES` (default `10`, capped at 10) — how many of the latest inbound messages are sent. The message that just arrived is always included.
+- Link heuristics (lookalike, soliciting short link) → archive only; **malicious-host list** may auto-block unsaved contacts.
+- Non-heuristic DMs → **`POST /v1/mask`** → primary LLM (`LLM_REVIEW_ENABLED` default **true**). Mask or LLM failure → ignore (fail closed).
+- `MALICIOUS_HOSTS_PATH` / hot reload: empty `hosts:[]` keeps the previous list unless `MALICIOUS_HOSTS_ALLOW_EMPTY=1`.
+- Lab jevlike thresholds (`ARCHIVE_THRESHOLD`, `/v1/score`) — [SCORING_RUBRIC.md](SCORING_RUBRIC.md) only; not live inbound.
 
-If the scorer times out, returns 5xx, or sends invalid JSON, the label is **`unknown`**. Unknown **does not archive** unless a link rule fires.
+## 決策順序（繁中）
 
-For the full inbound decision order (score, link rule, optional LLM, graded block), see [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented).
-
-## Second-pass review (grey / conflict / high / optional all)
-
-When `LLM_REVIEW_ENABLED=true` **or** `LLM_REVIEW_ALL=1`, a **second pass** can run after primary scoring (see action matrix in [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md#action-matrix-implemented)):
-
-1. **Non-score hard archive** (`obvious_scam` link rules only) → archive immediately. No LLM. Link hits also skip the LLM even if the scorer already chose `jevlike_score`.
-2. **No keyword suppress.** OTP, money, and impersonation wording do not archive or block. A link-rule hit is not sent to this pass.
-3. **When `LLM_REVIEW_ALL=0` (default):** grey / conflict / high → mask → LLM:
-   - score in grey band `LLM_REVIEW_GREY_MIN`–`LLM_REVIEW_GREY_MAX` (defaults **0.40–0.85**, score/100)
-   - high primary score when `LLM_REVIEW_ON_HIGH=true` (default): **score/100 > `LLM_REVIEW_GREY_MAX`**
-   - scorer vs local/heuristic conflict (including money/OTP solicitation vs a `not_scam` label)
-   - short OTP-ish message (`LLM_REVIEW_OTP_MAX_CHARS`, default 96)
-   - money ask from an unsaved / new number
-4. **When `LLM_REVIEW_ALL=1`:** every remaining message after the scorer goes to the LLM (same mask + merge). Link-rule archives still skip.
-5. Desensitisation is the jevlike PII head (`POST /v1/mask`). The bot replaces those character spans with `XXX`. The span list stays local and is **never** sent. If the head is not loaded, the LLM call is skipped.
-6. OpenAI-compatible `POST …/v1/chat/completions` (`lib/llm-review.js`) must return JSON `{ label, confidence, signals, should_archive, reason }`.
-
-### Merge policy (LLM vs jevlike)
-
-`LLM_REVIEW_MERGE=bonsai` (default, same FP-aware Bonsai merge as before):
-
-| LLM | Primary | Result |
-|-----|---------|--------|
-| `scam` / `should_archive` | anything except hard-skip (already skipped) | archive `llm_review_scam` |
-| `not_scam` | score-only archive (`jevlike_score`) | **release** to ignore |
-| `not_scam` | ignore | stay ignore |
-| `unknown` / timeout / 5xx | score archive | **keep** archive (fail toward scam on high) |
-| `unknown` / timeout / 5xx | ignore (grey, not already archived) | stay ignore (fail-open) |
-
-`LLM_REVIEW_MERGE=archive_only`: LLM may add archives but **never** release a score archive.
-
-Disable the LLM (`LLM_REVIEW_ENABLED=false` and `LLM_REVIEW_ALL=0`, both default) for a scorer-only deploy.
-
-The second pass is **any OpenAI-compatible Chat Completions API**. The same variables work for OpenAI cloud, Ollama, vLLM, or llama.cpp `llama-server`. `LLM_REVIEW_API_KEY` is optional.
-
-```bash
-# OpenAI cloud
-LLM_REVIEW_ENABLED=true
-LLM_REVIEW_API_URL=https://api.openai.com/v1
-LLM_REVIEW_API_KEY=sk-...
-LLM_REVIEW_MODEL=gpt-4o-mini
-
-# Optional: review every DM after jevlike (still mask with the PII head)
-# LLM_REVIEW_ALL=1
-
-# Ollama
-# LLM_REVIEW_API_URL=http://127.0.0.1:11434/v1
-# LLM_REVIEW_MODEL=llama3
-# LLM_REVIEW_API_KEY=
-
-# llama.cpp llama-server (example: Ternary-Bonsai)
-# LLM_REVIEW_API_URL=http://127.0.0.1:8081/v1
-# LLM_REVIEW_MODEL=Ternary-Bonsai-2-27B
-# LLM_REVIEW_API_KEY=local    # or empty if the server has no --api-key
-```
-
-Aliases if `LLM_REVIEW_API_URL` / `LLM_REVIEW_API_KEY` are unset: `OPENAI_BASE_URL` / `OPENAI_API_BASE` and `OPENAI_API_KEY`.
-
-## 第二輪覆核（灰帶／高分／可選全部）
-
-流程同 [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented)：**jevlike 同連結規則** 先跑；**唔會為咗 LLM 拆走現有計分**。已儲存聯絡人只會 archive。未儲存聯絡人**自動 block** 只會喺當前句 URL 命中 [`data/malicious-hosts.json`](data/malicious-hosts.json) 維護名單（子域名亦計）。假域名同索取式短連結只會 hard archive，唔會自動 block。可選上文模型同第二輪 LLM（預設關）唔會自動 block；模型答 `block` 只當 archive。轉數快、驗證碼呢類字眼本身唔會封鎖。分數達到 `BLOCK_THRESHOLD`（預設 80）只會封存，唔會封鎖。惡意域名 block 會寫 `封鎖·惡意域名` 入 WhatsApp 聯絡人名，並追加到 `blocks.jsonl`。灰帶同分數失敗唔會 block。LLM 若把高分放行，就唔會 block。對外 LLM 之前用 jevlike 脱敏頭把個人資料換成 `XXX`；頭未載入就唔送。
-
-- 連結規則 hard archive → **立刻 archive，不呼叫 LLM**（`LLM_REVIEW_ALL=1` 都一樣）
-- 主模型高分 archive（分數/100 **高過** `LLM_REVIEW_GREY_MAX`，預設 0.85）→ **LLM 第二輪**（`LLM_REVIEW_ON_HIGH=true`，預設開）。LLM `not_scam` 可以 **放行** 分數誤報；`unknown`／失敗則 **維持 archive**
-- 灰帶（預設分數/100 介乎 0.40–0.85）、與本地規則衝突、短 OTP、未知號碼要錢 → 大模型覆核。灰帶原本未 archive 嘅，LLM 失敗仍然 fail-open
-- `LLM_REVIEW_ALL=1`（預設 `0`）→ 計分之後 **每一則** 剩餘訊息都送 LLM。合併策略預設 `bonsai`（LLM 講 scam 就 archive；LLM 講 not_scam 可以放行分數 archive）
-- 冇關鍵詞抑制。假冒「防騙」或者轉數快字眼跟分數同可選上文模型，唔會因為正則而 archive 或 block
-
-第二輪係 **任何 OpenAI-compatible Chat Completions API**。詳見 `.env.example`。
+同 [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented)：連結規則 →（可選）上文 LLM → mask → 主 LLM → 惡意域名 block 政策。設定詳見 [`.env.example`](.env.example) 同 [AGENTS.md](AGENTS.md)。
 
 ## Tests
 
@@ -280,13 +183,14 @@ QR login still needs a terminal that can show the code (or inspect container log
 - `whatsapp-bot.js` — WhatsApp Web client, QR, archive and graded block, self-chat setup poll
 - `lib/operator-mode.js` — `auto` or `guided`, stored in `operator-mode.json`
 - `lib/review-guide.js` — masked Cantonese explanation for guided review
-- `lib/jevlike-client.js` — HTTP client and `createScoreClient`
-- `lib/score-message.js` — rubric load, `scoreMessage`, threshold labels
-- `lib/mask-spans.js` — offline stand-in for the PII head (`POST /v1/mask` on the worker is the live path)
-- `lib/llm-review.js` — optional OpenAI-compatible second pass
+- `lib/jevlike-client.js` — HTTP client (`createMaskClient`, `/v1/mask`)
+- `lib/score-message.js` — rubric load and threshold helpers
+- `lab/score-message.js` — lab-only `/v1/score` helper
+- `test/support/mask-spans-stub.js` — offline regex stub for `stub-jevlike.js` tests
+- `lib/llm-review.js` — primary OpenAI-compatible judgment after mask
 - `lib/scam-intent.js` — solicit helpers used by short-link rules, not as an archive gate
 - `lib/malicious-hosts.js`, `data/malicious-hosts.json` — operator-maintained hosts that may auto-block unsaved contacts
-- `jevlike_serve.py` — persistent HF-encoder jevlike worker (`POST /v1/score`)
+- `jevlike_serve.py` — persistent worker (`POST /v1/mask` required; `/v1/score` optional for eval)
 - `stub-jevlike.js` — fixed probabilities for tests
 - `models/README.md` — GitHub Release download for the `.pt` head
 - `scripts/download_jevlike_ckpt.sh` — pulls `jevlike-hf-r1` via `/releases/download/…/jevlike_hf_chinese_roberta_r1.pt`

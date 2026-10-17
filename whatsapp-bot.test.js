@@ -9,11 +9,8 @@ const { shouldIgnoreMessage, isOfficialWhatsAppId } = require('./lib/filters');
 const { matchObviousScam } = require('./lib/link-rules');
 const { decideIncomingAction, resolveIncomingMessageLabel } = require('./lib/decide-incoming');
 const { applyBlockPolicy } = require('./lib/block-policy');
-const {
-  loadRubric,
-  labelFromScore,
-  scoreMessage,
-} = require('./lib/score-message');
+const { loadRubric, labelFromScore } = require('./lib/score-message');
+const { scoreMessage } = require('./lab/score-message');
 const { JevlikeClient, resolveMaskUrl } = require('./lib/jevlike-client');
 const { processIncomingMessage } = require('./lib/handle-incoming');
 const { TtlCache, cacheKeyForMessage } = require('./lib/cache');
@@ -467,7 +464,7 @@ describe('processIncomingMessage', () => {
     const out = await processIncomingMessage(
       { isGroup: true, body: 'hi', chatId: 'g' },
       {
-        scoreClient: {
+        maskClient: {
           async scoreText() {
             scored = true;
             return {};
@@ -518,7 +515,7 @@ describe('processIncomingMessage', () => {
         savedContact: false,
       },
       {
-        scoreClient: {
+        maskClient: {
           async maskMessages() {
             throw new Error('mask timeout');
           },

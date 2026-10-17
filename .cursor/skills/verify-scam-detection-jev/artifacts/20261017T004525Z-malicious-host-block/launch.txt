@@ -1,0 +1,2 @@
+stub listening at http://127.0.0.1:18766/v1/mask (pid 3416)
+ready when GET http://127.0.0.1:18766/health returns {"ok":true,"model":"stub-jevlike"}
