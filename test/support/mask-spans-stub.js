@@ -3,11 +3,9 @@
 const { domainToUnicode } = require('url');
 
 /**
- * Offline stand-in for the jevlike PII head.
- * The stub uses this so npm test does not load the encoder.
+ * Offline regex stand-in for stub-jevlike POST /v1/mask (tests only).
+ * Live inbound must not require this module — use the jevlike PII head worker.
  * jevlike_serve.find_mask_spans is the training-label copy; keep the two in step.
- * Live POST /v1/mask does not apply these rules. It returns the head's spans,
- * or 503 when the head is not loaded.
  */
 
 const HK_SURNAME_CHARS =

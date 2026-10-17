@@ -1,7 +1,7 @@
 'use strict';
 
 const http = require('http');
-const { findMaskSpans } = require('./lib/mask-spans');
+const { findMaskSpans } = require('./test/support/mask-spans-stub');
 
 const PRESETS = {
   benign: 0.04,
@@ -161,6 +161,8 @@ module.exports = {
 if (require.main === module) {
   const port = Number(process.env.JEVLIKE_PORT || 8766);
   startStubServer({ port }).then(() => {
-    process.stderr.write(`[INFO] stub jevlike listening on http://127.0.0.1:${port}/v1/score\n`);
+    process.stderr.write(
+      `[INFO] stub jevlike listening on http://127.0.0.1:${port}/v1/mask (lab /v1/score also served)\n`,
+    );
   });
 }

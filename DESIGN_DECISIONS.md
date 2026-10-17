@@ -20,7 +20,7 @@ This repository started empty (`README` title only). Product invariants (graded 
 
 | Decision | Why |
 |----------|-----|
-| **HF-encoder jevlike is the only scorer** | User request: Pi-portable scoring, then delete the LightJev / `model_v2` path. Frozen `hfl/chinese-roberta-wwm-ext` + ~2.4 MB head from a GitHub Release. `P(scam)×100` uses archive/safe thresholds. Encoder is Hub-downloaded, never git. |
+| **HF-encoder jevlike scam head (lab only)** | Frozen `hfl/chinese-roberta-wwm-ext` + r1 head for offline `/v1/score` and training. Live inbound uses mask head + LLM, not `P(scam)` archive. LightJev / `model_v2` is gone. |
 | Persistent **`jevlike_serve.py`** worker | HF `from_pretrained` should not reload on every DM. |
 | `scoring-rubric.json` + `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` | Tune without code changes. Same numbers for jevlike’s 0–100 `P(scam)` map. |
 | In-memory **TTL cache** and **per-chat single-flight** | Dedupes retries and overlapping handlers. |
@@ -31,11 +31,9 @@ This repository started empty (`README` title only). Product invariants (graded 
 | **jevlike PII head** before any external LLM | `POST /v1/mask` returns character spans from the separate mask head. The bot writes `XXX`. A missing head or a failed mask skips the LLM call. |
 | **Primary OpenAI-compatible LLM review** | Required for non-heuristic DMs (`LLM_REVIEW_ENABLED` default **on**). Mask → Chat Completions → archive `llm_review_scam` or ignore. Fail closed on mask/LLM failure. Hard link archives skip the LLM. Optional `CONTEXT_LLM_ENABLED` fork uses a multi-message masked transcript. PII is masked by the jevlike head before any external call. |
 
-## Why this scorer
+## Why mask-then-LLM (score is lab-only)
 
-HK/TW/CN DM scams cluster on a few tropes: **FPS/轉數快 payment**, **OTP harvest**, **courier customs**, **government/WhatsApp impersonation**, **crypto deposit**. jevlike answers a single `not_scam` / `scam` choice. Text without an unsafe link follows that score, and the optional context LLM when it is on. Hardcoded backup archives are lookalike hosts and soliciting short links; **auto-block** is limited to operator-maintained malicious hosts so elderly users are not locked out by heuristic false positives.
-
-Bias is toward **precision**: default `ARCHIVE_THRESHOLD=42` needs a fairly high `P(scam)`. Auto-block is stricter still — only confirmed malicious domains on the list. Mild lures without an unsafe link stay `unknown` until the score or the context LLM flags them. That is accepted so ordinary Cantonese chat is not swept into archive.
+HK/TW/CN DM scams cluster on payment/OTP/courier/impersonation tropes, but phrase regexes alone false-positive on elderly chat. **Live** judgment is: link heuristics first (malicious-host match wins over lookalike for block eligibility), then **mask → OpenAI-compatible LLM** on everything else. **Auto-block** stays malicious-host-only for unsaved contacts. The jevlike scam score remains for offline eval (`lab/score-message.js`, `scripts/review-eval.js`), not inbound archive.
 
 ## Deferred
 
