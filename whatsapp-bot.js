@@ -235,7 +235,21 @@ async function handleSelfMessage(msg, deps) {
   }
 }
 
-async function handleWaMessage(msg, { client, pacer, threadContext, recentContext, maskClient, rubric, cache, llmReview, operator, reviewQueue, isEdit }) {
+async function handleWaMessage(msg, {
+  client,
+  pacer,
+  threadContext,
+  recentContext,
+  maskClient,
+  rubric,
+  cache,
+  llmReview,
+  contextLlm,
+  env,
+  operator,
+  reviewQueue,
+  isEdit,
+}) {
   let chat;
   let contact;
   try {
@@ -264,10 +278,12 @@ async function handleWaMessage(msg, { client, pacer, threadContext, recentContex
       messageId: msg.id?._serialized || msg.id?.id,
     },
     {
+      env,
       maskClient,
       rubric,
       cache,
       llmReview,
+      contextLlm,
       threadContext,
       recentContext,
       resolveNumber: () =>

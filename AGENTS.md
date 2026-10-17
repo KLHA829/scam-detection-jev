@@ -23,7 +23,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 | `test/support/mask-spans-stub.js` | offline regex stand-in for stub worker; live inbound must not require it |
 | `lib/pii-xxx.js` | apply mask spans to text (`XXX`); not a live mask fallback |
 | `POST /v1/mask` | jevlike PII head spans; the bot replaces them with `XXX` before any external LLM |
-| `lib/context-llm.js` | optional review of the latest inbound messages (`CONTEXT_LLM_ENABLED`, default off) |
+| `lib/context-llm.js` | review of the latest inbound messages (`CONTEXT_LLM_ENABLED`, default **on**) |
 | `lib/llm-review.js` | **primary** judgment (OpenAI-compatible Chat Completions) after mask |
 | `lib/block-policy.js`, `lib/wa-actions.js`, `lib/action-pacer.js` | graded block, paced WhatsApp writes |
 | `lib/operator-mode.js`, `lib/review-queue.js` | self-chat choice: automatic, or ask before archive/block |
@@ -40,7 +40,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
   Text such as 轉數快 or 驗證碼 does not archive or block by itself.
 - **Every** outbound LLM call is masked by jevlike `POST /v1/mask` first. The bot writes `XXX` over those spans and never sends the raw text or the span list. If the PII head is missing or the mask call fails, the LLM call is skipped (**fail closed**: no archive). The offline regex stub (`test/support/mask-spans-stub.js`) feeds `stub-jevlike.js` only so `npm test` does not load the encoder. Guided-mode explanations use the same mask. Archive/block receipts attach the chat-list name and phone locally; those fields are not added to the prompt.
 - Primary LLM (`LLM_REVIEW_ENABLED`, default **on**) runs on every non-heuristic DM: mask → `reviewRedactedMessage` → archive `llm_review_scam` or ignore. LLM failure or `unknown` → ignore.
-- Context LLM (`CONTEXT_LLM_ENABLED`, default off) replaces the single-message path with a masked transcript of the latest inbound messages (`CONTEXT_LLM_MESSAGES`, default 10). A model `block` answer is archive only. Saved contacts stay unblockable. Mask failure or a bad model reply does not archive or block. Link-rule archives still skip it.
+- Context LLM (`CONTEXT_LLM_ENABLED`, default **on**) replaces the single-message path with a masked transcript of the latest inbound messages (`CONTEXT_LLM_MESSAGES`, default 10). Set `CONTEXT_LLM_ENABLED=0` or `false` for single-message primary LLM only. A model `block` answer is archive only. Saved contacts stay unblockable. Mask failure or a bad model reply does not archive or block. Link-rule archives still skip it.
 - Link-rule hard archives (lookalike, soliciting short link; malicious-host uses same archive path before block policy) skip the LLM.
   Guided mode may still ask the chat API for a Cantonese explanation after the same mask, and that reply cannot archive, block, or hide the card.
 - OTP, money, impersonation, and secrecy detectors do not archive or block. They are used only to recognise a soliciting short link.
@@ -63,7 +63,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - **Live worker role:** PII mask head (`JEVLIKE_MASK_CKPT` / `models/jevlike_hf_pii_mask.pt`). Scam scorer checkpoint (`jevlike-hf-r1`) remains for **lab eval only**, not inbound decisions.
 - `jevlike_serve.py` does **not** read `.env` (no dotenv). Export `JEVLIKE_MASK_CKPT` (and optional `JEVLIKE_CKPT` for `/v1/score`) in the shell that starts the worker.
 - Primary LLM precision on a labelled real corpus is **not yet published** — use `scripts/review-eval.js` (`--mode all`, `--llm dry|live`). Stub unit tests prove wiring, not FPR/FNR.
-- Optional `CONTEXT_LLM_ENABLED` (default off) uses the same mask + chat API over the latest inbound messages (default 10, current message included). Model answers do not auto-block. Saved contacts stay unblockable.
+- `CONTEXT_LLM_ENABLED` (default **on**) uses the same mask + chat API over the latest inbound messages (default 10, current message included). Model answers do not auto-block. Saved contacts stay unblockable.
 - PII masking is a **separate** jevlike `AttentionHead` (`scripts/train_pii_mask.py` →
   `models/jevlike_hf_pii_mask.pt`, gitignored). It is initialised from the r1 head and trained with
   token-level labels, not the stock whole-message scam loss. The scam checkpoint is not overwritten.
