@@ -42,6 +42,15 @@ const {
 } = require('./lib/review-prompt');
 const { serializedId, messageIdOf, routeSelfText, routeVote } = require('./lib/self-chat');
 const {
+  OPERATOR_HELP_TEXT,
+  parseOperatorCommand,
+  shouldProcessSelfMessageBody,
+  resolveUnblockTarget,
+  formatRecentBlocksList,
+  formatAmbiguousUnblock,
+  loadRecentBlocksForCommands,
+} = require('./lib/operator-commands');
+const {
   loadMaliciousHosts,
   startMaliciousHostsWatcher,
 } = require('./lib/malicious-hosts');
@@ -266,9 +275,85 @@ async function confirmUnblockChoice(client, queue, pacer, choice, pollId) {
   await pacer.exclusive(() => client.sendMessage(wid, result.text));
 }
 
+async function handleOperatorCommand(cmd, deps, wid) {
+  const { client, reviewQueue, pacer } = deps;
+  const unblockDeps = {
+    exclusive: (fn) => pacer.exclusive(fn),
+    pause: () => pacer.pause(),
+    getChat: (id) => client.getChatById(id),
+    getContact: (chat) => chat.getContact(),
+    unblockContact: ({ chat, contact, record: row, digits, blockContactName }) =>
+      unblockContact({
+        client,
+        contact,
+        chat,
+        digits,
+        blockContactName,
+        pause: () => pacer.pause(),
+      }),
+  };
+
+  if (cmd.kind === 'help') {
+    await pacer.exclusive(() => client.sendMessage(wid, OPERATOR_HELP_TEXT));
+    return;
+  }
+  if (cmd.kind === 'list_blocks') {
+    const rows = loadRecentBlocksForCommands(process.env, 20);
+    const text = formatRecentBlocksList(rows, { limit: 5 });
+    await pacer.exclusive(() => client.sendMessage(wid, text));
+    return;
+  }
+
+  const openUnblock =
+    reviewQueue && typeof reviewQueue.findOpenUnblock === 'function'
+      ? reviewQueue.findOpenUnblock()
+      : [];
+  const recentBlocks = loadRecentBlocksForCommands(process.env, 20);
+
+  if (cmd.kind === 'keep_blocked') {
+    if (openUnblock.length === 0) {
+      await pacer.exclusive(() => client.sendMessage(wid, '而家冇待決定嘅解除封鎖問題。'));
+      return;
+    }
+    if (openUnblock.length > 1) {
+      await pacer.exclusive(() =>
+        client.sendMessage(wid, formatAmbiguousUnblock(openUnblock.map((row) => ({ ...row, displayName: row.listName || row.contactName })))),
+      );
+      return;
+    }
+    await confirmUnblockChoice(client, reviewQueue, pacer, 'keep', openUnblock[0].pollId);
+    return;
+  }
+
+  if (cmd.kind === 'unblock') {
+    const target = resolveUnblockTarget(cmd.digits, { openUnblockPolls: openUnblock, recentBlocks });
+    if (target.kind === 'not_found') {
+      await pacer.exclusive(() => client.sendMessage(wid, '搵唔到符合嘅封鎖紀錄。'));
+      return;
+    }
+    if (target.kind === 'ambiguous') {
+      await pacer.exclusive(() => client.sendMessage(wid, formatAmbiguousUnblock(target.candidates)));
+      return;
+    }
+    if (target.kind === 'poll') {
+      await confirmUnblockChoice(client, reviewQueue, pacer, 'unblock', target.pollId);
+      return;
+    }
+    const result = await applyUnblockChoice(target.record, 'unblock', unblockDeps);
+    await pacer.exclusive(() => client.sendMessage(wid, result.text));
+    if (result.ok && reviewQueue && typeof reviewQueue.findOpenUnblock === 'function') {
+      for (const poll of reviewQueue.findOpenUnblock()) {
+        if (poll.chatId === target.record.chatId) {
+          reviewQueue.consume(poll.pollId);
+        }
+      }
+    }
+  }
+}
+
 async function handleSelfMessage(msg, deps) {
   const body = String(msg.body || '').trim();
-  if (body !== '設定' && !msg.hasQuotedMsg) return;
+  if (!shouldProcessSelfMessageBody(body, Boolean(msg.hasQuotedMsg))) return;
   const wid = selfWid(deps.client);
   if (!wid) return;
   let isSelf = false;
@@ -298,7 +383,6 @@ async function handleSelfMessage(msg, deps) {
     operator: deps.operator,
     queue: deps.reviewQueue,
   });
-  if (route.kind === 'ignore') return;
   if (route.kind === 'reconfigure') {
     if (deps.operator.pinned()) {
       await deps.client.sendMessage(wid, '模式由 OPERATOR_MODE 釘死。改環境變數先至可以轉。');
@@ -323,6 +407,7 @@ async function handleSelfMessage(msg, deps) {
       route.choice,
       route.pollId,
     );
+    return;
   }
   if (route.kind === 'unblock') {
     await confirmUnblockChoice(
@@ -332,6 +417,12 @@ async function handleSelfMessage(msg, deps) {
       route.choice,
       route.pollId,
     );
+    return;
+  }
+
+  const operatorCmd = parseOperatorCommand(body);
+  if (operatorCmd.kind !== 'ignore') {
+    await handleOperatorCommand(operatorCmd, deps, wid);
   }
 }
 
