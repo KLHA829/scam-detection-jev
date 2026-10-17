@@ -24,21 +24,23 @@ const {
   contextLlmMessageLimit,
   createRecentContext,
 } = require('./lib/context-llm');
-const { blockAndRename } = require('./lib/wa-actions');
+const { blockAndRename, unblockContact } = require('./lib/wa-actions');
 const { createActionPacer } = require('./lib/action-pacer');
 const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-context');
 const { createOperatorState } = require('./lib/operator-mode');
 const { createReviewQueue } = require('./lib/review-queue');
 const { deliverGuidedReview } = require('./lib/deliver-review');
-const { applyReviewChoice } = require('./lib/apply-review-choice');
+const { applyReviewChoice, applyUnblockChoice } = require('./lib/apply-review-choice');
 const { chatListName, composeActionNotice } = require('./lib/action-notice');
 const {
   SETUP_INTRO,
   SETUP_POLL_NAME,
   SETUP_OPTIONS,
+  UNBLOCK_POLL_NAME,
+  UNBLOCK_OPTIONS,
   optionLabels,
 } = require('./lib/review-prompt');
-const { serializedId, routeSelfText, routeVote } = require('./lib/self-chat');
+const { serializedId, messageIdOf, routeSelfText, routeVote } = require('./lib/self-chat');
 const {
   loadMaliciousHosts,
   startMaliciousHostsWatcher,
@@ -67,6 +69,50 @@ function selfWid(client) {
   return serializedId(client && client.info && client.info.wid);
 }
 
+function llmConfidenceFromResult(result) {
+  const review = result && result.llmReview;
+  if (!review || review.ok !== true) return null;
+  const conf = Number(review.confidence);
+  return Number.isFinite(conf) ? conf : null;
+}
+
+async function sendUnblockPoll(client, queue, pacer, row) {
+  const wid = selfWid(client);
+  if (!wid || !queue || !row || !row.chatId) return null;
+  try {
+    const sent = await client.sendMessage(
+      wid,
+      new Poll(UNBLOCK_POLL_NAME, optionLabels(UNBLOCK_OPTIONS), {
+        allowMultipleAnswers: false,
+      }),
+    );
+    const pollId = messageIdOf(sent);
+    if (!pollId) return null;
+    queue.add({
+      kind: 'unblock',
+      pollId,
+      chatId: row.chatId,
+      digits: row.digits || row.formattedNumber || null,
+      contactName: row.contactName || (row.decision && row.decision.contactName) || null,
+      blockContactName:
+        row.blockContactName ||
+        row.contactName ||
+        (row.decision && row.decision.contactName) ||
+        null,
+      listName: row.listName || null,
+      createdAt: new Date().toISOString(),
+      resolved: false,
+    });
+    return pollId;
+  } catch (err) {
+    log.error('unblock poll failed', {
+      chatId: row.chatId,
+      error: err && err.message ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
 async function sendActionNotice(client, result, { maskClient, llmReview, rubric, listName } = {}) {
   const action = result && result.decision && result.decision.action;
   if (!result || result.ignored || result.deferred) return;
@@ -76,6 +122,7 @@ async function sendActionNotice(client, result, { maskClient, llmReview, rubric,
     log.warn('self chat unavailable; action notice not sent', { chatId: result.chatId });
     return;
   }
+  const blocked = action === 'block' ? Boolean(result.blocked) : false;
   try {
     const notice = await composeActionNotice({
       messages: result.reviewMessages,
@@ -84,13 +131,15 @@ async function sendActionNotice(client, result, { maskClient, llmReview, rubric,
       env: process.env,
       rubric,
       action,
-      blocked: action === 'block' ? Boolean(result.blocked) : false,
+      blocked,
       archived: Boolean(result.archived),
       listName,
       digits: result.formattedNumber,
       scoreResult: result.scoreResult,
       decision: result.decision,
       heuristic: result.heuristic,
+      llmConfidence: llmConfidenceFromResult(result),
+      offerUnblock: blocked,
     });
     await client.sendMessage(wid, notice.text);
   } catch (err) {
@@ -172,6 +221,48 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
       }),
   });
   if (!result.ok) queue.release(pollId);
+  await pacer.exclusive(async () => {
+    await client.sendMessage(wid, result.text);
+    if (result.blocked) {
+      await sendUnblockPoll(client, queue, pacer, {
+        chatId: record.chatId,
+        digits: record.digits,
+        contactName: record.contactName,
+        listName: record.listName,
+      });
+    }
+  });
+}
+
+async function confirmUnblockChoice(client, queue, pacer, choice, pollId) {
+  const wid = selfWid(client);
+  const existing = queue.get(pollId);
+  if (!existing || !wid) return;
+  if (existing.resolved) {
+    await client.sendMessage(wid, '已經處理咗。');
+    return;
+  }
+  const record = queue.consume(pollId);
+  if (!record) {
+    await client.sendMessage(wid, '已經處理咗。');
+    return;
+  }
+  const result = await applyUnblockChoice(record, choice, {
+    exclusive: (fn) => pacer.exclusive(fn),
+    pause: () => pacer.pause(),
+    getChat: (id) => client.getChatById(id),
+    getContact: (chat) => chat.getContact(),
+    unblockContact: ({ chat, contact, record: row, digits, blockContactName }) =>
+      unblockContact({
+        client,
+        contact,
+        chat,
+        digits,
+        blockContactName,
+        pause: () => pacer.pause(),
+      }),
+  });
+  if (!result.ok) queue.release(pollId);
   await pacer.exclusive(() => client.sendMessage(wid, result.text));
 }
 
@@ -226,6 +317,15 @@ async function handleSelfMessage(msg, deps) {
   }
   if (route.kind === 'review') {
     await confirmReviewChoice(
+      deps.client,
+      deps.reviewQueue,
+      deps.pacer,
+      route.choice,
+      route.pollId,
+    );
+  }
+  if (route.kind === 'unblock') {
+    await confirmUnblockChoice(
       deps.client,
       deps.reviewQueue,
       deps.pacer,
@@ -307,9 +407,17 @@ async function handleWaMessage(msg, {
     },
   );
   if (result && !result.deferred) {
-    await pacer.exclusive(() =>
-      sendActionNotice(client, result, { maskClient, llmReview, rubric, listName }),
-    );
+    await pacer.exclusive(async () => {
+      await sendActionNotice(client, result, { maskClient, llmReview, rubric, listName });
+      if (result.blocked) {
+        await sendUnblockPoll(client, reviewQueue, pacer, {
+          ...result,
+          listName,
+          digits: result.formattedNumber,
+          contactName: result.decision && result.decision.contactName,
+        });
+      }
+    });
   }
   if (!result || !result.deferred || !reviewQueue) return result;
   const wid = selfWid(client);
@@ -411,6 +519,14 @@ function attachHandlers(client, deps) {
         if (wid) await client.sendMessage(wid, '已經處理咗。');
       } else if (route.kind === 'review') {
         await confirmReviewChoice(
+          client,
+          deps.reviewQueue,
+          deps.pacer,
+          route.choice,
+          route.pollId,
+        );
+      } else if (route.kind === 'unblock') {
+        await confirmUnblockChoice(
           client,
           deps.reviewQueue,
           deps.pacer,
