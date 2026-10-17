@@ -1,6 +1,6 @@
 ---
 name: verify-scam-detection-jev
-description: "Drive scam-detection-jev offline the way an operator would: stub jevlike mask worker, in-process DM decisions (handle-incoming), and node:test invariants. Use when proving malicious-host auto-block, link-only archive, mask→LLM fail-closed, or AGENTS.md gates — without WhatsApp QR, Pi, GPU, or live jevlike scam score on inbound."
+description: "Drive scam-detection-jev offline the way an operator would: stub jevlike mask worker, in-process DM decisions (handle-incoming), and node:test invariants. Use when proving malicious-host auto-block, link-only archive, mask→LLM fail-closed, per-chat LLM cooldown, or AGENTS.md gates — without WhatsApp QR, Pi, GPU, or live jevlike scam score on inbound."
 ---
 
 # Verify scam-detection-jev
@@ -129,6 +129,7 @@ After cleanup, `doctor` must print `worth_driving: no`. Evidence from the drive 
 | Start stub | `.cursor/skills/verify-scam-detection-jev/bin/launch-stub` |
 | Doctor | `.cursor/skills/verify-scam-detection-jev/bin/doctor` |
 | Malicious-host block proof | `.cursor/skills/verify-scam-detection-jev/bin/drive-malicious-host-block` |
+| LLM cooldown proof | `.cursor/skills/verify-scam-detection-jev/bin/drive-llm-review-cooldown` |
 | Full prove loop | `.cursor/skills/verify-scam-detection-jev/bin/prove-malicious-host-block` |
 | Stop stub, keep artifacts | `.cursor/skills/verify-scam-detection-jev/bin/cleanup` |
 

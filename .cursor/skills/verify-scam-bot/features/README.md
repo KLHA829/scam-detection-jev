@@ -41,5 +41,6 @@ Each feature file starts with an H1 and one paragraph, then exactly four H2 sect
 - [Link lookalike archive](./link-lookalike-archive.md) — lookalike or soliciting short link hard-archives; no auto-block.
 - [Malicious-host block](./malicious-host-block.md) — unsaved auto-block only for URLs on `data/malicious-hosts.json`.
 - [Mask before LLM](./mask-before-llm.md) — personal-data spans become `XXX` before any chat API call; an incomplete mask skips the call.
+- [Per-chat LLM cooldown](./llm-review-cooldown.md) — same chat skips mask + LLM for ten minutes after a successful review.
 - [Action receipt](./action-receipt.md) — the operator's own chat gets the chat-list name, phone, and local reason after archive or block.
 - [Guided poll](./operator-guided-poll.md) — guided mode waits for 封鎖並封存, 只封存, or 留低.

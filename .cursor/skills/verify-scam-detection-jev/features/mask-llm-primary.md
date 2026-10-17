@@ -45,5 +45,6 @@ Response includes `spans` array (stub uses offline span helper).
 ## Gotchas
 
 - Link-rule hard archives skip LLM even when mask would fail.
+- After a successful LLM review, the same chat skips mask + LLM until `LLM_REVIEW_COOLDOWN_MS` ([llm-review-cooldown](./llm-review-cooldown.md)).
 - `lib/agent-trust.test.js` enforces no mask-stub import on live modules.
 - Real worker needs `JEVLIKE_MASK_CKPT`; stub does not download the encoder.

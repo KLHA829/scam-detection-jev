@@ -1,0 +1,77 @@
+TAP version 13
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"今晚方便傾兩句嗎？我電話 XXX"}
+# [SCAN] llm review no archive {"chatId":"85261234567@c.us","label":"not_scam","ok":true,"reason":"ok"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [INFO] llm review skipped {"chatId":"85261234567@c.us","skipped":"cooldown"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"今晚方便傾兩句嗎？"}
+# [SCAN] llm review no archive {"chatId":"85261234567@c.us","label":"not_scam","ok":true,"reason":"ok"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"過咗窗口"}
+# [SCAN] llm review no archive {"chatId":"85261234567@c.us","label":"not_scam","ok":true,"reason":"ok"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"chat A"}
+# [SCAN] llm review no archive {"chatId":"85261234567@c.us","label":"not_scam","ok":true,"reason":"ok"}
+# [SCAN] message inbound {"chatId":"85269998888@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85269998888","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85269998888@c.us","reasons":["primary_review"],"redacted":"chat B"}
+# [SCAN] llm review no archive {"chatId":"85269998888@c.us","label":"not_scam","ok":true,"reason":"ok"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"普通訊息"}
+# [SCAN] llm review no archive {"chatId":"85261234567@c.us","label":"not_scam","ok":true,"reason":"ok"}
+# [WARN] malicious-hosts: list contains only test-infra hosts; add operator-confirmed scam domains before relying on auto-block {"path":"/workspace/data/malicious-hosts.json","hosts":["malicious-block-test.invalid","malware.testing.google.test","wicar.org"]}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"heuristic","heuristic":"lookalike_domain","digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [OK] archived chat (obvious_scam) {"chatId":"85261234567@c.us","score":0,"label":"unknown"}
+# Subtest: llm-review-cooldown helpers
+    # Subtest: reads LLM_REVIEW_COOLDOWN_MS with production default when unset
+    ok 1 - reads LLM_REVIEW_COOLDOWN_MS with production default when unset
+      ---
+      duration_ms: 0.642212
+      ...
+    # Subtest: tracks per-chat windows
+    ok 2 - tracks per-chat windows
+      ---
+      duration_ms: 0.478699
+      ...
+    1..2
+ok 1 - llm-review-cooldown helpers
+  ---
+  duration_ms: 1.852776
+  type: 'suite'
+  ...
+# Subtest: processIncomingMessage llm cooldown
+    # Subtest: skips LLM and mask for a second message in the same chat within the window
+    ok 1 - skips LLM and mask for a second message in the same chat within the window
+      ---
+      duration_ms: 21.247092
+      ...
+    # Subtest: calls LLM again after the cooldown window expires
+    ok 2 - calls LLM again after the cooldown window expires
+      ---
+      duration_ms: 2.178514
+      ...
+    # Subtest: does not cooldown-block a different chat
+    ok 3 - does not cooldown-block a different chat
+      ---
+      duration_ms: 2.297062
+      ...
+    # Subtest: still archives on heuristic hard-hit inside the cooldown window
+    ok 4 - still archives on heuristic hard-hit inside the cooldown window
+      ---
+      duration_ms: 2.473841
+      ...
+    1..4
+ok 2 - processIncomingMessage llm cooldown
+  ---
+  duration_ms: 28.432531
+  type: 'suite'
+  ...
+1..2
+# tests 6
+# suites 2
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 76.731434

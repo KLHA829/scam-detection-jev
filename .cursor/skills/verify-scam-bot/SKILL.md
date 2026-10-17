@@ -1,6 +1,6 @@
 ---
 name: verify-scam-bot
-description: "Drive the local WhatsApp scam-DM bot (scam-detection-jev) the way an operator would. Smoke proof uses the stub jevlike HTTP worker (GET /health, POST /v1/score, POST /v1/mask) and the offline node:test subset. Use when proving score archive, AGENTS.md block/archive invariants, link-rule archive (no auto-block), malicious-host auto-block, mask-before-LLM, action receipts, or the guided self-chat poll. Live WhatsApp Web QR is a separate session and is not required."
+description: "Drive the local WhatsApp scam-DM bot (scam-detection-jev) the way an operator would. Smoke proof uses the stub jevlike HTTP worker (GET /health, POST /v1/score, POST /v1/mask) and the offline node:test subset. Use when proving score archive, AGENTS.md block/archive invariants, link-rule archive (no auto-block), malicious-host auto-block, mask-before-LLM, per-chat LLM cooldown, action receipts, or the guided self-chat poll. Live WhatsApp Web QR is a separate session and is not required."
 ---
 
 # Verify scam-detection-jev

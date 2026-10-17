@@ -30,5 +30,6 @@ Each feature file: H1 title, one intro paragraph, then exactly four H2 sections:
 - [Malicious-host auto-block](./malicious-host-block.md) — unsaved + listed URL → block `封鎖·惡意域名`.
 - [Link heuristic archive only](./link-heuristic-archive.md) — lookalike / soliciting short link → archive, no auto-block.
 - [Mask then LLM (fail closed)](./mask-llm-primary.md) — mask failure skips LLM and does not archive.
+- [Per-chat LLM cooldown](./llm-review-cooldown.md) — same chat skips mask + LLM for 10 min after a successful review.
 - [Benign DM ignore](./benign-ignore.md) — plain chat stays ignore without block/archive.
 - [AGENTS.md invariants](./agents-invariants.md) — saved never block, score alone never block, dual-hit host order.

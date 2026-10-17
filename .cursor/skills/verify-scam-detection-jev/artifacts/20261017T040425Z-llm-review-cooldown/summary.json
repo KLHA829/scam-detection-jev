@@ -1,0 +1,11 @@
+{
+  "feature": "llm-review-cooldown",
+  "entry": "node --test lib/llm-review-cooldown.test.js",
+  "surface": "in-process processIncomingMessage (offline)",
+  "whatsapp": "not started",
+  "nodeTestExit": 0,
+  "passLine": "# pass 6",
+  "failLine": "# fail 0",
+  "missingTests": [],
+  "proved": true
+}
