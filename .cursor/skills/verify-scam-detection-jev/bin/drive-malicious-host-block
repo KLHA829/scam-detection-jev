@@ -1,0 +1,96 @@
+#!/usr/bin/env node
+'use strict';
+
+/**
+ * Drive malicious-host-block (offline node:test). Writes artifacts/<stamp>-malicious-host-block/.
+ * Optional env ARTIFACTS_DIR to append doctor/launch snapshots (prove loop).
+ */
+
+const { spawnSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const skillDir = path.resolve(__dirname, '..');
+const root = path.resolve(skillDir, '../../..');
+const artifactsRoot = path.join(skillDir, 'artifacts');
+
+const TEST_NAMES = [
+  'matches exact host and subdomains from the data file',
+  'archives via link rules and blocks only unsaved contacts through block policy',
+  'blocks an unsaved contact on a listed host without waiting for the scorer',
+  'prefers malicious_host over lookalike when both match (dual-hit block eligibility)',
+  'blocks only on malicious_host, not lookalike heuristics',
+];
+
+const TEST_FILES = [
+  'lib/malicious-hosts.test.js',
+  'lib/link-rules.test.js',
+  'lib/block-policy.test.js',
+];
+
+const UNSET_ENV = [
+  'ARCHIVE_THRESHOLD',
+  'SAFE_THRESHOLD',
+  'BLOCK_THRESHOLD',
+  'BLOCK_ENABLED',
+  'HEURISTIC_ENABLED',
+  'OPERATOR_MODE',
+  'CONTEXT_LLM_ENABLED',
+  'LLM_REVIEW_ENABLED',
+  'SCORER',
+  'MALICIOUS_HOSTS_PATH',
+];
+
+function die(message) {
+  console.error(`drive-malicious-host-block: ${message}`);
+  process.exit(1);
+}
+
+function stamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return (
+    `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}` +
+    `T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`
+  );
+}
+
+const outDir = process.env.ARTIFACTS_DIR || path.join(artifactsRoot, `${stamp()}-malicious-host-block`);
+fs.mkdirSync(outDir, { recursive: true });
+
+const pattern = TEST_NAMES.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+const env = { ...process.env };
+for (const key of UNSET_ENV) delete env[key];
+
+const test = spawnSync(
+  'node',
+  ['--test', '--test-reporter', 'tap', `--test-name-pattern=${pattern}`, ...TEST_FILES],
+  { cwd: root, env, encoding: 'utf8' },
+);
+const tap = `${test.stdout || ''}${test.stderr || ''}`;
+fs.writeFileSync(path.join(outDir, 'node-test.txt'), tap);
+
+const missing = TEST_NAMES.filter((name) => {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return !new RegExp(`^\\s*ok \\d+ - ${escaped}$`, 'm').test(tap);
+});
+const failLine = tap.split('\n').find((line) => line.startsWith('# fail ')) || '# fail missing';
+const passLine = tap.split('\n').find((line) => line.startsWith('# pass ')) || '# pass missing';
+const testsOk = test.status === 0 && failLine === '# fail 0' && missing.length === 0;
+
+const summary = {
+  feature: 'malicious-host-block',
+  entry: 'node --test lib/malicious-hosts.test.js lib/link-rules.test.js lib/block-policy.test.js',
+  surface: 'in-process processIncomingMessage (offline)',
+  maskClient: 'stub maskClient in tests; live uses createMaskClient',
+  whatsapp: 'not started',
+  nodeTestExit: test.status,
+  passLine,
+  failLine,
+  missingTests: missing,
+  proved: testsOk,
+};
+fs.writeFileSync(path.join(outDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
+console.log(`artifacts: ${outDir}`);
+console.log(JSON.stringify(summary, null, 2));
+if (!summary.proved) die('malicious-host tests did not all pass');
