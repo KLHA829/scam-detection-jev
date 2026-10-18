@@ -1,29 +1,39 @@
-# LLM review cooldown persistence
+# Per-chat LLM cooldown
 
-After a successful primary or context LLM review (`ok === true`), the same `chatId` skips mask+LLM until `LLM_REVIEW_COOLDOWN_MS` expires. That window survives a bot process restart when the persisted store is used (`llm-review-cooldown.json` by default, or `LLM_REVIEW_COOLDOWN_PATH`). Link-heuristic archives still bypass cooldown.
+After a **successful** primary or context LLM review, the same WhatsApp chat skips mask and LLM until **`LLM_REVIEW_COOLDOWN_MS`** (default ten minutes). The window survives a bot restart via **`llm-review-cooldown.json`** (`LLM_REVIEW_COOLDOWN_PATH` optional). Link heuristics still archive or block.
 
 ## Sub-features
 
-- Per-chat cooldown after successful LLM review
-- On-disk JSON store with prune-on-load and atomic writes
-- Heuristic hard-hit still archives inside the cooldown window
+- `same-chat-skip` — second message in the window → `skipped: cooldown`.
+- `persist-restart` — file-backed store reloads on `npm start` until expiry.
+- `heuristic-inside-window` — lookalike hard archive without LLM.
 
 ## How to get to it (user POV)
 
-1. An unsaved or saved contact sends a normal DM; the bot masks and runs the LLM.
-2. A second normal DM from the same chat within ten minutes is ignored without another LLM call.
-3. Restart `npm start`; the second DM within the window is still suppressed until expiry.
-4. A lookalike or short-link URL in the current message still archives immediately.
+- Several DMs from one stranger within ten minutes after a successful review: only the first triggers mask + LLM unless a link rule fires.
+- Restart the bot mid-window: the same chat stays suppressed until expiry.
+- Tune with `LLM_REVIEW_COOLDOWN_MS` in `.env`.
 
 ## Driving it with verify-scam-bot
+
+Preconditions: repo root; stub not required.
 
 ```bash
 .cursor/skills/verify-scam-bot/bin/drive-llm-review-cooldown
 ```
 
-Offline only: runs `lib/llm-review-cooldown.test.js` with `LLM_REVIEW_COOLDOWN_MS=600000`. Doctor and stub launch are not required.
+Or manually:
+
+```bash
+node --test --test-reporter tap \
+  --test-name-pattern 'processIncomingMessage llm cooldown' \
+  lib/llm-review-cooldown.test.js
+```
+
+Save TAP under `evidence/<UTC-stamp>-llm-review-cooldown/`.
 
 ## Gotchas
 
-- `npm test` sets `LLM_REVIEW_COOLDOWN_MS=0` globally so unrelated suites do not hit cooldown; use the drive script or run the cooldown test file with a positive cooldown.
+- Failed mask or LLM does not start the cooldown timer.
+- `npm test` sets `LLM_REVIEW_COOLDOWN_MS=0`; cooldown tests opt in via in-test `deps.env`.
 - Tests inject an in-memory store; production uses the file-backed store from `whatsapp-bot.js`.

@@ -2,8 +2,7 @@
 'use strict';
 
 /**
- * Drive the llm-review-cooldown feature (offline node:test only).
- * Writes proof under .cursor/skills/verify-scam-bot/evidence/<stamp>-llm-review-cooldown/.
+ * Drive llm-review-cooldown (offline node:test). Writes evidence/<stamp>-llm-review-cooldown/.
  */
 
 const { spawnSync } = require('child_process');
@@ -13,6 +12,17 @@ const path = require('path');
 const skillDir = path.resolve(__dirname, '..');
 const root = path.resolve(skillDir, '../../..');
 const evidenceRoot = path.join(skillDir, 'evidence');
+
+const TEST_NAMES = [
+  'reads LLM_REVIEW_COOLDOWN_MS with production default when unset',
+  'tracks per-chat windows',
+  'persists across store reload (process restart) until expiry',
+  'prunes expired chat entries on load',
+  'skips LLM and mask for a second message in the same chat within the window',
+  'calls LLM again after the cooldown window expires',
+  'does not cooldown-block a different chat',
+  'still archives on heuristic hard-hit inside the cooldown window',
+];
 
 const TEST_FILE = 'lib/llm-review-cooldown.test.js';
 
@@ -26,6 +36,7 @@ const UNSET_ENV = [
   'CONTEXT_LLM_ENABLED',
   'LLM_REVIEW_ENABLED',
   'SCORER',
+  'MALICIOUS_HOSTS_PATH',
   'LLM_REVIEW_COOLDOWN_PATH',
 ];
 
@@ -46,29 +57,35 @@ function stamp() {
 const outDir = path.join(evidenceRoot, `${stamp()}-llm-review-cooldown`);
 fs.mkdirSync(outDir, { recursive: true });
 
-const env = { ...process.env, LLM_REVIEW_COOLDOWN_MS: '600000' };
+const pattern = TEST_NAMES.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+const env = { ...process.env, LLM_REVIEW_COOLDOWN_MS: '0' };
 for (const key of UNSET_ENV) delete env[key];
 
 const test = spawnSync(
   'node',
-  ['--test', '--test-reporter', 'tap', TEST_FILE],
+  ['--test', '--test-reporter', 'tap', `--test-name-pattern=${pattern}`, TEST_FILE],
   { cwd: root, env, encoding: 'utf8' },
 );
 const tap = `${test.stdout || ''}${test.stderr || ''}`;
 fs.writeFileSync(path.join(outDir, 'node-test.txt'), tap);
 
+const missing = TEST_NAMES.filter((name) => {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return !new RegExp(`^\\s*ok \\d+ - ${escaped}$`, 'm').test(tap);
+});
 const failLine = tap.split('\n').find((line) => line.startsWith('# fail ')) || '# fail missing';
 const passLine = tap.split('\n').find((line) => line.startsWith('# pass ')) || '# pass missing';
-const testsOk = test.status === 0 && failLine === '# fail 0';
+const testsOk = test.status === 0 && failLine === '# fail 0' && missing.length === 0;
 
 const summary = {
   feature: 'llm-review-cooldown',
   entry: `node --test ${TEST_FILE}`,
-  scorer: 'in-process stub client (no HTTP worker)',
+  surface: 'in-process processIncomingMessage (offline)',
   whatsapp: 'not started',
   nodeTestExit: test.status,
   passLine,
   failLine,
+  missingTests: missing,
   proved: testsOk,
 };
 fs.writeFileSync(path.join(outDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);

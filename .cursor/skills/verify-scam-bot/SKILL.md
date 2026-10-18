@@ -1,134 +1,97 @@
 ---
 name: verify-scam-bot
-description: "Drive the local WhatsApp scam-DM bot (scam-detection-jev) the way an operator would. Smoke proof uses the stub jevlike HTTP worker (GET /health, POST /v1/score, POST /v1/mask) and the offline node:test subset. Use when proving score archive, AGENTS.md block/archive invariants, link-rule archive (no auto-block), malicious-host auto-block, mask-before-LLM, action receipts, or the guided self-chat poll. Live WhatsApp Web QR is a separate session and is not required."
+description: "Drive the local WhatsApp scam-DM bot (scam-detection-jev) the way an operator would. Smoke proof uses the stub jevlike HTTP worker (GET /health, POST /v1/mask; POST /v1/score is lab-only) and offline node:test subsets. Use when proving mask-before-LLM, AGENTS.md block/archive invariants, link-rule archive (no auto-block), malicious-host auto-block, action receipts, LLM cooldown, or the guided self-chat poll. Live WhatsApp Web QR is a separate session and is not required."
 ---
 
 # Verify scam-detection-jev
 
-This skill proves the operator-facing behavior of the local WhatsApp scam-DM bot. The bot scores each 1:1 DM with HF-encoder jevlike, archives from the score and from link rules (lookalike, soliciting short link), and **auto-blocks** an unsaved contact only when the current message URL matches `data/malicious-hosts.json`. Models do not auto-block. The bot can ask the operator in their own chat before acting.
+This skill proves operator-facing behavior of the local WhatsApp scam-DM bot. **Live inbound DMs:** link heuristics when matched, else **mask (`POST /v1/mask`) → OpenAI-compatible LLM** → archive `llm_review_scam` or ignore. **Auto-block** applies only when an unsaved contact's current message URL matches `data/malicious-hosts.json`. Models and jevlike `/v1/score` do not drive live archive/block.
 
-The smoke path does not open Chrome or WhatsApp. It starts `stub-jevlike.js` (the same process as `npm run stub`) on `127.0.0.1:18766` and runs the `node --test` cases that call `processIncomingMessage`, which is the function the bot uses for each DM. Live WhatsApp (`npm start`) needs a human QR scan and one `.wwebjs_auth/` session. Do not start it for a smoke proof.
+Smoke verification does not open Chrome or WhatsApp. It starts `stub-jevlike.js` (same as `npm run stub`) on `127.0.0.1:18766` and runs `node --test` cases that call `processIncomingMessage`. Live WhatsApp (`npm start`) needs a human QR scan and `.wwebjs_auth/`. Do not start it for smoke proof.
 
-Two stub workers can run side by side on different `VERIFY_PORT` values. Two `npm start` processes cannot: they share `.wwebjs_auth/`. Never start a second WhatsApp client against that directory.
+**Full Autopilot** (goal → split → self-prove → PR): [full-autopilot](../full-autopilot/SKILL.md). Use this skill for `doctor` / `drive-*` / gardener encoding inside that loop.
+
+Two stub workers can run on different `VERIFY_PORT` values. Two `npm start` processes cannot share `.wwebjs_auth/`.
 
 ## Launch
 
-From the repo root, start only the stub worker:
+From the repo root:
 
 ```bash
 .cursor/skills/verify-scam-bot/bin/launch-stub
 ```
 
-Ready when the script prints `stub listening at http://127.0.0.1:18766/v1/score` and `GET http://127.0.0.1:18766/health` returns `{"ok":true,"model":"stub-jevlike"}`. The process log line is `[INFO] stub jevlike listening on http://127.0.0.1:18766/v1/score`. Override the port with `VERIFY_PORT` before launch. The default `18766` stays off the bot's `JEVLIKE_PORT` / `8766` so a real worker the operator already started is left alone.
+Ready when `GET http://127.0.0.1:18766/health` returns `{"ok":true,"model":"stub-jevlike"}`. Override port with `VERIFY_PORT`. Default `18766` avoids the bot's `JEVLIKE_PORT` / `8766`.
 
-`launch-stub` reuses a healthy stub whose pid file this skill wrote. If the port is taken by any other process, it exits and does not kill that process.
-
-Full offline suite, after `npm ci` because `lib/wa-handlers.test.js` loads `whatsapp-web.js`:
+Full offline suite (after `npm ci`):
 
 ```bash
 npm test
 ```
 
-That runs `node --test` and `python3 -m unittest test_jevlike_serve.py`. It does not download the encoder and does not open WhatsApp. `PUPPETEER_SKIP_DOWNLOAD=true` is what CI sets; the tests do not launch Chrome.
+Live worker (human QR path only): export `JEVLIKE_MASK_CKPT` for `POST /v1/mask`. `jevlike_serve.py` does not read `.env`.
 
-Live operator session, only when a human can scan the QR. Weights must exist at `models/jevlike_hf_chinese_roberta_r1.pt` (see `scripts/download_jevlike_ckpt.sh`). `jevlike_serve.py` does not read `.env`; export `JEVLIKE_CKPT` in the worker's own environment.
-
-```bash
-# terminal 1
-.venv/bin/python jevlike_serve.py
-# ready: [INFO] jevlike worker listening on http://127.0.0.1:8766/v1/score
-# GET /health has "model":"jevlike" and "ok":true
-
-# terminal 2
-npm start
-# QR: [INFO] scan QR to link WhatsApp Web
-# session: [OK] WhatsApp session authenticated
-# ready: [OK] WhatsApp client ready
-```
-
-Stop the smoke stub with the cleanup command below. Stop a live bot by ending the `npm start` process you started. Do not delete `.wwebjs_auth/`.
+Stop the smoke stub with cleanup below. Do not delete `.wwebjs_auth/`.
 
 ## Doctor
 
-Run this before every drive. It is read-only.
+Run before every stub HTTP drive:
 
 ```bash
 .cursor/skills/verify-scam-bot/bin/doctor
 ```
 
-`worth_driving: yes` means all of the following:
+`worth_driving: yes` means Node on PATH, `run/stub.pid` is `stub-jevlike.js`, and `GET …/health` is `{ok:true, model:stub-jevlike}`.
 
-- `node` is on PATH (this repo requires Node >= 20).
-- `run/stub.pid` is alive and its command line contains `stub-jevlike.js`.
-- `GET` of `run/base-url` + `/health` returns `"ok":true` and `"model":"stub-jevlike"`.
+Also prints (non-fatal): `python3`, `node_modules`, gitignored `checkpoint` / `pii_mask` presence.
 
-It also prints, without failing the smoke path:
-
-- `python3` — required for the `npm test` Python half and for `jevlike_serve.py`.
-- `node_modules: absent` — `npm ci` before `npm test` or `npm start`. The score-archive `node --test` subset does not import `whatsapp-web.js`.
-- `checkpoint: absent` — the r1 head is gitignored. The stub proof does not need it. `jevlike_serve.py` exits on startup without `models/jevlike_hf_chinese_roberta_r1.pt`.
-- `pii_mask: absent` — live `POST /v1/mask` returns 503 until `models/jevlike_hf_pii_mask.pt` is loaded. The stub still answers `/v1/mask` with the offline span helper.
-
-`worth_driving: no` means do not drive. Launch first, or fix the reason it prints.
+`worth_driving: no` → launch stub or fix the printed reason.
 
 ## Drive
 
-Read `features/README.md`, then the feature file. Run one feature from a clean stub. The scripted smoke feature is score archive:
+Read `features/README.md`, then the feature file.
+
+**Primary smoke (mask → LLM era):**
+
+```bash
+.cursor/skills/verify-scam-bot/bin/drive-mask-before-llm
+```
+
+Requires doctor. Exercises stub `POST /v1/mask` and a `node --test` subset for masked LLM archive and mask fail-closed behavior. See `features/mask-before-llm.md`.
+
+**Offline invariant drives (no stub required):**
+
+```bash
+.cursor/skills/verify-scam-bot/bin/drive-agents-invariants
+.cursor/skills/verify-scam-bot/bin/drive-malicious-host-block
+.cursor/skills/verify-scam-bot/bin/drive-llm-review-cooldown
+```
+
+**Lab-only** (stub `POST /v1/score` + `lab/score-message` tests — not live inbound proof):
 
 ```bash
 .cursor/skills/verify-scam-bot/bin/drive-score-archive
 ```
 
-That helper:
+See `features/lab-jevlike-score.md`. Historical `evidence/*-score-archive/` folders predate the mask-primary product.
 
-1. Requires a passing doctor.
-2. `POST /v1/score` with `{"text":"[stub:scam] 請立即轉帳"}`. The stub preset `scam` is score 96, label `scam` (archive line is 42).
-3. `POST /v1/score` with `{"text":"今晚飲茶？"}`. The default preset `benign` is score 4, label `not_scam` (safe line is 18).
-4. Runs the `node --test --test-reporter tap` subset named in `features/score-archive.md`. It unsets `ARCHIVE_THRESHOLD`, `SAFE_THRESHOLD`, `BLOCK_THRESHOLD`, `BLOCK_ENABLED`, `HEURISTIC_ENABLED`, `OPERATOR_MODE`, `CONTEXT_LLM_ENABLED`, `LLM_REVIEW_ENABLED`, and `SCORER` so the committed `scoring-rubric.json` lines (archive 42, safe 18, block 80) are what the tests see.
+Other features use the `node --test` / `curl` commands in their feature files.
 
-A `[stub:scam]` tag is honored only by `stub-jevlike.js`. The real worker scores the words.
+Do not point smoke drives at live `jevlike_serve.py`. Doctor rejects health whose `model` is not `stub-jevlike`.
 
-Other features are driven with the `node --test` commands in their feature files. They use the in-process stub client and do not need the HTTP worker, except the mask feature's `POST /v1/mask` check, which uses the same launched stub.
-
-AGENTS.md decision invariants (saved never auto-block, lookalike/short-link never auto-block, malicious-host block, score alone never block, fail-closed unknown) are offline-only:
-
-```bash
-.cursor/skills/verify-scam-bot/bin/drive-agents-invariants
-```
-
-Malicious-host auto-block (offline):
-
-```bash
-.cursor/skills/verify-scam-bot/bin/drive-malicious-host-block
-```
-
-Those run `node --test` subsets and write evidence under `evidence/<UTC-stamp>-<feature-id>/`. Doctor and `launch-stub` are not required.
-
-Do not point this smoke drive at a live `jevlike_serve.py`. Doctor rejects a health body whose `model` is not `stub-jevlike`.
-
-Thresholds and toggles change through `scoring-rubric.json` and env (`ARCHIVE_THRESHOLD`, `SAFE_THRESHOLD`, `BLOCK_THRESHOLD`, `BLOCK_ENABLED`, `HEURISTIC_ENABLED`, `OPERATOR_MODE`, `CONTEXT_LLM_ENABLED`). Do not edit numeric constants in code to make a proof pass.
+Thresholds and toggles change through `scoring-rubric.json` and env — not hard-coded constants in code.
 
 ## Evidence
 
-Each scripted drive writes a new directory:
+Each scripted drive writes:
 
 `.cursor/skills/verify-scam-bot/evidence/<UTC-stamp>-<feature-id>/`
 
-Score-archive contents:
+Mask-before-llm includes `doctor.txt`, `health.json`, `mask.json`, `node-test.txt`, `summary.json` (`proved: true` only when HTTP and every named test pass).
 
-| File | What it proves |
-|---|---|
-| `doctor.txt` | The instance that was driven |
-| `health.json` | `GET /health` body |
-| `launch.txt` | Stub startup log, including the listen line. Named `.txt` so the repo's `*.log` gitignore does not drop it. |
-| `score-scam.request.json` / `score-scam.json` | The scored body and the HTTP response |
-| `score-benign.request.json` / `score-benign.json` | The safe body and the HTTP response |
-| `node-test.txt` | TAP from the decision tests, including commands' exit status via `# fail` |
-| `summary.json` | `proved: true` only when both HTTP checks and every named test passed |
+For manual drives, save command, stdout/stderr, exit code, and feature id under the same tree.
 
-For a feature you drive by hand, create `.cursor/skills/verify-scam-bot/evidence/<UTC-stamp>-<feature-id>/` and save the command, stdout, stderr, and exit code. Record the feature id from the feature file. A skipped entry point is not proved by a different feature.
-
-Proof standard: exercise the stub HTTP contract the bot posts, and the `processIncomingMessage` tests that perform archive and block through callbacks. Capture the request and the resulting score or decision, not only a final status line. `npm test` and the stub are the production boundary for offline proof. They do not send WhatsApp messages. A live QR session is the only path that archives or blocks a real chat; do not claim that from a stub run.
+Proof standard: exercise the stub HTTP contract the bot uses for mask (and lab score when labelled lab-only), plus `processIncomingMessage` tests for archive/block decisions. Stub runs do not prove a real WhatsApp chat was archived.
 
 ## Cleanup
 
@@ -136,25 +99,32 @@ Proof standard: exercise the stub HTTP contract the bot posts, and the `processI
 .cursor/skills/verify-scam-bot/bin/cleanup
 ```
 
-This sends SIGTERM to the pid in `run/stub.pid` only when that process command line contains `stub-jevlike.js`, then deletes `.cursor/skills/verify-scam-bot/run/`. It does not delete `.cursor/skills/verify-scam-bot/evidence/`. It does not kill by process name, and it does not remove `.wwebjs_auth/`, `blocks.jsonl`, `operator-mode.json`, or `review-queue.json`.
-
-After cleanup, `doctor` must print `worth_driving: no`. The evidence directory from the drive must still be on disk.
+SIGTERM to `run/stub.pid` when cmdline contains `stub-jevlike.js`, then removes `run/`. Does not delete `evidence/` or `.wwebjs_auth/`.
 
 ## Helpers
-
-All paths are from the repo root. Each helper is executable.
 
 | Helper | Invocation |
 |---|---|
 | Start stub | `.cursor/skills/verify-scam-bot/bin/launch-stub` |
 | Read-only health | `.cursor/skills/verify-scam-bot/bin/doctor` |
-| Score-archive proof | `.cursor/skills/verify-scam-bot/bin/drive-score-archive` |
-| AGENTS.md invariants proof | `.cursor/skills/verify-scam-bot/bin/drive-agents-invariants` |
-| Malicious-host block proof | `.cursor/skills/verify-scam-bot/bin/drive-malicious-host-block` |
-| Stop stub, keep evidence | `.cursor/skills/verify-scam-bot/bin/cleanup` |
-
-`drive-score-archive` needs a healthy stub. `drive-agents-invariants` and `drive-malicious-host-block` are pure `node --test`. Other feature files carry their own `node --test` and `curl` commands.
+| **Primary smoke** | `.cursor/skills/verify-scam-bot/bin/drive-mask-before-llm` |
+| AGENTS.md invariants | `.cursor/skills/verify-scam-bot/bin/drive-agents-invariants` |
+| Malicious-host block | `.cursor/skills/verify-scam-bot/bin/drive-malicious-host-block` |
+| LLM per-chat cooldown | `.cursor/skills/verify-scam-bot/bin/drive-llm-review-cooldown` |
+| Lab jevlike score only | `.cursor/skills/verify-scam-bot/bin/drive-score-archive` |
+| Stop stub | `.cursor/skills/verify-scam-bot/bin/cleanup` |
 
 ## Maintenance
 
-When the bot's operator-facing behavior changes, update this map with `/maintain-verification-skill` rather than inventing a second harness.
+When operator-facing behavior changes, update this skill and `features/` with `/maintain-verification-skill` — do not add a second harness.
+
+**Gardener checklist (encode fixes, not only prose):**
+
+1. **Reproduce** — `bin/doctor` (if stub HTTP) and the failing `bin/drive-*` or `npm test` case.
+2. **Fix** — product code or docs; keep AGENTS.md invariants.
+3. **Encode** — add or extend a `lib/*.test.js` lock, a feature map entry under `features/`, and the matching `bin/drive-*` test-name list when the smoke path changes.
+4. **Prove** — re-run the drive; commit fresh `evidence/` only when a human explicitly wants a snapshot (gitignored or committed per team habit).
+
+Corrections belong in **tests, CI, skill drivers, or structure** — not only AGENTS.md paragraphs. See AGENTS.md gardener note.
+
+**Alias:** `.cursor/skills/verify-scam-detection-jev/` redirects here (thin `bin/` shims only). Do not maintain a second feature map there.
