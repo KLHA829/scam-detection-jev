@@ -27,7 +27,7 @@ Feature map: [verify-scam-bot/features/README.md](../verify-scam-bot/features/RE
 
 ## Compatibility shims
 
-Scripts under **this** skill's `bin/` forward to the same names under `verify-scam-bot/bin/` (exit code preserved). `bin/prove-malicious-host-block` runs launch → doctor → `drive-malicious-host-block` → cleanup using the canonical harness; artifacts land under `verify-scam-bot/evidence/`.
+Scripts under **this** skill's `bin/` forward to the same names under `verify-scam-bot/bin/` (exit code preserved). `bin/prove-malicious-host-block` runs launch → doctor → `drive-malicious-host-block` → cleanup using the canonical harness; proof lands under `verify-scam-bot/evidence/`. This alias has **no** local `artifacts/` or evidence directory.
 
 ## Maintenance
 
