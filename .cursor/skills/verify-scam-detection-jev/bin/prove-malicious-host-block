@@ -1,37 +1,11 @@
 #!/usr/bin/env bash
-# launch → doctor → drive-malicious-host-block → cleanup; artifacts survive cleanup.
+# Orchestrate canonical harness; evidence under verify-scam-bot/evidence/.
 set -euo pipefail
+source "$(cd "$(dirname "$0")" && pwd)/_canonical"
 
-BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
-SKILL_DIR="$(cd "$BIN_DIR/.." && pwd)"
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-OUT_DIR="$SKILL_DIR/artifacts/${STAMP}-malicious-host-block"
-mkdir -p "$OUT_DIR"
+"$VERIFY_SCAM_BOT_BIN/launch-stub"
+"$VERIFY_SCAM_BOT_BIN/doctor"
+"$VERIFY_SCAM_BOT_BIN/drive-malicious-host-block"
+"$VERIFY_SCAM_BOT_BIN/cleanup"
 
-"$BIN_DIR/launch-stub" 2>&1 | tee "$OUT_DIR/launch.txt"
-"$BIN_DIR/doctor" 2>&1 | tee "$OUT_DIR/doctor.txt"
-
-base="$(cat "$SKILL_DIR/run/base-url")"
-curl -fsS "$base/health" | tee "$OUT_DIR/health.json"
-echo ""
-
-export ARTIFACTS_DIR="$OUT_DIR"
-"$BIN_DIR/drive-malicious-host-block"
-
-"$BIN_DIR/cleanup"
-
-if [[ ! -f "$OUT_DIR/summary.json" ]]; then
-  echo "prove-malicious-host-block: missing summary.json after drive" >&2
-  exit 1
-fi
-node -e "
-  const s = require(process.argv[1]);
-  if (!s.proved) process.exit(1);
-" "$OUT_DIR/summary.json"
-
-if [[ -d "$SKILL_DIR/run" ]]; then
-  echo "prove-malicious-host-block: run/ still present after cleanup" >&2
-  exit 1
-fi
-
-echo "proved malicious-host-block; artifacts at $OUT_DIR"
+echo "prove-malicious-host-block: used canonical drives; see latest verify-scam-bot/evidence/*-malicious-host-block/"

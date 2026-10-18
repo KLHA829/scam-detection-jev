@@ -124,3 +124,5 @@ When operator-facing behavior changes, update this skill and `features/` with `/
 4. **Prove** — re-run the drive; commit fresh `evidence/` only when a human explicitly wants a snapshot (gitignored or committed per team habit).
 
 Corrections belong in **tests, CI, skill drivers, or structure** — not only AGENTS.md paragraphs. See AGENTS.md gardener note.
+
+**Alias:** `.cursor/skills/verify-scam-detection-jev/` redirects here (thin `bin/` shims only). Do not maintain a second feature map there.

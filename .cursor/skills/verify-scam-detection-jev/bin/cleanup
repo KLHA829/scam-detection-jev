@@ -1,42 +1,4 @@
 #!/usr/bin/env bash
-# Stop the stub this verification run started. Leaves artifacts/ in place.
 set -euo pipefail
-
-BIN_DIR="$(cd "$(dirname "$0")" && pwd)"
-SKILL_DIR="$(cd "$BIN_DIR/.." && pwd)"
-RUN_DIR="$SKILL_DIR/run"
-ARTIFACTS_DIR="$SKILL_DIR/artifacts"
-
-if [[ -d "$RUN_DIR" ]]; then
-  pidfile="$RUN_DIR/stub.pid"
-  if [[ -f "$pidfile" ]]; then
-    pid="$(cat "$pidfile")"
-    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
-      cmd="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
-      if [[ "$cmd" != *stub-jevlike.js* ]]; then
-        echo "cleanup: refusing to kill pid $pid (cmdline is not stub-jevlike.js)" >&2
-        exit 1
-      fi
-      kill "$pid"
-      for _ in $(seq 1 30); do
-        kill -0 "$pid" 2>/dev/null || break
-        sleep 0.1
-      done
-      if kill -0 "$pid" 2>/dev/null; then
-        echo "cleanup: pid $pid did not exit after SIGTERM" >&2
-        exit 1
-      fi
-      echo "stopped stub pid $pid"
-    else
-      echo "stub pid ${pid:-missing} was already gone"
-    fi
-  else
-    echo "no stub.pid; nothing to stop"
-  fi
-  rm -rf "$RUN_DIR"
-  echo "removed $RUN_DIR"
-else
-  echo "no run directory; nothing to stop"
-fi
-
-echo "artifacts kept at $ARTIFACTS_DIR"
+source "$(cd "$(dirname "$0")" && pwd)/_canonical"
+canonical_helper cleanup "$@"
