@@ -2,9 +2,9 @@
 'use strict';
 
 /**
- * Drive the score-archive feature against the stub this run launched.
- * Writes proof under .cursor/skills/verify-scam-bot/evidence/<stamp>-score-archive/.
- * Does not open WhatsApp or Chrome. Does not delete older evidence.
+ * Lab-only: stub POST /v1/score contract plus lab scorer node:test subset.
+ * Live inbound archive is mask→LLM — use drive-mask-before-llm for smoke proof.
+ * Writes proof under .cursor/skills/verify-scam-bot/evidence/<stamp>-lab-jevlike-score/.
  */
 
 const { spawnSync } = require('child_process');
@@ -17,29 +17,20 @@ const runDir = path.join(skillDir, 'run');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
-  'archives on score >= T for any sender',
-  'labels using archive / safe thresholds',
-  'returns stub scam as scam',
-  'returns stub benign as not_scam',
-  'archives a high score and does not block on the score alone',
-  'archives an unsaved high score without blocking',
-  'does not archive a failed score that still carries a high number',
-  'ignores unknown for unsaved non-local and local unsaved',
-  'does not archive unsaved non-local numbers from score-or-heuristic alone',
-  'ignores low score for local unsaved and for saved foreign',
-  'createScoreClient always builds a JevlikeClient (SCORER env is ignored)',
-  'archives jevlike_score for a high stub score',
-  'archives via callback on high stub score',
-  'fails closed on timeout / 5xx / invalid JSON',
+  'createMaskClient always builds a JevlikeClient (SCORER env is ignored)',
+  'maps P(scam) onto the 0–100 score / archive interface',
+  'scoreMessage uses the jevlike stub only',
   'fails closed on jevlike timeout without archiving',
   'fails closed on jevlike HTTP 5xx without archiving',
+  'JevlikeClient parses /v1/score and retries 429',
+  'does not archive a failed score that still carries a high number',
+  'returns stub scam as scam',
+  'returns stub benign as not_scam',
+  'skips empty text as unknown without calling the client',
+  'fails closed on timeout / 5xx / invalid JSON',
 ];
 
-const TEST_FILES = [
-  'whatsapp-bot.test.js',
-  'lib/block-policy.test.js',
-  'lib/scorer.test.js',
-];
+const TEST_FILES = ['lib/scorer.test.js', 'whatsapp-bot.test.js'];
 
 const UNSET_ENV = [
   'ARCHIVE_THRESHOLD',
@@ -54,7 +45,7 @@ const UNSET_ENV = [
 ];
 
 function die(message) {
-  console.error(`drive-score-archive: ${message}`);
+  console.error(`drive-score-archive (lab): ${message}`);
   process.exit(1);
 }
 
@@ -101,7 +92,7 @@ process.stderr.write(doctor.stderr || '');
 if (doctor.status !== 0) die('doctor failed; not driving');
 
 const base = readText(path.join(runDir, 'base-url'));
-const outDir = path.join(evidenceRoot, `${stamp()}-score-archive`);
+const outDir = path.join(evidenceRoot, `${stamp()}-lab-jevlike-score`);
 fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(path.join(outDir, 'doctor.txt'), doctor.stdout);
 
@@ -158,11 +149,11 @@ const passLine = tap.split('\n').find((line) => line.startsWith('# pass ')) || '
 const testsOk = test.status === 0 && failLine === '# fail 0' && missing.length === 0;
 
 const summary = {
-  feature: 'score-archive',
-  entry: 'stub POST /v1/score plus node --test subset',
+  feature: 'lab-jevlike-score',
+  labOnly: true,
+  entry: 'stub POST /v1/score plus lab scorer node --test subset (not live inbound)',
   baseUrl: base,
   scorer: 'stub-jevlike',
-  weights: 'not used',
   whatsapp: 'not started',
   scam: { label: scam.label, score: scam.score, model: scam.model },
   benign: { label: benign.label, score: benign.score, model: benign.model },

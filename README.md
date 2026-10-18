@@ -178,6 +178,19 @@ docker run --rm -it \
 
 QR login still needs a terminal that can show the code (or inspect container logs). The image runs as the `node` user so Chromium can keep its sandbox. A `.wwebjs_auth` directory created as root has to be given to that user before it will open.
 
+## Offline verification (agents / CI)
+
+Operator smoke without WhatsApp QR lives under [`.cursor/skills/verify-scam-bot/`](.cursor/skills/verify-scam-bot/SKILL.md):
+
+```bash
+.cursor/skills/verify-scam-bot/bin/launch-stub
+.cursor/skills/verify-scam-bot/bin/doctor          # worth_driving: yes
+.cursor/skills/verify-scam-bot/bin/drive-mask-before-llm   # primary smoke
+.cursor/skills/verify-scam-bot/bin/drive-agents-invariants # AGENTS locks
+```
+
+`bin/drive-score-archive` is **lab-only** (`POST /v1/score`); live inbound proof is mask → LLM. Full feature map: `.cursor/skills/verify-scam-bot/features/README.md`.
+
 ## Layout
 
 - `whatsapp-bot.js` — WhatsApp Web client, QR, archive and graded block, self-chat setup poll
