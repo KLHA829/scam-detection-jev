@@ -16,6 +16,8 @@ const evidenceRoot = path.join(skillDir, 'evidence');
 const TEST_NAMES = [
   'reads LLM_REVIEW_COOLDOWN_MS with production default when unset',
   'tracks per-chat windows',
+  'persists across store reload (process restart) until expiry',
+  'prunes expired chat entries on load',
   'skips LLM and mask for a second message in the same chat within the window',
   'calls LLM again after the cooldown window expires',
   'does not cooldown-block a different chat',
@@ -35,6 +37,7 @@ const UNSET_ENV = [
   'LLM_REVIEW_ENABLED',
   'SCORER',
   'MALICIOUS_HOSTS_PATH',
+  'LLM_REVIEW_COOLDOWN_PATH',
 ];
 
 function die(message) {

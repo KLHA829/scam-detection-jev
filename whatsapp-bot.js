@@ -54,6 +54,10 @@ const {
   loadMaliciousHosts,
   startMaliciousHostsWatcher,
 } = require('./lib/malicious-hosts');
+const {
+  createLlmReviewCooldownStore,
+  defaultLlmReviewCooldownPath,
+} = require('./lib/llm-review-cooldown');
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
 
@@ -439,6 +443,7 @@ async function handleWaMessage(msg, {
   env,
   operator,
   reviewQueue,
+  llmCooldownStore,
   isEdit,
 }) {
   let chat;
@@ -486,6 +491,7 @@ async function handleWaMessage(msg, {
       operatorMode: operator ? operator.mode() : 'auto',
       holdBlock: operator ? operator.awaitingChoice() : false,
       pauseAction: () => pacer.pause(),
+      llmCooldownStore,
       blockContact: (info) =>
         blockAndRename({
           client,
@@ -650,6 +656,10 @@ async function main() {
     : null;
   const operator = createOperatorState();
   const reviewQueue = createReviewQueue();
+  const llmCooldownStore = createLlmReviewCooldownStore({
+    filePath: defaultLlmReviewCooldownPath(process.env),
+    env: process.env,
+  });
   const client = createWhatsAppClient();
 
   try {
@@ -697,6 +707,7 @@ async function main() {
     recentContext,
     operator,
     reviewQueue,
+    llmCooldownStore,
   });
   await client.initialize();
 }

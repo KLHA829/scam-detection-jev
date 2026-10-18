@@ -6,6 +6,7 @@ node_modules/
 blocks.jsonl
 operator-mode.json
 review-queue.json
+llm-review-cooldown.json
 .DS_Store
 session/
 chrome-data/
