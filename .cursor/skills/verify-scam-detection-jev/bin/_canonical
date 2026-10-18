@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Resolve canonical verify-scam-bot bin directory (sourced or executed).
+set -euo pipefail
+_SHIM_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export VERIFY_SCAM_BOT_BIN="$(cd "$_SHIM_BIN/../../verify-scam-bot/bin" && pwd)"
+
+canonical_helper() {
+  local name="$1"
+  local target="$VERIFY_SCAM_BOT_BIN/$name"
+  if [[ ! -f "$target" ]]; then
+    echo "verify-scam-detection-jev: missing canonical helper: $target" >&2
+    exit 1
+  fi
+  exec "$target" "${@:2}"
+}

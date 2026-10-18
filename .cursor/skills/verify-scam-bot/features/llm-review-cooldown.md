@@ -1,0 +1,36 @@
+# Per-chat LLM cooldown
+
+After a **successful** primary or context LLM review, the same WhatsApp chat skips mask and LLM until **`LLM_REVIEW_COOLDOWN_MS`** (default ten minutes). Link heuristics still archive or block.
+
+## Sub-features
+
+- `same-chat-skip` — second message in the window → `skipped: cooldown`.
+- `heuristic-inside-window` — lookalike hard archive without LLM.
+
+## How to get to it (user POV)
+
+- Several DMs from one stranger within ten minutes after a successful review: only the first triggers mask + LLM unless a link rule fires.
+- Tune with `LLM_REVIEW_COOLDOWN_MS` in `.env`.
+
+## Driving it with verify-scam-bot
+
+Preconditions: repo root; stub not required.
+
+```bash
+.cursor/skills/verify-scam-bot/bin/drive-llm-review-cooldown
+```
+
+Or manually:
+
+```bash
+node --test --test-reporter tap \
+  --test-name-pattern 'processIncomingMessage llm cooldown' \
+  lib/llm-review-cooldown.test.js
+```
+
+Save TAP under `evidence/<UTC-stamp>-llm-review-cooldown/`.
+
+## Gotchas
+
+- Failed mask or LLM does not start the cooldown timer.
+- `npm test` sets `LLM_REVIEW_COOLDOWN_MS=0`; cooldown tests opt in via in-test `deps.env`.
