@@ -9,6 +9,8 @@ This skill proves operator-facing behavior of the local WhatsApp scam-DM bot. **
 
 Smoke verification does not open Chrome or WhatsApp. It starts `stub-jevlike.js` (same as `npm run stub`) on `127.0.0.1:18766` and runs `node --test` cases that call `processIncomingMessage`. Live WhatsApp (`npm start`) needs a human QR scan and `.wwebjs_auth/`. Do not start it for smoke proof.
 
+**Full Autopilot** (goal → split → self-prove → PR): [full-autopilot](../full-autopilot/SKILL.md). Use this skill for `doctor` / `drive-*` / gardener encoding inside that loop.
+
 Two stub workers can run on different `VERIFY_PORT` values. Two `npm start` processes cannot share `.wwebjs_auth/`.
 
 ## Launch
