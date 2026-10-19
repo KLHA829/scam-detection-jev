@@ -31,7 +31,7 @@ reuse_existing() {
   local pid
   pid="$(cat "$pidfile")"
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  kill -0 "$pid" 2>/dev/null || return 1
+  node "$BIN_DIR/_pid-is-alive.js" "$pid" || return 1
   STUB_RUN_DIR="$RUN_DIR" node "$BIN_DIR/_stub-pid-looks-like.js" "$pid" stub-jevlike.js "$RUN_DIR" || return 1
   local base
   base="$(cat "$RUN_DIR/base-url" 2>/dev/null || true)"
@@ -72,7 +72,7 @@ for _ in $(seq 1 50); do
     ready=1
     break
   fi
-  if ! kill -0 "$(cat "$RUN_DIR/stub.pid")" 2>/dev/null; then
+  if ! node "$BIN_DIR/_pid-is-alive.js" "$(cat "$RUN_DIR/stub.pid")"; then
     echo "launch-stub: stub exited before /health. Log:" >&2
     cat "$LOG" >&2
     exit 1

@@ -43,7 +43,7 @@ pidfile="$RUN_DIR/stub.pid"
 [[ -f "$pidfile" ]] || fail "no verification stub is running; run bin/launch-stub"
 pid="$(cat "$pidfile")"
 [[ "$pid" =~ ^[0-9]+$ ]] || fail "stub.pid is not a pid"
-kill -0 "$pid" 2>/dev/null || fail "stub pid $pid is not running"
+node "$BIN_DIR/_pid-is-alive.js" "$pid" || fail "stub pid $pid is not running"
 STUB_RUN_DIR="$RUN_DIR" node "$BIN_DIR/_stub-pid-looks-like.js" "$pid" stub-jevlike.js "$RUN_DIR" \
   || fail "pid $pid is not stub-jevlike.js; refusing to treat it as ours"
 
