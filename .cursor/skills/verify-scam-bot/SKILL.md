@@ -79,6 +79,8 @@ Other features use the `node --test` / `curl` commands in their feature files.
 
 Do not point smoke drives at live `jevlike_serve.py`. Doctor rejects health whose `model` is not `stub-jevlike`.
 
+**Windows:** `bin/launch-stub`, `bin/doctor`, and `bin/cleanup` are bash scripts — run them from Git Bash (or ensure `VERIFY_BASH` points at `Git\bin\bash.exe`). Node `bin/drive-*` that call doctor resolve Git Bash themselves and skip the broken Store/WSL `bash` stub on PATH.
+
 Thresholds and toggles change through `scoring-rubric.json` and env — not hard-coded constants in code.
 
 ## Evidence

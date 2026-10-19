@@ -9,6 +9,7 @@
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { spawnSkillScript } = require('./_spawn-skill-script');
 
 const skillDir = path.resolve(__dirname, '..');
 const root = path.resolve(skillDir, '../../..');
@@ -85,7 +86,7 @@ function postJson(base, pathname, body) {
   return result.stdout;
 }
 
-const doctor = spawnSync(path.join(__dirname, 'doctor'), { encoding: 'utf8' });
+const doctor = spawnSkillScript('doctor');
 process.stdout.write(doctor.stdout || '');
 process.stderr.write(doctor.stderr || '');
 if (doctor.status !== 0) die('doctor failed; not driving');
