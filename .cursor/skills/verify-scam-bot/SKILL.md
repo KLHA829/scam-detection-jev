@@ -79,7 +79,7 @@ Other features use the `node --test` / `curl` commands in their feature files.
 
 Do not point smoke drives at live `jevlike_serve.py`. Doctor rejects health whose `model` is not `stub-jevlike`.
 
-**Windows:** `bin/launch-stub`, `bin/doctor`, and `bin/cleanup` are bash scripts — run them from Git Bash (or ensure `VERIFY_BASH` points at `Git\bin\bash.exe`). Node `bin/drive-*` that call doctor resolve Git Bash themselves and skip the broken Store/WSL `bash` stub on PATH. Stub pid checks use `bin/_stub-pid-looks-like.js` when `/proc/pid/cmdline` is missing.
+**Windows:** `bin/launch-stub`, `bin/doctor`, and `bin/cleanup` are bash scripts — run them from Git Bash (or ensure `VERIFY_BASH` points at `Git\bin\bash.exe`). Node `bin/drive-*` that call doctor resolve Git Bash themselves and skip the broken Store/WSL `bash` stub on PATH. `bin/launch-stub` starts the stub via `bin/_start-stub-process.js` (records the real node pid). Pid ownership uses `bin/_stub-pid-looks-like.js` (Win32: child-tree walk + recorded pid + `/health` when cmdline is opaque).
 
 **CI:** `.github/workflows/test.yml` runs `node scripts/ci-static-gates.js`, then `scripts/ci-verify-smoke.sh` on Ubuntu and Windows (same drive sequence as above; uploads `evidence/` artifacts).
 

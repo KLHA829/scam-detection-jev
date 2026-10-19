@@ -32,7 +32,7 @@ reuse_existing() {
   pid="$(cat "$pidfile")"
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
-  node "$BIN_DIR/_stub-pid-looks-like.js" "$pid" stub-jevlike.js || return 1
+  STUB_RUN_DIR="$RUN_DIR" node "$BIN_DIR/_stub-pid-looks-like.js" "$pid" stub-jevlike.js "$RUN_DIR" || return 1
   local base
   base="$(cat "$RUN_DIR/base-url" 2>/dev/null || true)"
   [[ -n "$base" ]] || return 1
@@ -55,11 +55,13 @@ fi
 
 LOG="$RUN_DIR/stub.log"
 : >"$LOG"
-(
-  cd "$ROOT"
-  JEVLIKE_PORT="$PORT" exec node stub-jevlike.js
-) >>"$LOG" 2>&1 &
-echo $! >"$RUN_DIR/stub.pid"
+stub_pid="$(node "$BIN_DIR/_start-stub-process.js" "$ROOT" "$PORT" "$LOG")"
+[[ "$stub_pid" =~ ^[0-9]+$ ]] || {
+  echo "launch-stub: failed to start stub (no pid)" >&2
+  cat "$LOG" >&2
+  exit 1
+}
+echo "$stub_pid" >"$RUN_DIR/stub.pid"
 echo "$PORT" >"$RUN_DIR/port"
 echo "http://127.0.0.1:$PORT" >"$RUN_DIR/base-url"
 
