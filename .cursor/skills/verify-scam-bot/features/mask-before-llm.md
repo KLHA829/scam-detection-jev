@@ -12,7 +12,7 @@ Before any chat-API call, the bot asks jevlike `POST /v1/mask` which characters 
 
 ## How to get to it (user POV)
 
-- The operator turns on context review with `CONTEXT_LLM_ENABLED` (default off) or sets `LLM_REVIEW_API_URL` for the Cantonese note on a receipt or a guided card. The bot masks first, then calls that API.
+- Context review is on by default (`CONTEXT_LLM_ENABLED`; set `0` or `false` for single-message primary LLM only). Optional `LLM_REVIEW_API_URL` drives the Cantonese note on a receipt or a guided card. The bot masks first, then calls that API.
 - Live worker: `POST http://127.0.0.1:8766/v1/mask` with `{"messages":["..."]}` (at most 10 strings). Without `models/jevlike_hf_pii_mask.pt` the worker returns 503 `{"error":"pii mask head is not loaded"}` and the bot sends nothing.
 - Smoke path: the same POST against the stub from `bin/launch-stub`. The stub fills spans with the offline helper `find_mask_spans` so the tests do not load the encoder. That 200 is the stub contract, not proof that the PII head is loaded.
 
