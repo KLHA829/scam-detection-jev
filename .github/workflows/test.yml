@@ -9,6 +9,15 @@ permissions:
   contents: read
 
 jobs:
+  static-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/ci-static-gates.js
+
   test:
     runs-on: ubuntu-latest
     env:
@@ -26,3 +35,45 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: node scripts/review-eval.js --llm dry --mode triggers
+
+  verify-smoke-ubuntu:
+    runs-on: ubuntu-latest
+    needs: static-gates
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: verify-scam-bot smoke drives
+        run: bash scripts/ci-verify-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-smoke-evidence-ubuntu
+          path: .cursor/skills/verify-scam-bot/evidence/
+          if-no-files-found: ignore
+
+  verify-smoke-windows:
+    runs-on: windows-latest
+    needs: static-gates
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: verify-scam-bot smoke drives (Git Bash + Win32 doctor spawn)
+        shell: bash
+        run: bash scripts/ci-verify-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-smoke-evidence-windows
+          path: .cursor/skills/verify-scam-bot/evidence/
+          if-no-files-found: ignore

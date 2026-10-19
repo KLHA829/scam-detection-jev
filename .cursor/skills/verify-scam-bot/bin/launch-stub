@@ -32,9 +32,7 @@ reuse_existing() {
   pid="$(cat "$pidfile")"
   [[ "$pid" =~ ^[0-9]+$ ]] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
-  local cmd
-  cmd="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
-  [[ "$cmd" == *stub-jevlike.js* ]] || return 1
+  node "$BIN_DIR/_stub-pid-looks-like.js" "$pid" stub-jevlike.js || return 1
   local base
   base="$(cat "$RUN_DIR/base-url" 2>/dev/null || true)"
   [[ -n "$base" ]] || return 1
