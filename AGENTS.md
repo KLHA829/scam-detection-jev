@@ -13,7 +13,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 | `lib/decide-incoming.js` | link-heuristic archive only; else ignore until LLM merge |
 | `lib/handle-incoming.js` | inbound orchestration: heuristic fast path → mask → LLM |
 | `lib/jevlike-client.js` | HTTP client (`createMaskClient`; `/v1/mask` live; `/v1/score` lab-only) |
-| `lib/score-message.js` | rubric load + threshold helpers (live path) |
+| `lib/score-message.js` | rubric load + threshold helpers (lab eval; not inbound archive) |
 | `lab/score-message.js` | lab-only `scoreMessage` via `/v1/score` |
 | `jevlike_serve.py` | persistent worker: **`POST /v1/mask`** required; `/v1/score` optional for eval |
 | `lib/filters.js`, `lib/lid.js` | which messages count, `@lid` resolution |

@@ -1,6 +1,6 @@
 # AGENTS.md invariants
 
-The bot must never auto-block a saved contact. An unsaved contact auto-blocks **only** on a current-message URL in `data/malicious-hosts.json`. Lookalike and soliciting short-link heuristics archive but do not block. Models do not auto-block. A jevlike score alone (including at the block line from `scoring-rubric.json`) only archives. A failed or unknown scorer does not archive by itself.
+The bot must never auto-block a saved contact. An unsaved contact auto-blocks **only** on a current-message URL in `data/malicious-hosts.json`. Lookalike and soliciting short-link heuristics archive but do not block. Models do not auto-block. **Live** inbound is link heuristics then mask→LLM — no jevlike `/v1/score` archive. Offline **lab/block-policy** tests still assert that a jevlike score alone (including at `BLOCK_THRESHOLD`) only archives and never auto-blocks, and that `ok:false` scorer output does not archive by itself.
 
 ## Sub-features
 
@@ -13,7 +13,7 @@ The bot must never auto-block a saved contact. An unsaved contact auto-blocks **
 
 ## How to get to it (user POV)
 
-- Live session: a saved contact who sends a lookalike or listed URL is archived only. An unsaved stranger with a **listed** URL is blocked and renamed. A lookalike without a list entry archives but does not block. A high score without a listed URL archives but does not block.
+- Live session: a saved contact who sends a lookalike or listed URL is archived only. An unsaved stranger with a **listed** URL is blocked and renamed. A lookalike without a list entry archives but does not block. LLM-driven archives do not auto-block without a malicious-host match.
 - Smoke path: `node --test lib/agents-invariants.test.js` exercises `blockEligibility`, `applyBlockPolicy`, `decideIncomingAction`, and `processIncomingMessage` with the in-process stub client. No WhatsApp session and no HTTP stub worker are required.
 
 ## Driving it with verify-scam-bot
@@ -42,4 +42,4 @@ Exit code `0`. TAP shows passing tests under the three `AGENTS.md invariants` su
 - These tests read thresholds from `loadRubric()` / `resolveBlockThreshold()`. Do not edit numeric constants in production code to make proof pass.
 - `BLOCK_ENABLED=false` keeps archive-only even when a malicious-host match would otherwise block; that toggle is not the default invariant path.
 - Context-model tests stub the chat API with `fetchImpl`; they expect archive-only on `block` answers.
-- Phrase tropes (驗證碼, 轉數快, and similar) are out of scope here; they follow score and link rules in other features.
+- Phrase tropes (驗證碼, 轉數快, and similar) are out of scope here; they are not hard-archive gates — judgment is link heuristics and mask→LLM.
