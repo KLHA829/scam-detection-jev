@@ -1,8 +1,24 @@
 {
-  "_provenance": "malicious-block-test.invalid: offline smoke tests (RFC 2606 .invalid). malware.testing.google.test: Google Safe Browsing malware-list test host (Chromium safe-browsing dev; .test per RFC 6761). wicar.org: WICAR intentional malware test site for AV validation — not normal browsing.",
+  "_provenance": "malicious-block-test.invalid: offline smoke tests (RFC 2606 .invalid). malware.testing.google.test: Google Safe Browsing malware-list test host (Chromium safe-browsing dev; .test per RFC 6761). wicar.org: WICAR intentional malware test site for AV validation — not normal browsing. HKCERT phishing bulletin themes: restaurant reservation (Apr 2026), ADCC/brands (May 2026), eTraffic/HKeToll (Nov 2025), WSD SMS (Aug 2024), Booking/Klook (Jun 2026). Operator Aidan approved the 16 HKCERT-sourced hosts below on 2026-10-20.",
   "hosts": [
     "malicious-block-test.invalid",
     "malware.testing.google.test",
-    "wicar.org"
+    "wicar.org",
+    "hutong.biz",
+    "thechairmangroups.biz",
+    "adcclaw.lol",
+    "cathay.cyou",
+    "www-mpfa-org-hk.axm.info",
+    "wellcome-hk.com",
+    "hk-pbccainiao.one",
+    "kookie-k.co.za",
+    "suag.org.za",
+    "apple66.cyou",
+    "klook-hk.corsepe.top",
+    "tiqancare.com",
+    "ettzjgq.bond",
+    "wsd-gov.com",
+    "n32f73w.info",
+    "klook-hk.krespy.asia"
   ]
 }
