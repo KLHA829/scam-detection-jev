@@ -1,12 +1,12 @@
 # Malicious-host auto-block
 
-Unsaved contacts are **auto-blocked only** when the current message URL matches a host in `data/malicious-hosts.json` (exact or suffix). The contact name becomes `封鎖·惡意域名`, the chat is archived, and `blocks.jsonl` gains a line. Saved contacts never auto-block. Scores, lookalike heuristics, soliciting short links, and LLM answers do not auto-block.
+Unsaved contacts are **auto-blocked only** when the current message URL matches a host in `data/malicious-hosts.json` (exact or suffix). The contact name becomes `封鎖·惡意域名`, the chat is archived, and `blocks.jsonl` gains a line. Saved contacts never auto-block. Lookalike heuristics, soliciting short links, jevlike lab scores, and LLM answers do not auto-block.
 
 ## Sub-features
 
 - `list-match` matches exact host and subdomains (e.g. `pay.evil.example` matches `evil.example`).
 - `unsaved-block` calls `blockContact` with `封鎖·惡意域名` when the heuristic id is `malicious_host`.
-- `before-score` blocks without waiting for the scorer (same fast-heuristic path as link rules).
+- `before-llm` blocks without waiting for mask/LLM (same fast-heuristic path as link rules; test names may still say `scorer`).
 - `saved-archive-only` saved contacts on a malicious URL archive if the link rule fires; `applyBlockPolicy` does not block.
 - `hold-setup` while the first-run setup poll is unanswered, `holdBlock` suppresses block but still archives lookalike; malicious-host block is also held until the operator picks automatic mode.
 

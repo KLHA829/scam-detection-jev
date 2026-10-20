@@ -1,6 +1,6 @@
 # Action receipt
 
-After every completed archive or block, the bot messages the operator's own chat. The message names the chat-list contact, the phone, the score against the archive line, and the local reason. Choosing 留低 does not send that receipt.
+After every completed archive or block, the bot messages the operator's own chat. The message names the chat-list contact, the phone, the local reason (link 句式, archive reason, LLM 覆核信心 when present), and may include a rubric score line only when a numeric score was passed into the receipt builder (live inbound uses mask→LLM, not jevlike `/v1/score`). Choosing 留低 does not send that receipt.
 
 ## Sub-features
 

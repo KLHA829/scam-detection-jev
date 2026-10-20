@@ -9,7 +9,7 @@ An unsaved contact who sends a lookalike host, or a short link that also asks fo
 - `allowlist` leaves `sf-express.com`, `hsbc.com.hk`, `wa.me`, `chat.whatsapp.com`, and `whatsapp.com` unflagged.
 - `short-solicit` hits a short link only together with an OTP ask, an impersonation claim, or an urgent account-and-money ask. A bare `bit.ly` link does not hit.
 - `saved-unblockable` keeps a saved contact at archive when a link rule matches. Auto-block does not run.
-- `before-score` acts on the link rule without waiting for the scorer to return.
+- `before-llm` acts on the link rule without waiting for mask/LLM (test names may still say `scorer`).
 
 ## How to get to it (user POV)
 
