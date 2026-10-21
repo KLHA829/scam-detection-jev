@@ -30,6 +30,7 @@ const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-conte
 const { createOperatorState } = require('./lib/operator-mode');
 const { createReviewQueue } = require('./lib/review-queue');
 const { deliverGuidedReview } = require('./lib/deliver-review');
+const { deliverMoneyWarn } = require('./lib/deliver-money-warn');
 const { applyReviewChoice, applyUnblockChoice } = require('./lib/apply-review-choice');
 const { chatListName, composeActionNotice } = require('./lib/action-notice');
 const {
@@ -423,6 +424,13 @@ async function handleSelfMessage(msg, deps) {
     );
     return;
   }
+  if (route.kind === 'money_warn') {
+    const item = deps.reviewQueue.consume(route.pollId);
+    if (item) {
+      await deps.client.sendMessage(wid, route.choice === 'ack' ? '好，記低咗。' : '好，略過呢次提示。');
+    }
+    return;
+  }
 
   const operatorCmd = parseOperatorCommand(body);
   if (operatorCmd.kind !== 'ignore') {
@@ -505,6 +513,29 @@ async function handleWaMessage(msg, {
   );
   if (result && !result.deferred) {
     await pacer.exclusive(async () => {
+      if (result.moneyWarn && result.moneyWarn.shouldWarn) {
+        const widNotice = selfWid(client);
+        if (widNotice) {
+          try {
+            await deliverMoneyWarn({
+              result,
+              queue: reviewQueue,
+              listName,
+              sendText: (text) => client.sendMessage(widNotice, text),
+              sendPoll: async (name, options) =>
+                client.sendMessage(
+                  widNotice,
+                  new Poll(name, options, { allowMultipleAnswers: false }),
+                ),
+            });
+          } catch (err) {
+            log.error('money warn delivery failed', {
+              chatId: result.chatId,
+              error: err && err.message ? err.message : String(err),
+            });
+          }
+        }
+      }
       await sendActionNotice(client, result, { maskClient, llmReview, rubric, listName });
       if (result.blocked) {
         await sendUnblockPoll(client, reviewQueue, pacer, {

@@ -91,3 +91,11 @@ Live DM, after filters:
 `OPERATOR_MODE=guided` (or the self-chat poll) computes the same suspicion but waits for **封鎖並封存**, **只封存**, or **留低** before WhatsApp writes. The explanation call is separate and cannot release the card.
 
 Automatic mode runs the steps and sends one receipt to your own chat when a write completes. Choosing **留低** does not archive or block.
+
+## Saved-contact money warn (熟人借錢警示)
+
+Saved contacts who ask to borrow or transfer money (patterns in `lib/scam-intent.js`, evaluated in `lib/money-warn.js`) trigger a **self-chat warning only**. The bot does not archive or block on these keywords alone, and it suppresses LLM/context archive for that message unless a **link heuristic** already hard-archived. Copy urges the owner to verify by phone; a poll offers **知道了** / **略過**. Unsaved contacts keep the existing mask→LLM and malicious-host-only block path.
+
+## Abnormal finance urgency (異常財務請求)
+
+Before/alongside LLM review, `assessAbnormalFinanceUrgency` compares the current urgent money ask against recent inbound bodies (thread or `recentContext`, up to ~10). If prior messages rarely mention money and history has at least two prior lines, the saved warn uses elevated copy; unsaved chats add a `finance_elevated` LLM trigger reason. With insufficient history, only the ordinary saved money warn applies (no anomaly claim).
