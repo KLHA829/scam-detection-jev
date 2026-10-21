@@ -1,42 +1,64 @@
-# Decision rubric (mask → LLM primary)
+# Decision rubric (reference)
 
-**Live product (2026-10-16):** inbound 1:1 DMs are judged by **mask → OpenAI-compatible LLM** (`lib/llm-review.js`). The local jevlike worker provides **`POST /v1/mask` only** on the default path. There is no LightJev / `model_v2` path.
+Facts about live decisions and lab-only jevlike thresholds. Setup and env wiring: [README.md](README.md). Rationale: [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md). Machine-readable lab numbers: [scoring-rubric.json](scoring-rubric.json).
 
-Link heuristics (`lib/link-rules.js`) and the malicious-host list still run **before** the LLM. End-to-end order: [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented).
+**Live product:** inbound 1:1 DMs use link heuristics, then **`POST /v1/mask`**, then an OpenAI-compatible LLM (`lib/llm-review.js` or `lib/context-llm.js`). **`POST /v1/score`** does not run on the inbound path.
 
-Machine-readable thresholds in [scoring-rubric.json](scoring-rubric.json) remain for **lab / legacy jevlike score evals** (`scripts/review-eval.js`, `lib/score-message.js`). They do **not** drive live archive/block anymore.
+## Live path summary
 
-## Primary path (default)
+| Stage | Trigger | Archive reason | Block |
+|-------|---------|----------------|-------|
+| Link heuristic | Lookalike host, soliciting short link, or malicious-host URL on **current** message | `obvious_scam` | Unsaved + malicious-host match only |
+| Context LLM (default) | `CONTEXT_LLM_ENABLED` on (default when unset); not skipped by link archive | `context_llm` when model says `archive` or `block` with sufficient confidence | Never from LLM |
+| Primary LLM | `CONTEXT_LLM_ENABLED=0` or `false` | `llm_review_scam` when model says `scam` or `should_archive` with sufficient confidence | Never from LLM |
+| No action | `not_scam`, `no_action`, low confidence, mask failure, LLM off, error, `unknown` | None | None |
 
-| Step | Condition | Action |
-|------|-----------|--------|
-| 1 | Lookalike host, soliciting short link, or malicious-host URL on the **current** message | Archive `obvious_scam` (skip LLM). |
-| 2 | Else | `POST /v1/mask` → masked body → LLM (`LLM_REVIEW_*`, **required**). |
-| 3 | LLM `scam` / `should_archive` | Archive `llm_review_scam`. |
-| 4 | LLM `not_scam` | Ignore. |
-| 5 | Mask failure, LLM disabled, LLM error, or `unknown` | **Ignore** (fail closed — no score fallback). |
+End-to-end order: [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented).
 
-After archive, **unsaved** contacts **block** only when the current message matched `data/malicious-hosts.json` (`封鎖·惡意域名`). Saved contacts are never auto-blocked. Lookalike and short-link hits do not block.
+### Confidence and cooldown
 
-Optional fork: `CONTEXT_LLM_ENABLED=1` replaces the single-message LLM with a masked multi-message transcript (`lib/context-llm.js`). Same mask requirement; model `block` is treated as archive only.
+| Symbol | Default | Effect |
+|--------|---------|--------|
+| `LLM_REVIEW_MIN_CONFIDENCE` | `0.7` | Archive from LLM only when `confidence` is at or above this value |
+| `LLM_REVIEW_COOLDOWN_MS` | `600000` (10 min) | After successful LLM review (`ok === true`), skip mask and LLM for same `chatId` |
+| `CONTEXT_LLM_MESSAGES` | `10` | Inbound bodies in context transcript (current message included) |
 
-## Required env (LLM)
+`LLM_REVIEW_ENABLED` defaults to **true**. `CONTEXT_LLM_ENABLED` defaults to **on** when unset.
 
-Set at least:
+### Block policy (live)
 
-- `LLM_REVIEW_API_URL` — OpenAI-compatible base (e.g. `https://api.openai.com/v1` or local `http://127.0.0.1:8081/v1`)
-- `LLM_REVIEW_API_KEY` — optional for local servers without auth
-- `LLM_REVIEW_MODEL` — e.g. `gpt-4o-mini` or a hosted Cantonese-capable model
-- `JEVLIKE_MASK_CKPT` / loaded PII head — without `/v1/mask`, **no** LLM call
+| Contact | Malicious-host URL on current message | Lookalike or short link |
+|---------|--------------------------------------|-------------------------|
+| Unsaved | May **block** (`封鎖·惡意域名`) after archive | Archive only |
+| Saved | Never auto-block | Archive only |
 
-`LLM_REVIEW_ENABLED` defaults to **true**. Set `false` only for debugging (everything non-heuristic stays ignore).
+List file: [`data/malicious-hosts.json`](data/malicious-hosts.json). Optional path override: `MALICIOUS_HOSTS_PATH`. Empty `hosts:[]` keeps the previous list unless `MALICIOUS_HOSTS_ALLOW_EMPTY=1`.
 
-## Link backup (archive only)
+### Link rules (not phrase tropes)
 
-See [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) and the previous link-rule section in git history. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關) are **not** hard hits.
+Implemented in `lib/link-rules.js`. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) are **not** hard hits.
 
-## Legacy jevlike score (lab only)
+## Lab-only jevlike score
 
-The frozen-encoder head (`jevlike_hf_chinese_roberta_r1.pt`) and `POST /v1/score` remain in the repo for **offline evaluation** and training artifacts. **`score = P(scam) × 100`** with `ARCHIVE_THRESHOLD` / `SAFE_THRESHOLD` is documented in [scoring-rubric.json](scoring-rubric.json) and `lib/score-message.js` but is **not** the live product bar after 2026-10-16.
+The frozen-encoder head (`jevlike_hf_chinese_roberta_r1.pt`) and worker route **`POST /v1/score`** support offline evaluation and training. Helpers: `lab/score-message.js`, `lib/score-message.js`, `scripts/review-eval.js`.
 
-Historical HK-set numbers (366 rows) described jevlike archive false-positive rates; do not treat them as the LLM product guarantee until measured with `scripts/review-eval.js --llm live` on a labelled corpus.
+| Field | Value |
+|-------|--------|
+| Score scale | `P(scam) × 100` (0–100) |
+| `ARCHIVE_THRESHOLD` | `42` (from [scoring-rubric.json](scoring-rubric.json) unless overridden) |
+| `SAFE_THRESHOLD` | `18` |
+| `BLOCK_THRESHOLD` | `80` (lab archives at this level; lab never auto-blocks unsaved contacts from score alone) |
+| `jevlikeMaxChars` | `2000` |
+
+These thresholds do **not** drive live archive or block after the mask and LLM product path (2026-10-16).
+
+Historical 366-row HK jevlike archive metrics describe the old scorer bar. LLM precision on a labelled corpus is measured with `scripts/review-eval.js --llm live`, not assumed from jevlike numbers.
+
+## Mask contract (live)
+
+| Outcome | LLM called? | Archive from LLM? |
+|---------|-------------|-------------------|
+| `POST /v1/mask` success (including empty spans) | Yes, when LLM enabled | Per LLM rules above |
+| Mask failure, truncated spans, invalid span | No | No (fail closed) |
+
+Worker must load the PII mask head (`JEVLIKE_MASK_CKPT` / `models/jevlike_hf_pii_mask.pt`). Route returns 503 when the head is missing.
