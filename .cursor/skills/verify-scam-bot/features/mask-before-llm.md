@@ -46,6 +46,16 @@ node --test --test-reporter tap \
 
 Exit code `0`. The user message contains `XXX` and `驗證碼`, and does not contain `6123` or `陳大文`.
 
+- **Primary LLM archive and saved money warn.** Run:
+
+```bash
+node --test --test-reporter tap \
+  --test-name-pattern 'warns saved money ask instead of archiving when the model flags scam|archives llm_review_scam on OTP forward when the model flags scam' \
+  lib/scorer.test.js
+```
+
+Exit code `0`. Money-transfer body on a saved contact warns only (`ignore`, `moneyWarn.shouldWarn`). OTP-forward body still archives `llm_review_scam` when the model flags scam.
+
 - **Failed mask skips the model and does not archive.** Run:
 
 ```bash

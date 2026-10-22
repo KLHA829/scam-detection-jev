@@ -21,7 +21,8 @@ const TEST_NAMES = [
   'replaces phone, name, and otp with XXX and keeps the lure word',
   'does not call the model when masking fails',
   'rejects a mask payload that would leave the text raw',
-  'archives llm_review_scam when the model flags scam',
+  'warns saved money ask instead of archiving when the model flags scam',
+  'archives llm_review_scam on OTP forward when the model flags scam',
   'does not archive when mask fails for local unsaved',
 ];
 
