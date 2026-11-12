@@ -1,0 +1,615 @@
+{
+  ".cursor/skills/verify-scam-bot/bin/_pid-is-alive.js": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6514995,
+    "ast_hash": "532530ed3893d2ba9a8210efb4f51098",
+    "semantic_hash": "532530ed3893d2ba9a8210efb4f51098"
+  },
+  ".cursor/skills/verify-scam-bot/bin/_spawn-skill-script.js": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6515558,
+    "ast_hash": "9c013e04bcb3e609fb545eed3259f3de",
+    "semantic_hash": "9c013e04bcb3e609fb545eed3259f3de"
+  },
+  ".cursor/skills/verify-scam-bot/bin/_start-stub-process.js": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6515822,
+    "ast_hash": "44c9fa2f87fd6d84ec4703f1831ff191",
+    "semantic_hash": "44c9fa2f87fd6d84ec4703f1831ff191"
+  },
+  ".cursor/skills/verify-scam-bot/bin/_stop-process.js": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6516037,
+    "ast_hash": "d3e3144c0a54031f65328b399edffcf4",
+    "semantic_hash": "d3e3144c0a54031f65328b399edffcf4"
+  },
+  ".cursor/skills/verify-scam-bot/bin/_stub-pid-looks-like.js": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6516242,
+    "ast_hash": "a38b6619cbc6e417495b17eb3096e483",
+    "semantic_hash": "a38b6619cbc6e417495b17eb3096e483"
+  },
+  ".cursor/skills/verify-scam-bot/bin/cleanup": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6516447,
+    "ast_hash": "d957ca45ca8467baf0e6fcadd1806c36",
+    "semantic_hash": "d957ca45ca8467baf0e6fcadd1806c36"
+  },
+  ".cursor/skills/verify-scam-bot/bin/doctor": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6516669,
+    "ast_hash": "96f15a70e57753d8441d54d9dc3fd7e0",
+    "semantic_hash": "96f15a70e57753d8441d54d9dc3fd7e0"
+  },
+  ".cursor/skills/verify-scam-bot/bin/drive-agents-invariants": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6516883,
+    "ast_hash": "75ff18de8379f87975e63cfcf66ae0f8",
+    "semantic_hash": "75ff18de8379f87975e63cfcf66ae0f8"
+  },
+  ".cursor/skills/verify-scam-bot/bin/drive-llm-review-cooldown": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.651709,
+    "ast_hash": "69962bedb33488958063e5ec4f7752e1",
+    "semantic_hash": "69962bedb33488958063e5ec4f7752e1"
+  },
+  ".cursor/skills/verify-scam-bot/bin/drive-malicious-host-block": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6517308,
+    "ast_hash": "4fffe16d020ce13658441532dbcffd7b",
+    "semantic_hash": "4fffe16d020ce13658441532dbcffd7b"
+  },
+  ".cursor/skills/verify-scam-bot/bin/drive-mask-before-llm": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6517522,
+    "ast_hash": "31642986faf189e3b10ecba4ee50ace7",
+    "semantic_hash": "31642986faf189e3b10ecba4ee50ace7"
+  },
+  ".cursor/skills/verify-scam-bot/bin/drive-score-archive": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6517727,
+    "ast_hash": "2e51247c5af0a407aebbca290df8b222",
+    "semantic_hash": "2e51247c5af0a407aebbca290df8b222"
+  },
+  ".cursor/skills/verify-scam-bot/bin/launch-stub": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6517916,
+    "ast_hash": "c4d66755ce8d5320c27097f0835ca517",
+    "semantic_hash": "c4d66755ce8d5320c27097f0835ca517"
+  },
+  ".cursor/skills/verify-scam-bot/evidence/20261011T070632Z-score-archive/health.json": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6518114,
+    "ast_hash": "6dfef0a4e2521d21fc696150aa4b2210",
+    "semantic_hash": "6dfef0a4e2521d21fc696150aa4b2210",
+    "ast_empty": true
+  },
+  ".cursor/skills/verify-scam-bot/evidence/20261011T070632Z-score-archive/score-benign.json": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6518133,
+    "ast_hash": "7044c0cca7e0e4782c2e394553cb26c7",
+    "semantic_hash": "7044c0cca7e0e4782c2e394553cb26c7",
+    "ast_empty": true
+  },
+  ".cursor/skills/verify-scam-bot/evidence/20261011T070632Z-score-archive/score-benign.request.json": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6518147,
+    "ast_hash": "a1d2963ba4ad05bbd4ad13c02cdceb1e",
+    "semantic_hash": "a1d2963ba4ad05bbd4ad13c02cdceb1e",
+    "ast_empty": true
+  },
+  ".cursor/skills/verify-scam-bot/evidence/20261011T070632Z-score-archive/score-scam.json": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6518157,
+    "ast_hash": "d679f9ae4a85c1ce563112af37af2667",
+    "semantic_hash": "d679f9ae4a85c1ce563112af37af2667",
+    "ast_empty": true
+  },
+  ".cursor/skills/verify-scam-bot/evidence/20261011T070632Z-score-archive/score-scam.request.json": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6518166,
+    "ast_hash": "f8ac19ccd92d7859e5427299046d8a4c",
+    "semantic_hash": "f8ac19ccd92d7859e5427299046d8a4c",
+    "ast_empty": true
+  },
+  ".cursor/skills/verify-scam-bot/evidence/20261011T070632Z-score-archive/summary.json": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6518176,
+    "ast_hash": "3eab06fb43b92a8a8478b5e68fd7ef2e",
+    "semantic_hash": "3eab06fb43b92a8a8478b5e68fd7ef2e",
+    "ast_empty": true
+  },
+  ".cursor/skills/verify-scam-bot/evidence/20261016T020844Z-agents-md-invariants/summary.json": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6518185,
+    "ast_hash": "b8b9bcda60636d258ca99d3135f821ee",
+    "semantic_hash": "b8b9bcda60636d258ca99d3135f821ee",
+    "ast_empty": true
+  },
+  ".cursor/skills/verify-scam-bot/evidence/20261016T082308Z-agents-md-invariants/summary.json": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6518197,
+    "ast_hash": "ebd2657e9e12912d20ce826a2dae3d5b",
+    "semantic_hash": "ebd2657e9e12912d20ce826a2dae3d5b",
+    "ast_empty": true
+  },
+  ".cursor/skills/verify-scam-bot/evidence/20261016T082308Z-malicious-host-block/summary.json": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.651821,
+    "ast_hash": "6c92a07833d899b546b2e2cbc4f634ac",
+    "semantic_hash": "6c92a07833d899b546b2e2cbc4f634ac",
+    "ast_empty": true
+  },
+  ".cursor/skills/verify-scam-detection-jev/bin/_canonical": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.651822,
+    "ast_hash": "fec816d4e09c124801da6c40c6123105",
+    "semantic_hash": "fec816d4e09c124801da6c40c6123105"
+  },
+  ".cursor/skills/verify-scam-detection-jev/bin/cleanup": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6518466,
+    "ast_hash": "30a690dd42827020baffdcd522007f56",
+    "semantic_hash": "30a690dd42827020baffdcd522007f56"
+  },
+  ".cursor/skills/verify-scam-detection-jev/bin/doctor": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6518672,
+    "ast_hash": "18904dc013fe6f5cf8e9f2a22f631491",
+    "semantic_hash": "18904dc013fe6f5cf8e9f2a22f631491"
+  },
+  ".cursor/skills/verify-scam-detection-jev/bin/drive-malicious-host-block": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6518877,
+    "ast_hash": "555d51dc9cafeb2d445229493e8bfc4a",
+    "semantic_hash": "555d51dc9cafeb2d445229493e8bfc4a"
+  },
+  ".cursor/skills/verify-scam-detection-jev/bin/launch-stub": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6519089,
+    "ast_hash": "1359d449d88867e31f0a32910fac82e5",
+    "semantic_hash": "1359d449d88867e31f0a32910fac82e5"
+  },
+  ".cursor/skills/verify-scam-detection-jev/bin/prove-malicious-host-block": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6519287,
+    "ast_hash": "f6ebbc7038e6ffaf115820483d65a4ab",
+    "semantic_hash": "f6ebbc7038e6ffaf115820483d65a4ab"
+  },
+  ".github/workflows/test.yml": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.65195,
+    "ast_hash": "3a55a7e8635f6e905dd21ceea9d247fe",
+    "semantic_hash": "3a55a7e8635f6e905dd21ceea9d247fe"
+  },
+  "data/corpus/ingest_stats.json": {
+    "mtime": 1794453195.837131,
+    "seen": 1794453200.6519704,
+    "ast_hash": "8012810ef998b7b5d792db54972a6d80",
+    "semantic_hash": "8012810ef998b7b5d792db54972a6d80",
+    "ast_empty": true
+  },
+  "data/malicious-hosts.json": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6519713,
+    "ast_hash": "c73a489c1fc6d2da6ac781e637d199e4",
+    "semantic_hash": "c73a489c1fc6d2da6ac781e637d199e4",
+    "ast_empty": true
+  },
+  "fixtures/review-eval-smoke.json": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.651972,
+    "ast_hash": "67ee82d0e167a5d67e1fcae1eeeb7f13",
+    "semantic_hash": "67ee82d0e167a5d67e1fcae1eeeb7f13",
+    "ast_empty": true
+  },
+  "jevlike_serve.py": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.651973,
+    "ast_hash": "270a6061ea49ee76d2ff8fa4b7f7aea2",
+    "semantic_hash": "270a6061ea49ee76d2ff8fa4b7f7aea2"
+  },
+  "lab/score-message.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6519887,
+    "ast_hash": "bf619f375bde5c6900ab873216f38096",
+    "semantic_hash": "bf619f375bde5c6900ab873216f38096"
+  },
+  "lib/action-notice.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6520145,
+    "ast_hash": "198642804faf1a91537c59863068251d",
+    "semantic_hash": "198642804faf1a91537c59863068251d"
+  },
+  "lib/action-notice.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.652032,
+    "ast_hash": "633bfc9d444599ddca9f321034a8e15b",
+    "semantic_hash": "633bfc9d444599ddca9f321034a8e15b"
+  },
+  "lib/action-pacer.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.652049,
+    "ast_hash": "7326c5b807125437cedc6b77fe6ef76e",
+    "semantic_hash": "7326c5b807125437cedc6b77fe6ef76e"
+  },
+  "lib/action-pacer.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.652065,
+    "ast_hash": "e9c50a30a10335513dba7dbc60fe2400",
+    "semantic_hash": "e9c50a30a10335513dba7dbc60fe2400"
+  },
+  "lib/agent-trust.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6520817,
+    "ast_hash": "c4ccf9fb63cda9bf8c071cc65a7de94e",
+    "semantic_hash": "c4ccf9fb63cda9bf8c071cc65a7de94e"
+  },
+  "lib/agents-invariants.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6520977,
+    "ast_hash": "bd5c684c30f0e89b27a8184c543ac788",
+    "semantic_hash": "bd5c684c30f0e89b27a8184c543ac788"
+  },
+  "lib/apply-review-choice.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6521132,
+    "ast_hash": "0e8aff55ade1b1693e19b7950c02d240",
+    "semantic_hash": "0e8aff55ade1b1693e19b7950c02d240"
+  },
+  "lib/audit-functions.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6521285,
+    "ast_hash": "bad930ea4afb0b124f48f9ff24fbb45b",
+    "semantic_hash": "bad930ea4afb0b124f48f9ff24fbb45b"
+  },
+  "lib/block-log.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.652144,
+    "ast_hash": "1cffad1f99f6f7d14871e7409da358b8",
+    "semantic_hash": "1cffad1f99f6f7d14871e7409da358b8"
+  },
+  "lib/block-policy.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6521597,
+    "ast_hash": "9050efee6349ea9bd6dc99d5155449d3",
+    "semantic_hash": "9050efee6349ea9bd6dc99d5155449d3"
+  },
+  "lib/block-policy.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6521752,
+    "ast_hash": "cdd89f6d526676ba6db9aa61ddd40c41",
+    "semantic_hash": "cdd89f6d526676ba6db9aa61ddd40c41"
+  },
+  "lib/cache.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6521904,
+    "ast_hash": "800ada00811dfae6e09e0764e0a8fe5a",
+    "semantic_hash": "800ada00811dfae6e09e0764e0a8fe5a"
+  },
+  "lib/context-llm.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6522064,
+    "ast_hash": "6dce3cbe276796bf3664f28c3f4fde52",
+    "semantic_hash": "6dce3cbe276796bf3664f28c3f4fde52"
+  },
+  "lib/context-llm.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.652222,
+    "ast_hash": "1c2f58ff8fd8c8ef0807841b5340e7f2",
+    "semantic_hash": "1c2f58ff8fd8c8ef0807841b5340e7f2"
+  },
+  "lib/decide-incoming.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6522377,
+    "ast_hash": "4484f5d61b620cbe09d0d3d1d0b4c70c",
+    "semantic_hash": "4484f5d61b620cbe09d0d3d1d0b4c70c"
+  },
+  "lib/deliver-review.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.652253,
+    "ast_hash": "11e0554719bcdd5e853f545b08d13c8a",
+    "semantic_hash": "11e0554719bcdd5e853f545b08d13c8a"
+  },
+  "lib/filters.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6522672,
+    "ast_hash": "64c6a427e612938a06129b988adb556b",
+    "semantic_hash": "64c6a427e612938a06129b988adb556b"
+  },
+  "lib/handle-incoming.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6522825,
+    "ast_hash": "639a510b5816d99ab74056d6bbe83a91",
+    "semantic_hash": "639a510b5816d99ab74056d6bbe83a91"
+  },
+  "lib/jevlike-client.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6522982,
+    "ast_hash": "600ec57e2e126765f5c230e0ca7c28ef",
+    "semantic_hash": "600ec57e2e126765f5c230e0ca7c28ef"
+  },
+  "lib/lid.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6523128,
+    "ast_hash": "775189be3610f6e30907a2a4e92e5417",
+    "semantic_hash": "775189be3610f6e30907a2a4e92e5417"
+  },
+  "lib/link-rules.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6523292,
+    "ast_hash": "dd2c39924c0f78ea6de7ea5764dc6d51",
+    "semantic_hash": "dd2c39924c0f78ea6de7ea5764dc6d51"
+  },
+  "lib/link-rules.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6523442,
+    "ast_hash": "f47649a55c6ac03bd51699f12f026387",
+    "semantic_hash": "f47649a55c6ac03bd51699f12f026387"
+  },
+  "lib/llm-review-cooldown.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6523602,
+    "ast_hash": "364292917b88da95f0e653f0e08bbeca",
+    "semantic_hash": "364292917b88da95f0e653f0e08bbeca"
+  },
+  "lib/llm-review-cooldown.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6523764,
+    "ast_hash": "aa53d25c67836af31d0ea6d1e3575546",
+    "semantic_hash": "aa53d25c67836af31d0ea6d1e3575546"
+  },
+  "lib/llm-review.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6523914,
+    "ast_hash": "b4087f8cd3700515bf34758bd26fea70",
+    "semantic_hash": "b4087f8cd3700515bf34758bd26fea70"
+  },
+  "lib/llm-review.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6524057,
+    "ast_hash": "05d2db5decccc47a79ff3f33049b31a0",
+    "semantic_hash": "05d2db5decccc47a79ff3f33049b31a0"
+  },
+  "lib/log.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6524208,
+    "ast_hash": "d6e7f37a7a09dcb7d46d6a34adaa3fa4",
+    "semantic_hash": "d6e7f37a7a09dcb7d46d6a34adaa3fa4"
+  },
+  "lib/malicious-hosts.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6524367,
+    "ast_hash": "ca382c330955f1d05ea4b4b5aa475888",
+    "semantic_hash": "ca382c330955f1d05ea4b4b5aa475888"
+  },
+  "lib/malicious-hosts.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6524527,
+    "ast_hash": "5b5fa85c10006a57d381aabedfb94b80",
+    "semantic_hash": "5b5fa85c10006a57d381aabedfb94b80"
+  },
+  "lib/operator-commands.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6524675,
+    "ast_hash": "7a4f90c7f360899361f8221d39168549",
+    "semantic_hash": "7a4f90c7f360899361f8221d39168549"
+  },
+  "lib/operator-commands.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6524825,
+    "ast_hash": "cb620bb50bd27955266a230a56683945",
+    "semantic_hash": "cb620bb50bd27955266a230a56683945"
+  },
+  "lib/operator-mode.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6524978,
+    "ast_hash": "a8e0c12e57d7202dbc45e28682a4ab72",
+    "semantic_hash": "a8e0c12e57d7202dbc45e28682a4ab72"
+  },
+  "lib/operator-review.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6525123,
+    "ast_hash": "3a80d0f8a9396f9e972374ec39847f2c",
+    "semantic_hash": "3a80d0f8a9396f9e972374ec39847f2c"
+  },
+  "lib/pii-xxx.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6525276,
+    "ast_hash": "39c4747df875fd98665945dfa20c996b",
+    "semantic_hash": "39c4747df875fd98665945dfa20c996b"
+  },
+  "lib/remaining-functions.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6525424,
+    "ast_hash": "4a28b8affc784b38c5053f2de5ea6618",
+    "semantic_hash": "4a28b8affc784b38c5053f2de5ea6618"
+  },
+  "lib/review-guide.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6525574,
+    "ast_hash": "ba0852adf6d1765f762c078d0180719c",
+    "semantic_hash": "ba0852adf6d1765f762c078d0180719c"
+  },
+  "lib/review-prompt.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6525717,
+    "ast_hash": "9231db425176016a185e5113060bdb50",
+    "semantic_hash": "9231db425176016a185e5113060bdb50"
+  },
+  "lib/review-queue.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6525865,
+    "ast_hash": "b0c350861dc8a297d34e4c3aeb46112d",
+    "semantic_hash": "b0c350861dc8a297d34e4c3aeb46112d"
+  },
+  "lib/scam-intent.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.652601,
+    "ast_hash": "a64a0678640aa417aed96c6a00a38334",
+    "semantic_hash": "a64a0678640aa417aed96c6a00a38334"
+  },
+  "lib/scam-intent.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6526165,
+    "ast_hash": "3ccfb45fa2bce1e93256bfb4faf12f49",
+    "semantic_hash": "3ccfb45fa2bce1e93256bfb4faf12f49"
+  },
+  "lib/score-message.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6526313,
+    "ast_hash": "c7a05adf63dcc71abd5920fc47724de3",
+    "semantic_hash": "c7a05adf63dcc71abd5920fc47724de3"
+  },
+  "lib/scorer.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.652646,
+    "ast_hash": "f8680d4988a5c5b822e03ae787d72000",
+    "semantic_hash": "f8680d4988a5c5b822e03ae787d72000"
+  },
+  "lib/self-chat.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6526623,
+    "ast_hash": "bec759014ea585b88ee80eef49ec5ce2",
+    "semantic_hash": "bec759014ea585b88ee80eef49ec5ce2"
+  },
+  "lib/test-llm.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6526785,
+    "ast_hash": "7b4d3dc183d3b1ceadda6c51a8a30458",
+    "semantic_hash": "7b4d3dc183d3b1ceadda6c51a8a30458"
+  },
+  "lib/thread-context.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6526928,
+    "ast_hash": "13b4e317293a6d9e95ca61dbf3639605",
+    "semantic_hash": "13b4e317293a6d9e95ca61dbf3639605"
+  },
+  "lib/thread-context.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6527095,
+    "ast_hash": "8f16880c59057566b0031f1f39b0459c",
+    "semantic_hash": "8f16880c59057566b0031f1f39b0459c"
+  },
+  "lib/unblock-poll.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.652725,
+    "ast_hash": "75ad214fbdcb106db16017b11e5ddc81",
+    "semantic_hash": "75ad214fbdcb106db16017b11e5ddc81"
+  },
+  "lib/wa-actions.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6527398,
+    "ast_hash": "34ef86a2185a1ddfc13c7914d424e250",
+    "semantic_hash": "34ef86a2185a1ddfc13c7914d424e250"
+  },
+  "lib/wa-actions.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.652755,
+    "ast_hash": "5fb5bc0b7e9cd3f879841a3073b596f3",
+    "semantic_hash": "5fb5bc0b7e9cd3f879841a3073b596f3"
+  },
+  "lib/wa-handlers.test.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.652772,
+    "ast_hash": "3d79d0c72417c76e0ed45ef699a34d2e",
+    "semantic_hash": "3d79d0c72417c76e0ed45ef699a34d2e"
+  },
+  "package.json": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6527882,
+    "ast_hash": "fadb96e173ec56e3ad4c9a1c09d0a863",
+    "semantic_hash": "fadb96e173ec56e3ad4c9a1c09d0a863"
+  },
+  "pii_mask_data.py": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6528032,
+    "ast_hash": "c326b49be92d10bfec58a46268f2244f",
+    "semantic_hash": "c326b49be92d10bfec58a46268f2244f"
+  },
+  "pii_mask_head.py": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6528192,
+    "ast_hash": "3d89884a3548e304269ba6b5dc1ffa6b",
+    "semantic_hash": "3d89884a3548e304269ba6b5dc1ffa6b"
+  },
+  "scoring-rubric.json": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6528337,
+    "ast_hash": "f8ec7050d0d422b4a1f67c6188709c70",
+    "semantic_hash": "f8ec7050d0d422b4a1f67c6188709c70",
+    "ast_empty": true
+  },
+  "scripts/ci-static-gates.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6528351,
+    "ast_hash": "ead1f81280659c04f02a0fa5e55379fa",
+    "semantic_hash": "ead1f81280659c04f02a0fa5e55379fa"
+  },
+  "scripts/ci-verify-smoke.sh": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6528518,
+    "ast_hash": "bc6d76cb649b96fd7f5804b512eff52a",
+    "semantic_hash": "bc6d76cb649b96fd7f5804b512eff52a"
+  },
+  "scripts/download_jevlike_ckpt.sh": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6528683,
+    "ast_hash": "0a8a9269e5a44e0fce9777896de92b21",
+    "semantic_hash": "0a8a9269e5a44e0fce9777896de92b21"
+  },
+  "scripts/ingest_corpus.py": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6528833,
+    "ast_hash": "1a8671a3ea2fd18c160af452394fd5cb",
+    "semantic_hash": "1a8671a3ea2fd18c160af452394fd5cb"
+  },
+  "scripts/review-eval.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6528988,
+    "ast_hash": "7a29a9f567d7954d1823725aa64c407f",
+    "semantic_hash": "7a29a9f567d7954d1823725aa64c407f"
+  },
+  "scripts/run-py-tests.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6529136,
+    "ast_hash": "16b22bbe57660226f45e6fd0567fd30e",
+    "semantic_hash": "16b22bbe57660226f45e6fd0567fd30e"
+  },
+  "scripts/train_pii_mask.py": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.6529286,
+    "ast_hash": "9e3e60dbb362822c88e1b0536e34c232",
+    "semantic_hash": "9e3e60dbb362822c88e1b0536e34c232"
+  },
+  "stub-jevlike.js": {
+    "mtime": 1794453195.857131,
+    "seen": 1794453200.652943,
+    "ast_hash": "7541df62e9a5670911258b4117602047",
+    "semantic_hash": "7541df62e9a5670911258b4117602047"
+  },
+  "test/support/mask-spans-stub.js": {
+    "mtime": 1794453195.861131,
+    "seen": 1794453200.6529574,
+    "ast_hash": "6bf09591bf43a08a8765019d4772b30a",
+    "semantic_hash": "6bf09591bf43a08a8765019d4772b30a"
+  },
+  "test_jevlike_serve.py": {
+    "mtime": 1794453195.861131,
+    "seen": 1794453200.652975,
+    "ast_hash": "3070d90fbf89e7f075042317c6ee8b33",
+    "semantic_hash": "3070d90fbf89e7f075042317c6ee8b33"
+  },
+  "whatsapp-bot.js": {
+    "mtime": 1794453195.861131,
+    "seen": 1794453200.6529894,
+    "ast_hash": "7e4901b84dbe33b34c85124d575f7df7",
+    "semantic_hash": "7e4901b84dbe33b34c85124d575f7df7"
+  },
+  "whatsapp-bot.test.js": {
+    "mtime": 1794453195.861131,
+    "seen": 1794453200.6530027,
+    "ast_hash": "68a58157afcf76d9a6276cf1db1728f3",
+    "semantic_hash": "68a58157afcf76d9a6276cf1db1728f3"
+  }
+}
