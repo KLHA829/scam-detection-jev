@@ -22,3 +22,5 @@ models/*.safetensors
 models/*.onnx
 !models/README.md
 data/corpus/raw/
+
+graphify-out/cache/
