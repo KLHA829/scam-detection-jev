@@ -465,6 +465,7 @@ async function handleWaMessage(msg, {
   operator,
   reviewQueue,
   llmCooldownStore,
+  bypassLlmCooldown = false,
 }) {
   let chat;
   let contact;
@@ -512,6 +513,7 @@ async function handleWaMessage(msg, {
       holdBlock: operator ? operator.awaitingChoice() : false,
       pauseAction: () => pacer.pause(),
       llmCooldownStore,
+      bypassLlmCooldown,
       blockContact: (info) =>
         blockAndRename({
           client,
@@ -608,8 +610,10 @@ function attachHandlers(client, deps) {
         if (newBody === prevBody) return;
         if (msg) msg.body = newBody;
       }
-      if (deps.reviewQueue) deps.reviewQueue.voidByMessageId(incomingMessageId(msg), 'edited');
-      await handleWaMessage(msg, { client, ...deps });
+      const voided = deps.reviewQueue
+        ? deps.reviewQueue.voidByMessageId(incomingMessageId(msg), 'edited')
+        : [];
+      await handleWaMessage(msg, { client, ...deps, bypassLlmCooldown: voided.length > 0 });
     } catch (err) {
       log.error('message edit handler failed', { error: err.message });
     }
