@@ -232,7 +232,14 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
     await client.sendMessage(wid, '已經處理咗。');
     return;
   }
-  const record = queue.consume(pollId);
+  let record;
+  try {
+    record = queue.consume(pollId);
+  } catch (err) {
+    log.error('review choice save failed', { error: err.message });
+    await pacer.exclusive(() => client.sendMessage(wid, '儲存選擇失敗，未執行操作。請稍後再試。'));
+    return;
+  }
   if (!record) {
     await client.sendMessage(wid, '已經處理咗。');
     return;
@@ -280,7 +287,14 @@ async function confirmUnblockChoice(client, queue, pacer, choice, pollId) {
     await client.sendMessage(wid, '已經處理咗。');
     return;
   }
-  const record = queue.consume(pollId);
+  let record;
+  try {
+    record = queue.consume(pollId);
+  } catch (err) {
+    log.error('unblock choice save failed', { error: err.message });
+    await pacer.exclusive(() => client.sendMessage(wid, '儲存選擇失敗，未執行操作。請稍後再試。'));
+    return;
+  }
   if (!record) {
     await client.sendMessage(wid, '已經處理咗。');
     return;
