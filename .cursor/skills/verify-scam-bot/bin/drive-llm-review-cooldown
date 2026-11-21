@@ -18,18 +18,20 @@ const TEST_NAMES = [
   'tracks per-chat windows',
   'persists across store reload (process restart) until expiry',
   'prunes expired chat entries on load',
+  'loads active cooldowns even when pruning the cooldown file cannot be saved',
   'skips LLM and mask for a second message in the same chat within the window',
   'does not cooldown-block after a benign review in primary or context mode',
   'starts cooldown after an archive in primary or context mode',
   'retries review after an automatic archive fails',
   'preserves an automatic archive when the cooldown file cannot be written',
   'keeps the guided cooldown while archive is deferred',
+  'delivers a guided review and honors its archive vote when cooldown saving fails',
   'calls LLM again after the cooldown window expires',
   'does not cooldown-block a different chat',
   'still archives on heuristic hard-hit inside the cooldown window',
 ];
 
-const TEST_FILE = 'lib/llm-review-cooldown.test.js';
+const TEST_FILES = ['lib/llm-review-cooldown.test.js', 'lib/wa-handlers.test.js'];
 
 const UNSET_ENV = [
   'ARCHIVE_THRESHOLD',
@@ -68,7 +70,7 @@ for (const key of UNSET_ENV) delete env[key];
 
 const test = spawnSync(
   'node',
-  ['--test', '--test-reporter', 'tap', `--test-name-pattern=${pattern}`, TEST_FILE],
+  ['--test', '--test-reporter', 'tap', `--test-name-pattern=${pattern}`, ...TEST_FILES],
   { cwd: root, env, encoding: 'utf8' },
 );
 const tap = `${test.stdout || ''}${test.stderr || ''}`;
@@ -84,8 +86,8 @@ const testsOk = test.status === 0 && failLine === '# fail 0' && missing.length =
 
 const summary = {
   feature: 'llm-review-cooldown',
-  entry: `node --test ${TEST_FILE}`,
-  surface: 'in-process processIncomingMessage (offline)',
+  entry: `node --test ${TEST_FILES.join(' ')}`,
+  surface: 'cooldown store, inbound processing, and fake WhatsApp client handlers (offline)',
   whatsapp: 'not started',
   nodeTestExit: test.status,
   passLine,

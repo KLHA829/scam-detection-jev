@@ -6,7 +6,8 @@ In automatic mode, a successful primary or context LLM review starts the per-cha
 
 - `same-chat-skip` — after an LLM archive, a second message in the window → `skipped: cooldown`.
 - `archive-failure-retry` — after an automatic archive fails, a follow-up can still be reviewed.
-- `cooldown-write-failure` — an unwritable cooldown file does not block an automatic archive; the current process still tracks cooldown.
+- `cooldown-write-failure` — an unwritable cooldown file does not block an automatic archive or a guided review and archive vote; cooldown still works in memory.
+- `prune-write-failure` — startup loads active cooldowns and drops expired ones in memory even when it cannot write the pruned file.
 - `persist-restart` — a saved cooldown is reloaded from disk on `npm start` and remains active until expiry.
 - `heuristic-inside-window` — lookalike hard archive without LLM.
 
@@ -18,7 +19,7 @@ In automatic mode, a successful primary or context LLM review starts the per-cha
 
 ## Driving it with verify-scam-bot
 
-Preconditions: repo root; stub not required.
+From the repo root, install dependencies with `PUPPETEER_SKIP_DOWNLOAD=true npm ci` if needed. Neither the stub server nor Chrome is required.
 
 ```bash
 .cursor/skills/verify-scam-bot/bin/drive-llm-review-cooldown
@@ -27,9 +28,8 @@ Preconditions: repo root; stub not required.
 Or manually:
 
 ```bash
-node --test --test-reporter tap \
-  --test-name-pattern 'processIncomingMessage llm cooldown' \
-  lib/llm-review-cooldown.test.js
+LLM_REVIEW_COOLDOWN_MS=0 node --test --test-reporter tap \
+  lib/llm-review-cooldown.test.js lib/wa-handlers.test.js
 ```
 
 Save TAP under `evidence/<UTC-stamp>-llm-review-cooldown/`.
@@ -39,3 +39,4 @@ Save TAP under `evidence/<UTC-stamp>-llm-review-cooldown/`.
 - Failed masking or a failed LLM review never starts cooldown. In automatic mode, a failed archive does not start it either. Guided mode starts it on the archive recommendation, even if the operator later declines to archive.
 - `npm test` sets `LLM_REVIEW_COOLDOWN_MS=0`; cooldown tests opt in via in-test `deps.env`.
 - Most tests use an in-memory store; persistence tests and `whatsapp-bot.js` use a file-backed store.
+- Guided voting still needs a writable review queue (`REVIEW_QUEUE_PATH`); cooldown storage is separate.
