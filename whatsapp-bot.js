@@ -246,6 +246,7 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
         chatId: record.chatId,
         digits: record.digits,
         contactName: record.contactName,
+        blockContactName: record.contactName,
         renamed: result.renamed,
         savedContact: result.savedContact,
         listName: record.listName,
@@ -272,12 +273,13 @@ async function confirmUnblockChoice(client, queue, pacer, choice, pollId) {
     pause: () => pacer.pause(),
     getChat: (id) => client.getChatById(id),
     getContact: (chat) => chat.getContact(),
-    unblockContact: ({ chat, contact, digits, renamed, savedContact }) =>
+    unblockContact: ({ chat, contact, digits, blockContactName, renamed, savedContact }) =>
       unblockContact({
         client,
         contact,
         chat,
         digits,
+        blockContactName,
         renamed,
         savedContact,
         pause: () => pacer.pause(),
@@ -294,12 +296,13 @@ async function handleOperatorCommand(cmd, deps, wid) {
     pause: () => pacer.pause(),
     getChat: (id) => client.getChatById(id),
     getContact: (chat) => chat.getContact(),
-    unblockContact: ({ chat, contact, digits, renamed, savedContact }) =>
+    unblockContact: ({ chat, contact, digits, blockContactName, renamed, savedContact }) =>
       unblockContact({
         client,
         contact,
         chat,
         digits,
+        blockContactName,
         renamed,
         savedContact,
         pause: () => pacer.pause(),
