@@ -10,7 +10,7 @@
 
 ## How to get to it (user POV)
 
-- Operators do not use this on WhatsApp. Developers run `scripts/review-eval.js` or unit tests that call `scoreMessage` with a jevlike client.
+- Operators do not use this on WhatsApp. Developers run the drive below to exercise the stub `POST /v1/score` route and the tests for `scoreMessage` in `lab/score-message.js`.
 
 ## Driving it with verify-scam-bot
 

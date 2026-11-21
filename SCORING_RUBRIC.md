@@ -40,7 +40,7 @@ Implemented in `lib/link-rules.js`. Phrase tropes (驗證碼, 轉數快, 封號,
 
 ## Lab-only jevlike score
 
-The frozen-encoder head (`jevlike_hf_chinese_roberta_r1.pt`) and worker route **`POST /v1/score`** support offline evaluation and training. Helpers: `lab/score-message.js`, `lib/score-message.js`, `scripts/review-eval.js`.
+The frozen-encoder head (`jevlike_hf_chinese_roberta_r1.pt`) and worker route **`POST /v1/score`** support offline evaluation and training. Helpers: `lab/score-message.js`, `lib/score-message.js`.
 
 | Field | Value |
 |-------|--------|
