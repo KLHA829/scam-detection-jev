@@ -132,7 +132,7 @@ async function sendUnblockPoll(client, queue, pacer, row) {
   }
 }
 
-async function sendActionNotice(client, result, { maskClient, llmReview, rubric, listName } = {}) {
+async function sendActionNotice(client, result, { maskClient, llmReview, rubric, listName, pacer, reviewQueue } = {}) {
   const action = result && result.decision && result.decision.action;
   if (!result || result.ignored || result.deferred) return;
   if (action !== 'archive' && action !== 'block') return;
@@ -160,7 +160,26 @@ async function sendActionNotice(client, result, { maskClient, llmReview, rubric,
       llmConfidence: llmConfidenceFromResult(result),
       offerUnblock: blocked,
     });
-    await client.sendMessage(wid, notice.text);
+    await pacer.exclusive(async () => {
+      try {
+        await client.sendMessage(wid, notice.text);
+      } catch (err) {
+        log.error('action notice failed', {
+          chatId: result.chatId,
+          error: err && err.message ? err.message : String(err),
+        });
+      }
+      if (result.blocked) {
+        await sendUnblockPoll(client, reviewQueue, pacer, {
+          ...result,
+          listName,
+          digits: result.formattedNumber,
+          contactName: result.decision && result.decision.contactName,
+          renamed: result.renamed,
+          savedContact: result.savedContact,
+        });
+      }
+    });
   } catch (err) {
     log.error('action notice failed', {
       chatId: result.chatId,
@@ -528,18 +547,8 @@ async function handleWaMessage(msg, {
     },
   );
   if (result && !result.deferred) {
-    await pacer.exclusive(async () => {
-      await sendActionNotice(client, result, { maskClient, llmReview, rubric, listName });
-      if (result.blocked) {
-        await sendUnblockPoll(client, reviewQueue, pacer, {
-          ...result,
-          listName,
-          digits: result.formattedNumber,
-          contactName: result.decision && result.decision.contactName,
-          renamed: result.renamed,
-          savedContact: result.savedContact,
-        });
-      }
+    await sendActionNotice(client, result, {
+      maskClient, llmReview, rubric, listName, pacer, reviewQueue,
     });
   }
   if (!result || !result.deferred || !reviewQueue) return result;
