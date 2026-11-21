@@ -90,6 +90,12 @@ Exit code `0`. After an edit to `Hello`, 只封存 on the old poll archives noth
 
 ## Gotchas
 
+- **Block failure still archives.** `node .cursor/skills/verify-scam-bot/bin/drive-guided-block-failure`
+  drives the real vote handler with a throwing block and both successful and failed archives.
+  Receipts distinguish the archive outcome and neither case offers an unblock poll.
+  Pass another checkout path to drive that version (`EXPECT_BEFORE=1` disables fixed-outcome assertions).
+  Regression: `node --test --test-name-pattern='archives after block throws' lib/operator-review.test.js`.
+
 - The explanation is requested only after `/v1/mask`. A failed mask skips the explanation and still shows the poll. The model cannot archive, block, or hide the card.
 - An explicit 封鎖並封存 is the only path that blocks a saved contact. Link heuristics and models do not auto-block.
 - The first choice on a review poll is the one that runs. A second vote is ignored.
