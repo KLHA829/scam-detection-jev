@@ -4,7 +4,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { extractDigits } = require('./lib/lid');
-const { isLidId, lidUserPart, phoneLookupId, phoneFromLidMapping, resolveRealNumber } = require('./lib/lid');
+const { isLidId, phoneLookupId, phoneFromLidMapping, resolveRealNumber } = require('./lib/lid');
 const { shouldIgnoreMessage, isOfficialWhatsAppId } = require('./lib/filters');
 const { matchObviousScam } = require('./lib/link-rules');
 const { decideIncomingAction, resolveIncomingMessageLabel } = require('./lib/decide-incoming');
@@ -43,7 +43,6 @@ describe('LID handling', () => {
   it('detects @lid ids and never treats LID user digits as a ready phone', () => {
     assert.equal(isLidId('27028229202012@lid'), true);
     assert.equal(isLidId('85261234567@c.us'), false);
-    assert.equal(lidUserPart('27028229202012@lid'), '27028229202012');
   });
 
   it('extracts real numbers from mappings and skips @lid values', () => {
