@@ -154,9 +154,9 @@ These are user-facing setup options for `scripts/download_jevlike_ckpt.sh`.
 | `JEVLIKE_RELEASE_TAG` | `jevlike-hf-r1` | Release tag. |
 | `JEVLIKE_RELEASE_ASSET` | `jevlike_hf_chinese_roberta_r1.pt` | Asset filename. |
 | `JEVLIKE_DOWNLOAD_URL` | `https://github.com/{repo}/releases/download/{tag}/{asset}` | Direct download URL built from the settings above. |
-| `JEVLIKE_CKPT` | Repo `models/jevlike_hf_chinese_roberta.pt` | Helper destination (different from the worker's r1 default); the named asset is also kept beside it. |
+| `JEVLIKE_CKPT` | Repo `models/jevlike_hf_chinese_roberta.pt` | Helper destination (different from the worker's r1 default). Unless forced, an existing destination passing size and non-HTML checks causes a successful early exit without checking for the named release asset; the worker's default r1 file may still be missing. After a download, the named asset is also kept beside the destination. |
 | `JEVLIKE_CKPT_MIN_BYTES` | `1000000` | Minimum size accepted as a checkpoint. |
-| `JEVLIKE_CKPT_FORCE` | `0` | Exactly `1` bypasses the existing-destination shortcut and downloads again. |
+| `JEVLIKE_CKPT_FORCE` | `0` | Exactly `1` bypasses the existing-destination shortcut and downloads again. Otherwise a valid-looking destination is enough to exit successfully, even if the named release asset (including the worker's default r1 file) is absent. |
 | `GH_TOKEN`, `GITHUB_TOKEN` | Unset | Optional GitHub auth; first nonempty token wins in this order. Never commit tokens. |
 
 ### Offline worker stub
