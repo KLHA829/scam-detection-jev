@@ -19,6 +19,8 @@ const TEST_NAMES = [
   'persists across store reload (process restart) until expiry',
   'prunes expired chat entries on load',
   'skips LLM and mask for a second message in the same chat within the window',
+  'does not cooldown-block after a benign review in primary or context mode',
+  'starts cooldown after an archive in primary or context mode',
   'calls LLM again after the cooldown window expires',
   'does not cooldown-block a different chat',
   'still archives on heuristic hard-hit inside the cooldown window',
