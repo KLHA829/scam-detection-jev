@@ -21,6 +21,7 @@ const TEST_NAMES = [
   'startMaliciousHostsWatcher reloads atomic saves through a symlink in another directory',
   'archives via link rules and blocks only unsaved contacts through block policy',
   'blocks an unsaved contact on a listed host without waiting for the scorer',
+  'distinguishes blocklisted email addresses from links in the inbound handler',
   'blocks a malicious host without waiting for the scorer',
   'holds auto-block while the setup choice is unanswered (malicious host only)',
 ];

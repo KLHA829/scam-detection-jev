@@ -16,6 +16,7 @@ measures the same two-chat path with fixed mask/LLM latency.
 - `current-setup-poll` accepts mode changes only from the most recently sent setup poll, including after a choice or restart. Superseded setup polls are void.
 - `guided-defer` computes the decision and does not call archive or block until the choice arrives.
 - `mask-fail-poll` still shows the poll when the mask or the model fails. The card says `解釋暫時出唔到`.
+- `malformed-guide` rejects non-string or empty model explanations without coercing objects or arrays into card text. Run `node --test --test-name-pattern='uses fallback text for malformed guided explanations' lib/operator-review.test.js`; the card says `解釋暫時出唔到` and still offers the poll.
 - `first-choice` runs the first answer and ignores a second one. 封鎖並封存 is the choice that blocks a saved contact.
 - `edit-voids-poll` voids the open review poll when the sender edits the message. A vote or quoted reply on the old poll does nothing and gets `呢個投票已作廢`. The edited text is reviewed again and gets a new poll only if it is still suspicious.
 
