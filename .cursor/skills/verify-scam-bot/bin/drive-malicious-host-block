@@ -16,6 +16,9 @@ const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
   'matches exact host and subdomains from the data file',
+  'startMaliciousHostsWatcher reloads after the file changes',
+  'startMaliciousHostsWatcher reloads repeated atomic saves and a subsequent in-place write',
+  'startMaliciousHostsWatcher reloads atomic saves through a symlink in another directory',
   'archives via link rules and blocks only unsaved contacts through block policy',
   'blocks an unsaved contact on a listed host without waiting for the scorer',
   'blocks a malicious host without waiting for the scorer',
