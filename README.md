@@ -118,7 +118,7 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `JEVLIKE_CKPT`, `JEVLIKE_CHECKPOINT` | `models/jevlike_hf_chinese_roberta_r1.pt` | Scorer/encoder checkpoint; first nonempty setting wins, then the default file. Missing file is an error. Scoring is lab-only. |
 | `JEVLIKE_ENCODER`, `JEVLIKE_HF_MODEL` | Checkpoint `hf_model`, then `hfl/chinese-roberta-wwm-ext` | Encoder overrides, in that precedence order. |
 | `JEVLIKE_OPTIONS` | `not_scam,scam` | Scorer labels (lab); requires at least two. |
-| `JEVLIKE_MASK_CKPT` | `models/jevlike_hf_pii_mask.pt` if present | PII head. Without a head, `/v1/mask` refuses; an explicitly configured missing file is an error. |
+| `JEVLIKE_MASK_CKPT` | `models/jevlike_hf_pii_mask.pt` if present | PII head. A missing configured file logs a warning and the worker still starts without the head; `/v1/mask` returns 503 until a head is loaded. |
 | `HEURISTIC_ENABLED` | `true` | Enables link-rule hard archives. |
 | `BLOCK_ENABLED` | `true` | Enables malicious-host auto-block of unsaved contacts, not model-based blocking. |
 | `MALICIOUS_HOSTS_PATH` | `data/malicious-hosts.json` in the repo | Maintained host list override. |
