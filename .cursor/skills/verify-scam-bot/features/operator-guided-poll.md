@@ -76,6 +76,16 @@ node --test --test-reporter tap \
 
 Exit code `0`. The first 封鎖並封存 confirmation matches `已封鎖並封存`. A later choice does not run.
 
+- **Unblock history after failed attempts or reblocks.** Run:
+
+```bash
+node --test --test-name-pattern='limits successful block history only after filtering failed attempts|uses the newest successful reblock metadata while preserving open poll priority' lib/operator-commands.test.js
+```
+
+Exit code `0`. Failed attempts do not consume the successful-block history limit.
+Number-based unblock commands use the newest successful rename metadata per chat;
+an open unblock poll still takes priority.
+
 - **Edit voids the old poll.** Run:
 
 ```bash
