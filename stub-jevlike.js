@@ -98,7 +98,7 @@ function startStubServer({ port = 8766, preset = 'benign' } = {}) {
     if (req.method === 'POST' && url.pathname === '/v1/mask') {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
-      let payload = {};
+      let payload;
       try {
         payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
       } catch {
@@ -128,7 +128,7 @@ function startStubServer({ port = 8766, preset = 'benign' } = {}) {
     ) {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
-      let payload = {};
+      let payload;
       try {
         payload = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
       } catch {

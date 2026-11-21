@@ -265,7 +265,7 @@ async function confirmUnblockChoice(client, queue, pacer, choice, pollId) {
     pause: () => pacer.pause(),
     getChat: (id) => client.getChatById(id),
     getContact: (chat) => chat.getContact(),
-    unblockContact: ({ chat, contact, record: row, digits, blockContactName }) =>
+    unblockContact: ({ chat, contact, digits, blockContactName }) =>
       unblockContact({
         client,
         contact,
@@ -286,7 +286,7 @@ async function handleOperatorCommand(cmd, deps, wid) {
     pause: () => pacer.pause(),
     getChat: (id) => client.getChatById(id),
     getContact: (chat) => chat.getContact(),
-    unblockContact: ({ chat, contact, record: row, digits, blockContactName }) =>
+    unblockContact: ({ chat, contact, digits, blockContactName }) =>
       unblockContact({
         client,
         contact,
@@ -360,7 +360,7 @@ async function handleSelfMessage(msg, deps) {
   if (!shouldProcessSelfMessageBody(body, Boolean(msg.hasQuotedMsg))) return;
   const wid = selfWid(deps.client);
   if (!wid) return;
-  let isSelf = false;
+  let isSelf;
   try {
     const chat = await msg.getChat();
     const contact = await msg.getContact();

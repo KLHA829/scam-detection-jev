@@ -23,7 +23,7 @@ if str(ROOT) not in sys.path:
 import torch
 from torch.nn import functional as F
 
-from jevlike.model import AttentionHead, make_system
+from jevlike.model import make_system
 
 from pii_mask_data import char_set, generate_split, gold_spans
 from pii_mask_head import (

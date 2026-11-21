@@ -14,7 +14,7 @@ function resolveBash() {
   for (const c of candidates) {
     try {
       if (fs.existsSync(c)) return c;
-    } catch (_) {
+    } catch {
       /* ignore */
     }
   }
