@@ -19,7 +19,7 @@ In automatic mode, a successful primary or context LLM review starts the per-cha
 
 ## Driving it with verify-scam-bot
 
-Preconditions: repo root; stub not required.
+From the repo root, install dependencies with `PUPPETEER_SKIP_DOWNLOAD=true npm ci` if needed. Neither the stub server nor Chrome is required.
 
 ```bash
 .cursor/skills/verify-scam-bot/bin/drive-llm-review-cooldown
@@ -39,3 +39,4 @@ Save TAP under `evidence/<UTC-stamp>-llm-review-cooldown/`.
 - Failed masking or a failed LLM review never starts cooldown. In automatic mode, a failed archive does not start it either. Guided mode starts it on the archive recommendation, even if the operator later declines to archive.
 - `npm test` sets `LLM_REVIEW_COOLDOWN_MS=0`; cooldown tests opt in via in-test `deps.env`.
 - Most tests use an in-memory store; persistence tests and `whatsapp-bot.js` use a file-backed store.
+- Guided voting still needs a writable review queue (`REVIEW_QUEUE_PATH`); cooldown storage is separate.
