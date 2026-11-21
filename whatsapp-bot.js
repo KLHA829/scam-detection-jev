@@ -538,6 +538,7 @@ async function handleWaMessage(msg, {
           digits: info && info.digits,
           contactName: info && info.contactName,
           pause: () => pacer.pause(),
+          refreshUnsavedContact: () => msg.getContact(),
         }),
     },
   );
