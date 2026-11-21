@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+'use strict';
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const root = path.resolve(process.argv[2] || path.join(__dirname, '../../../..'));
+const { attachHandlers } = require(path.join(root, 'whatsapp-bot'));
+const { createReviewQueue } = require(path.join(root, 'lib/review-queue'));
+const { createOperatorState } = require(path.join(root, 'lib/operator-mode'));
+const { createActionPacer } = require(path.join(root, 'lib/action-pacer'));
+const { loadRubric } = require(path.join(root, 'lib/score-message'));
+
+async function main() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'edited-poll-race-'));
+  try {
+    const env = { BLOCK_LOG_PATH: path.join(dir, 'blocks.json'), LLM_REVIEW_COOLDOWN_MS: '0' };
+    let archived = false;
+    let release;
+    let signal;
+    const held = new Promise((resolve) => { release = resolve; });
+    const started = new Promise((resolve) => { signal = resolve; });
+    const chat = { id: { _serialized: '85261114444@c.us' }, archive: async () => { archived = true; } };
+    const client = {
+      info: { wid: { _serialized: 'me@c.us' } }, handlers: {},
+      on(name, fn) { this.handlers[name] = fn; },
+      async getChatById() { return chat; },
+      async sendMessage(_id, body) {
+        if (typeof body === 'object') {
+          signal();
+          await held;
+          return { id: { _serialized: 'old-poll' } };
+        }
+        return { id: { _serialized: 'text' } };
+      },
+    };
+    attachHandlers(client, {
+      env,
+      rubric: loadRubric(),
+      pacer: createActionPacer({ env: { WA_ACTION_GAP_MS: '0' } }),
+      operator: createOperatorState({ env: { OPERATOR_MODE: 'guided' }, filePath: path.join(dir, 'mode.json') }),
+      reviewQueue: createReviewQueue({ filePath: path.join(dir, 'queue.json') }),
+      llmReview: { enabled: false },
+      maskClient: { maskMessages: async () => ({ ok: false }) },
+    });
+    const msg = {
+      id: { _serialized: 'dm' }, from: chat.id._serialized, type: 'chat',
+      body: '登入 https://whatsapp-secure.com/login',
+      getChat: async () => chat,
+      getContact: async () => ({ id: { _serialized: chat.id._serialized }, number: '85261114444' }),
+      forward: async () => {},
+    };
+    const delivery = client.handlers.message(msg);
+    await started;
+    const edit = client.handlers.message_edit(msg, 'Hello', msg.body);
+    release();
+    await Promise.all([delivery, edit]);
+    await client.handlers.vote_update({
+      selectedOptions: [{ name: '只封存' }],
+      parentMessage: { id: { _serialized: 'old-poll' } },
+    });
+    console.log(`archived_after_old_poll_vote=${archived}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+main().catch((err) => { console.error(err); process.exitCode = 1; });
