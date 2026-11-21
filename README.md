@@ -101,6 +101,65 @@ If `POST /v1/mask` fails, the bot skips the LLM and does not archive (fail close
 
 Full flag list: [`.env.example`](.env.example) and [AGENTS.md](AGENTS.md). Behaviour matrix: [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented). Lab-only jevlike thresholds: [SCORING_RUBRIC.md](SCORING_RUBRIC.md).
 
+### Runtime settings
+
+The bot loads `.env`. Export worker and download-helper settings in their starting
+shells: neither reads `.env`. Defaults below are code defaults when unset, not
+necessarily the example values in `.env.example`. Relative bot state paths are
+relative to the working directory; worker checkpoint defaults are repo-relative.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `JEVLIKE_BASE_URL` | `http://127.0.0.1:8766` | Bot's local worker URL. |
+| `JEVLIKE_API_KEY` | Empty | Worker bearer auth; set the same key on bot and worker. Empty disables worker auth. |
+| `JEVLIKE_TIMEOUT_MS` | `30000` | Bot's worker request timeout in ms. |
+| `JEVLIKE_HOST`, `JEVLIKE_PORT` | `127.0.0.1`, `8766` | Worker bind address and port (stub also reads the port). Avoid an open bind without auth. |
+| `JEVLIKE_MAX_BODY` | `65536` | Maximum worker HTTP body bytes; larger requests return 413. |
+| `JEVLIKE_DEVICE` | `cpu` | Worker device. Only exactly `cuda` checks CUDA availability and falls back to CPU when unavailable; `cuda:0` and other device strings bypass that check. |
+| `JEVLIKE_CKPT`, `JEVLIKE_CHECKPOINT` | `models/jevlike_hf_chinese_roberta_r1.pt` | Scorer/encoder checkpoint; first nonempty setting wins, then the default file. Missing file is an error. Scoring is lab-only. |
+| `JEVLIKE_ENCODER`, `JEVLIKE_HF_MODEL` | Checkpoint `hf_model`, then `hfl/chinese-roberta-wwm-ext` | Encoder overrides, in that precedence order. |
+| `JEVLIKE_OPTIONS` | `not_scam,scam` | Scorer labels (lab); requires at least two. |
+| `JEVLIKE_MASK_CKPT` | `models/jevlike_hf_pii_mask.pt` if present | PII head. A missing configured file logs a warning and the worker still starts without the head; `/v1/mask` returns 503 until a head is loaded. |
+| `HEURISTIC_ENABLED` | `true` | Enables link-rule hard archives. |
+| `BLOCK_ENABLED` | `true` | Enables malicious-host auto-block of unsaved contacts, not model-based blocking. |
+| `MALICIOUS_HOSTS_PATH` | `data/malicious-hosts.json` in the repo | Maintained host list override. |
+| `MALICIOUS_HOSTS_ALLOW_EMPTY` | Off | Set `1` or `true` to allow a reload with `hosts:[]` to clear the in-memory list. |
+| `BLOCK_LOG_PATH` | `./blocks.jsonl` | Local block history used by operator commands. |
+| `OPERATOR_MODE` | Unset | `auto` or `guided` pins mode; otherwise use saved choice or ask on first run. |
+| `OPERATOR_MODE_PATH`, `REVIEW_QUEUE_PATH` | `./operator-mode.json`, `./review-queue.json` | Saved operator mode and guided review queue. |
+| `WA_ACTION_GAP_MS` | `3000` | Gap between queued WhatsApp writes in ms. |
+| `CONTEXT_TURNS` | `4` | In-memory thread window capacity including current text; not a live scoring window. |
+| `CONTEXT_LLM_ENABLED` | On | Use masked recent-message review; `0` or `false` selects single-message review. |
+| `CONTEXT_LLM_MESSAGES` | `10` | Recent inbound message limit including current message; capped at 10. Invalid values or values below 1 use the default. |
+| `LLM_REVIEW_ENABLED` | `true` | Enable LLM judgment; disabling it leaves only heuristic archives. |
+| `LLM_REVIEW_ALL` | `false` | Legacy eval override that also forces LLM review enabled, even if `LLM_REVIEW_ENABLED=false`. |
+| `LLM_REVIEW_API_URL`, `OPENAI_BASE_URL`, `OPENAI_API_BASE` | Empty | First nonempty URL wins, in this order. No implicit OpenAI endpoint; without a URL, review fails closed. Whitespace and one trailing slash are removed. A URL ending in `/chat/completions` is kept; one ending in `/v1` gets `/chat/completions` appended; all others get `/v1/chat/completions` appended (suffix checks are case-insensitive). For other API paths, supply the full URL ending in `/chat/completions`. |
+| `LLM_REVIEW_API_KEY`, `OPENAI_API_KEY` | Empty | First nonempty key wins; empty omits the authorization header. |
+| `LLM_REVIEW_MODEL` | `gpt-4o-mini` | Chat model name. |
+| `LLM_REVIEW_TIMEOUT_MS` | `8000` | Chat request timeout in ms. |
+| `LLM_REVIEW_MIN_CONFIDENCE` | `0.7` | Minimum confidence for primary or context review to archive. |
+| `LLM_REVIEW_COOLDOWN_MS` | `600000` | Per-chat cooldown in ms after successful automatic archive or guided archive recommendation; nonpositive disables it. |
+| `LLM_REVIEW_COOLDOWN_PATH` | `./llm-review-cooldown.json` | Persist cooldown across restarts. Save failure keeps it in memory only. |
+| `RUBRIC_PATH` | Repo `scoring-rubric.json` | Rubric file override; jevlike score thresholds are lab-only, not live archive decisions. |
+| `PUPPETEER_EXECUTABLE_PATH` | Unset | Override Puppeteer's browser executable. |
+| `PUPPETEER_NO_SANDBOX` | Unset | Exactly `1` disables Chromium sandboxing. Root already disables it; do not opt in unless required. |
+| `PUPPETEER_SKIP_DOWNLOAD` | Unset | Puppeteer installation option to skip browser download, not a bot behavior flag. |
+
+### Checkpoint download helper settings
+
+These are user-facing setup options for `scripts/download_jevlike_ckpt.sh`.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `JEVLIKE_RELEASE_REPO` | `KLHA829/scam-detection-jev` | GitHub release repository. |
+| `JEVLIKE_RELEASE_TAG` | `jevlike-hf-r1` | Release tag. |
+| `JEVLIKE_RELEASE_ASSET` | `jevlike_hf_chinese_roberta_r1.pt` | Asset filename. |
+| `JEVLIKE_DOWNLOAD_URL` | `https://github.com/{repo}/releases/download/{tag}/{asset}` | Direct download URL built from the settings above. |
+| `JEVLIKE_CKPT` | Repo `models/jevlike_hf_chinese_roberta.pt` | Helper destination (different from the worker's r1 default). Unless forced, an existing destination passing size and non-HTML checks causes a successful early exit without checking for the named release asset; the worker's default r1 file may still be missing. After a download, the named asset is also kept beside the destination. |
+| `JEVLIKE_CKPT_MIN_BYTES` | `1000000` | Minimum size accepted as a checkpoint. |
+| `JEVLIKE_CKPT_FORCE` | `0` | Exactly `1` bypasses the existing-destination shortcut and downloads again. Otherwise a valid-looking destination is enough to exit successfully, even if the named release asset (including the worker's default r1 file) is absent. |
+| `GH_TOKEN`, `GITHUB_TOKEN` | Unset | Optional GitHub auth; first nonempty token wins in this order. Never commit tokens. |
+
 ### Offline worker stub
 
 For tests or when you skip the encoder:
