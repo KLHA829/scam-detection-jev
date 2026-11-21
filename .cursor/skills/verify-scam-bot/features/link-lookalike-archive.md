@@ -8,8 +8,10 @@ An unsaved contact who sends a lookalike host, or a short link that also asks fo
 - `lookalike-shapes` hits `whatsapp-secure.com`, a one-character misspelling, a homoglyph, and a `userinfo@evil` URL.
 - `allowlist` leaves `sf-express.com`, `hsbc.com.hk`, `wa.me`, `chat.whatsapp.com`, and `whatsapp.com` unflagged.
 - `short-solicit` hits a short link only together with an OTP ask, an impersonation claim, or an urgent account-and-money ask. A bare `bit.ly` link does not hit.
+- `short-link-advice` sends authority mentions and anti-scam advice to mask → LLM, not a rule-only archive. Impersonation requires an affirmative self-identification or a WhatsApp official header, not the bare words 銀行職員 / WhatsApp 官方. Locked by `sends short-link advice and authority mentions to masked AI review` and `keeps affirmative impersonation short-link scams on the hard archive path` in `lib/link-rules.test.js`; included in `bin/drive-mask-before-llm`.
 - `saved-unblockable` keeps a saved contact at archive when a link rule matches. Auto-block does not run.
 - `before-llm` acts on the link rule without waiting for mask/LLM (test names may still say `scorer`).
+- Advice remains fail-closed on mask errors (`fails closed when masking short-link advice fails`, also in `bin/drive-mask-before-llm`).
 
 ## How to get to it (user POV)
 

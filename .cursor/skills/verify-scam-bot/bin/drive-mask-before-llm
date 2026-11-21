@@ -17,6 +17,9 @@ const runDir = path.join(skillDir, 'run');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'sends short-link advice and authority mentions to masked AI review',
+  'keeps affirmative impersonation short-link scams on the hard archive path',
+  'fails closed when masking short-link advice fails',
   'LLM_REVIEW_ALL does not override explicitly disabled review',
   'LLM_REVIEW_ALL keeps inbound review disabled with context default',
   'LLM_REVIEW_ALL keeps inbound review disabled with context 0',
@@ -32,6 +35,7 @@ const TEST_NAMES = [
 ];
 
 const TEST_FILES = [
+  'lib/link-rules.test.js',
   'lib/llm-review.test.js',
   'lib/jevlike-base-url.test.js',
   'lib/llm-review-disabled.test.js',
