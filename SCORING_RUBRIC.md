@@ -52,7 +52,7 @@ The frozen-encoder head (`jevlike_hf_chinese_roberta_r1.pt`) and worker route **
 
 These thresholds do **not** drive live archive or block after the mask and LLM product path (2026-10-16).
 
-Historical 366-row HK jevlike archive metrics describe the old scorer bar. LLM precision on a labelled corpus is measured with `scripts/review-eval.js --llm live`, not assumed from jevlike numbers.
+Historical 366-row HK jevlike archive metrics describe the old scorer bar, not LLM precision. The eval defaults to `--mode off` (no LLM calls). To send requests, use `node scripts/review-eval.js --mode all --llm live` only with data safe to share: it uses the offline stub mask.
 
 ## Mask contract (live)
 

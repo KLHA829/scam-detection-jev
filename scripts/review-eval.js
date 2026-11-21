@@ -9,12 +9,13 @@
  *   node scripts/review-eval.js --from-run ../jevlike-lab/runs/r1_head_only.json --split real_test \
  *        [--mode off|all] [--llm off|dry|live] [--sample 3]
  *
- *   --mode  off (no LLM), all (default: review every non-heuristic DM)
+ *   --mode  off (default: no LLM), all (review every non-heuristic DM)
  *   --llm   off   = no call, merge is skipped        (numbers are meaningful)
  *           dry   = mask with the offline stub, capture the payload, DO NOT send, treat LLM as
  *                   unknown so every number stays honest ("what would have been asked");
  *                   needs no credentials, and exits 1 if any call fails to build a request
- *           live  = actually POST to LLM_REVIEW_API_URL (needs LLM_REVIEW_API_KEY or OPENAI_API_KEY)
+ *           live  = with --mode all, POST to LLM_REVIEW_API_URL using the offline stub mask;
+ *                   use only data safe to share (needs LLM_REVIEW_API_KEY or OPENAI_API_KEY)
  */
 
 const fs = require('fs');
@@ -43,7 +44,7 @@ const FROM_RUN = arg(
   path.join(__dirname, '..', 'fixtures', 'review-eval-smoke.json'),
 );
 const SPLIT = arg('split', 'ci_smoke');
-const MODE = arg('mode', 'all');
+const MODE = arg('mode', 'off');
 const LLM = arg('llm', 'off');
 const SAMPLE = Number(arg('sample', '3'));
 
