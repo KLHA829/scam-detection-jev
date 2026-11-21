@@ -112,9 +112,16 @@ WhatsApp writes (block, rename, mute, archive, receipts) run one chat at a time 
 
 ```bash
 npm test
+npm run lint
+python -m pip install ruff==0.17.6
+ruff check .
+npm run typecheck
+npm run test:e2e
 ```
 
 `npm test` is offline: in-process stub, no live WhatsApp, no encoder download. GitHub Actions runs it on pull requests and on `main`.
+
+The mocked HTTP E2E test drives the real inbound modules against local mask and LLM servers. The optional boot smoke (`npm run test:e2e:boot`) launches Chromium and waits for the WhatsApp QR event without scanning it; install Chrome first with `npx puppeteer browsers install chrome`. CI treats that network-dependent boot as best-effort.
 
 Smoke check for mask and dry LLM transport:
 

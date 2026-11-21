@@ -1,0 +1,573 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const http = require('node:http');
+const os = require('node:os');
+const path = require('node:path');
+const { startStubServer } = require('../stub-jevlike');
+
+const ROOT = path.join(__dirname, '..');
+
+function listen(server) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        reject(new Error('local test server did not bind to a TCP port'));
+        return;
+      }
+      resolve(address.port);
+    });
+  });
+}
+
+function closeServer(server) {
+  if (!server || !server.listening) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+}
+
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function userPrompt(body) {
+  return (Array.isArray(body.messages) ? body.messages : [])
+    .filter((message) => message && message.role === 'user')
+    .map((message) => String(message.content || ''))
+    .join('\n');
+}
+
+function isContextRequest(body) {
+  return (Array.isArray(body.messages) ? body.messages : [])
+    .filter((message) => message && message.role === 'system')
+    .some((message) =>
+      String(message.content || '').includes(
+        'You review the latest inbound WhatsApp messages',
+      ),
+    );
+}
+
+function createMockServer(requests, currentScenario) {
+  return http.createServer(async (req, res) => {
+    if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
+      res.writeHead(404, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'not found' }));
+      return;
+    }
+
+    try {
+      const body = await readJson(req);
+      requests.push({
+        scenario: currentScenario(),
+        body,
+      });
+
+      const investment = /投資|investment/i.test(userPrompt(body));
+      const content = isContextRequest(body)
+        ? JSON.stringify({
+            action: investment ? 'archive' : 'no_action',
+            confidence: 0.9,
+            reason: investment ? 'mock_investment' : 'mock_benign',
+          })
+        : JSON.stringify({
+            label: investment ? 'scam' : 'not_scam',
+            confidence: 0.9,
+            signals: investment ? ['investment_scam'] : [],
+            should_archive: investment,
+            reason: investment ? 'mock_investment' : 'mock_benign',
+          });
+
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          id: 'chatcmpl-e2e',
+          object: 'chat.completion',
+          choices: [
+            {
+              index: 0,
+              message: { role: 'assistant', content },
+              finish_reason: 'stop',
+            },
+          ],
+        }),
+      );
+    } catch (error) {
+      res.writeHead(400, { 'content-type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          error: error && error.message ? error.message : String(error),
+        }),
+      );
+    }
+  });
+}
+
+let nextContactId = 0;
+
+function makeFakeWhatsApp({
+  body,
+  savedContact = false,
+  fromMe = false,
+  isGroup = false,
+  isMe = false,
+}) {
+  nextContactId += 1;
+  const id = `85261${String(nextContactId).padStart(6, '0')}`;
+  const events = [];
+  const chatId = `${id}@c.us`;
+  const chat = {
+    id: { _serialized: chatId },
+    isGroup: Boolean(isGroup),
+    async archive() {
+      events.push('archive');
+    },
+    async mute() {
+      events.push('mute');
+    },
+  };
+  const contact = {
+    id: { _serialized: chatId, user: id },
+    number: id,
+    isMyContact: Boolean(savedContact),
+    isMe: Boolean(isMe),
+    name: savedContact ? 'Saved contact' : 'New contact',
+    pushname: savedContact ? 'Saved contact' : 'New contact',
+    async block() {
+      events.push('block');
+    },
+  };
+  const msg = {
+    fromMe: Boolean(fromMe),
+    from: chatId,
+    body,
+    type: 'chat',
+    id: { _serialized: `msg-${id}` },
+    _data: { notifyName: contact.pushname },
+    async getChat() {
+      return chat;
+    },
+    async getContact() {
+      return contact;
+    },
+  };
+  const client = {
+    async saveOrEditAddressbookContact() {
+      events.push('rename');
+    },
+  };
+  return { msg, chat, contact, client, events };
+}
+
+function baseEnv({ contextOn, maskPort, llmPort, scenarioId, runtimeDir }) {
+  return {
+    JEVLIKE_BASE_URL: `http://127.0.0.1:${maskPort}`,
+    JEVLIKE_TIMEOUT_MS: '1000',
+    LLM_REVIEW_API_URL: `http://127.0.0.1:${llmPort}/v1/chat/completions`,
+    LLM_REVIEW_MODEL: 'mock-e2e',
+    LLM_REVIEW_API_KEY: 'dummy',
+    LLM_REVIEW_ENABLED: 'true',
+    LLM_REVIEW_MIN_CONFIDENCE: '0.7',
+    LLM_REVIEW_COOLDOWN_MS: '0',
+    LLM_REVIEW_COOLDOWN_PATH: path.join(
+      runtimeDir,
+      `${scenarioId}-cooldown.json`,
+    ),
+    OPERATOR_MODE: 'auto',
+    OPERATOR_MODE_PATH: path.join(runtimeDir, `${scenarioId}-operator-mode.json`),
+    REVIEW_QUEUE_PATH: path.join(runtimeDir, `${scenarioId}-review-queue.json`),
+    BLOCK_LOG_PATH: path.join(runtimeDir, 'blocks.jsonl'),
+    CONTEXT_LLM_ENABLED: contextOn ? '1' : '0',
+    WA_ACTION_GAP_MS: '0',
+  };
+}
+
+async function executeScenario({
+  id,
+  body,
+  contextOn = true,
+  savedContact = false,
+  fromMe = false,
+  isGroup = false,
+  isMe = false,
+  maskPort,
+  llmPort,
+  runtimeDir,
+  requests,
+  setCurrentScenario,
+  expected,
+  sensitiveDigits,
+}) {
+  setCurrentScenario(id);
+  const before = requests.length;
+  const fake = makeFakeWhatsApp({
+    body,
+    savedContact,
+    fromMe,
+    isGroup,
+    isMe,
+  });
+  const chat = await fake.msg.getChat();
+  const contact = await fake.msg.getContact();
+  const chatId = (chat.id && chat.id._serialized) || fake.msg.from;
+
+  const { JevlikeClient } = require('../lib/jevlike-client');
+  const { processIncomingMessage } = require('../lib/handle-incoming');
+  const { blockAndRename } = require('../lib/wa-actions');
+  const { loadRubric } = require('../lib/score-message');
+  const { createLlmReviewCooldownStore } = require(
+    '../lib/llm-review-cooldown',
+  );
+  const env = baseEnv({
+    contextOn,
+    maskPort,
+    llmPort,
+    scenarioId: id,
+    runtimeDir,
+  });
+  const maskClient = new JevlikeClient({ env });
+  const cooldownStore = createLlmReviewCooldownStore({
+    filePath: env.LLM_REVIEW_COOLDOWN_PATH,
+    env,
+  });
+
+  const result = await processIncomingMessage(
+    {
+      fromMe: Boolean(fake.msg.fromMe),
+      isGroup: Boolean(chat.isGroup),
+      type: fake.msg.type,
+      isMe: Boolean(contact.isMe),
+      pushName: fake.msg._data?.notifyName || contact.pushname || contact.name,
+      contactName: contact.name || contact.pushname,
+      body: fake.msg.body || '',
+      chatId,
+      savedContact: Boolean(contact.isMyContact),
+      messageId: fake.msg.id?._serialized,
+    },
+    {
+      env,
+      maskClient,
+      rubric: loadRubric(undefined, env),
+      resolveNumber: async () => ({
+        digits: contact.number,
+        unresolvedLid: false,
+        source: 'wid',
+      }),
+      archiveChat: async () => fake.chat.archive(),
+      blockContact: (info) =>
+        blockAndRename({
+          client: fake.client,
+          contact: fake.contact,
+          chat: fake.chat,
+          digits: info && info.digits,
+          contactName: info && info.contactName,
+        }),
+      llmCooldownStore: cooldownStore,
+      operatorMode: 'auto',
+    },
+  );
+
+  const scenarioRequests = requests.slice(before);
+  const requestText = scenarioRequests
+    .map((record) => JSON.stringify(record.body))
+    .join('\n');
+  const actual = {
+    ignored: Boolean(result && result.ignored),
+    action: result && result.decision ? result.decision.action : null,
+    archiveReason:
+      result && result.decision ? result.decision.archiveReason : null,
+    blockReason:
+      result && result.decision ? result.decision.blockReason || null : null,
+    archived: fake.events.includes('archive'),
+    blocked: fake.events.includes('block'),
+    llmCalls: scenarioRequests.length,
+    redactedContainsXXX: requestText.includes('XXX'),
+    rawDigitsPresent: sensitiveDigits
+      ? requestText.includes(sensitiveDigits)
+      : null,
+    maskSkipped:
+      result && result.llmTrigger ? result.llmTrigger.skipped : null,
+  };
+
+  for (const [key, expectedValue] of Object.entries(expected)) {
+    assert.deepEqual(
+      actual[key],
+      expectedValue,
+      `${id}: ${key}; actual=${JSON.stringify(actual)}`,
+    );
+  }
+  setCurrentScenario(null);
+  process.stdout.write(`ok ${id}\n`);
+  return actual;
+}
+
+async function main() {
+  const runtimeDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'scam-detection-e2e-'),
+  );
+  const requests = [];
+  let currentScenario = null;
+  let maskServer = null;
+  let mockServer = null;
+
+  try {
+    const hostsData = JSON.parse(
+      fs.readFileSync(path.join(ROOT, 'data/malicious-hosts.json'), 'utf8'),
+    );
+    const maliciousHost = hostsData.hosts[0];
+    assert.equal(typeof maliciousHost, 'string');
+
+    maskServer = await startStubServer({ port: 0 });
+    const maskAddress = maskServer.address();
+    if (!maskAddress || typeof maskAddress === 'string') {
+      throw new Error('mask stub did not bind to a TCP port');
+    }
+    const maskPort = maskAddress.port;
+
+    mockServer = createMockServer(requests, () => currentScenario);
+    const llmPort = await listen(mockServer);
+    const deadMaskPort = 0;
+    const run = (scenario) =>
+      executeScenario({
+        ...scenario,
+        maskPort: scenario.maskFailure ? deadMaskPort : maskPort,
+        llmPort,
+        runtimeDir,
+        requests,
+        setCurrentScenario: (value) => {
+          currentScenario = value;
+        },
+      });
+    const maliciousUrl = `https://${maliciousHost}/login`;
+    const results = [];
+
+    results.push(
+      await run({
+        id: 'unsaved-malicious-host',
+        body: `登入 ${maliciousUrl}`,
+        expected: {
+          ignored: false,
+          action: 'block',
+          archiveReason: 'obvious_scam',
+          blockReason: 'malicious_host',
+          archived: true,
+          blocked: true,
+          llmCalls: 0,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'saved-malicious-host',
+        body: `登入 ${maliciousUrl}`,
+        savedContact: true,
+        expected: {
+          ignored: false,
+          action: 'archive',
+          archiveReason: 'obvious_scam',
+          archived: true,
+          blocked: false,
+          llmCalls: 0,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'lookalike-host',
+        body: '登入 https://hsbc.evil.com/login',
+        expected: {
+          ignored: false,
+          action: 'archive',
+          archiveReason: 'obvious_scam',
+          archived: true,
+          blocked: false,
+          llmCalls: 0,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'soliciting-short-link',
+        body: '請提供驗證碼 https://bit.ly/fee',
+        expected: {
+          ignored: false,
+          action: 'archive',
+          archiveReason: 'obvious_scam',
+          archived: true,
+          blocked: false,
+          llmCalls: 0,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'benign-context-masked-phone',
+        body: '我電話係 91234567，今晚食咩呀',
+        contextOn: true,
+        sensitiveDigits: '91234567',
+        expected: {
+          ignored: false,
+          action: 'ignore',
+          archived: false,
+          blocked: false,
+          llmCalls: 1,
+          redactedContainsXXX: true,
+          rawDigitsPresent: false,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'benign-primary-masked-phone',
+        body: '我電話係 91234567，今晚食咩呀',
+        contextOn: false,
+        sensitiveDigits: '91234567',
+        expected: {
+          ignored: false,
+          action: 'ignore',
+          archived: false,
+          blocked: false,
+          llmCalls: 1,
+          redactedContainsXXX: true,
+          rawDigitsPresent: false,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'investment-primary-scam-masked-phone',
+        body: '高回報投資，加我 98765432',
+        contextOn: false,
+        sensitiveDigits: '98765432',
+        expected: {
+          ignored: false,
+          action: 'archive',
+          archiveReason: 'llm_review_scam',
+          archived: true,
+          blocked: false,
+          llmCalls: 1,
+          redactedContainsXXX: true,
+          rawDigitsPresent: false,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'investment-context-scam-masked-phone',
+        body: '高回報投資，加我 98765432',
+        contextOn: true,
+        sensitiveDigits: '98765432',
+        expected: {
+          ignored: false,
+          action: 'archive',
+          archiveReason: 'context_llm',
+          archived: true,
+          blocked: false,
+          llmCalls: 1,
+          redactedContainsXXX: true,
+          rawDigitsPresent: false,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'mask-failure-fail-closed',
+        body: '高回報投資，加我 98765432',
+        contextOn: true,
+        maskFailure: true,
+        sensitiveDigits: '98765432',
+        expected: {
+          ignored: false,
+          action: 'ignore',
+          archived: false,
+          blocked: false,
+          llmCalls: 0,
+          redactedContainsXXX: false,
+          rawDigitsPresent: false,
+          maskSkipped: 'mask_failed',
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'transfer-code-words-alone',
+        body: '轉數快 驗證碼',
+        contextOn: true,
+        expected: {
+          ignored: false,
+          action: 'ignore',
+          archived: false,
+          blocked: false,
+          llmCalls: 1,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'group-message-filtered',
+        body: '高回報投資，加我 98765432',
+        isGroup: true,
+        expected: {
+          ignored: true,
+          archived: false,
+          blocked: false,
+          llmCalls: 0,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'own-message-filtered',
+        body: '高回報投資，加我 98765432',
+        fromMe: true,
+        expected: {
+          ignored: true,
+          archived: false,
+          blocked: false,
+          llmCalls: 0,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'self-contact-filtered',
+        body: '高回報投資，加我 98765432',
+        isMe: true,
+        expected: {
+          ignored: true,
+          archived: false,
+          blocked: false,
+          llmCalls: 0,
+        },
+      }),
+    );
+
+    process.stdout.write(
+      `E2E passed: ${results.length} scenarios; ${requests.length} LLM requests\n`,
+    );
+  } finally {
+    await closeServer(mockServer);
+    await closeServer(maskServer);
+    fs.rmSync(runtimeDir, { recursive: true, force: true });
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

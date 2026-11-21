@@ -13,9 +13,7 @@ For gated Hugging Face datasets (paulkm/chinese_conversation_and_spam), set HF_T
 
 from __future__ import annotations
 
-import csv
 import hashlib
-import io
 import json
 import re
 import sys
