@@ -70,7 +70,7 @@ Exit code `0`. The first 封鎖並封存 confirmation matches `已封鎖並封�
 
 ```bash
 node --test --test-reporter tap \
-  --test-name-pattern 'voids the guided poll when its message is edited|re-reviews an edited model-flagged DM|voids only the open review polls' \
+  --test-name-pattern 'voids the guided poll when its message is edited|re-reviews an edited model-flagged DM|does not let the context review|voids only the open review polls' \
   lib/wa-handlers.test.js lib/unblock-poll.test.js
 ```
 
