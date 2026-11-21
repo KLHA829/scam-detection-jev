@@ -24,7 +24,7 @@ Everything else goes through mask and an OpenAI-compatible review (`LLM_REVIEW_E
 
 **`CONTEXT_LLM_ENABLED` defaults to on.** The bot sends a masked transcript of the latest inbound bodies (`CONTEXT_LLM_MESSAGES`, default 10). Set `CONTEXT_LLM_ENABLED=0` or `false` to use single-message primary LLM only. A model answer of `block` is treated as archive only.
 
-After a successful primary or context review (`ok === true`), the same `chatId` skips further mask and LLM for `LLM_REVIEW_COOLDOWN_MS` (default 10 minutes).
+After a successful primary or context review recommends archive, the same `chatId` skips further mask and LLM for `LLM_REVIEW_COOLDOWN_MS` (default 10 minutes). Automatic mode starts this window after the archive succeeds; guided mode starts it before the operator acts.
 
 The frozen scam head and **`POST /v1/score`** remain for offline eval (`lab/score-message.js`, `scripts/review-eval.js`). They do **not** gate live archive or block.
 
