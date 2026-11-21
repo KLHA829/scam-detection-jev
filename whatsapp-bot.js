@@ -131,7 +131,7 @@ async function sendUnblockPoll(client, queue, pacer, row) {
   }
 }
 
-async function sendActionNotice(client, result, { maskClient, llmReview, rubric, listName, pacer, reviewQueue } = {}) {
+async function sendActionNotice(client, result, { maskClient, llmReview, listName, pacer, reviewQueue } = {}) {
   const action = result && result.decision && result.decision.action;
   if (!result || result.ignored || result.deferred) return;
   if (action !== 'archive' && action !== 'block') return;
@@ -147,13 +147,11 @@ async function sendActionNotice(client, result, { maskClient, llmReview, rubric,
       maskClient,
       llmOptions: llmReview,
       env: process.env,
-      rubric,
       action,
       blocked,
       archived: Boolean(result.archived),
       listName,
       digits: result.formattedNumber,
-      scoreResult: result.scoreResult,
       decision: result.decision,
       heuristic: result.heuristic,
       llmConfidence: llmConfidenceFromResult(result),
@@ -545,7 +543,7 @@ async function handleWaMessage(msg, {
   );
   if (result && !result.deferred) {
     await sendActionNotice(client, result, {
-      maskClient, llmReview, rubric, listName, pacer, reviewQueue,
+      maskClient, llmReview, listName, pacer, reviewQueue,
     });
   }
   if (!result || !result.deferred || !reviewQueue) return result;
@@ -560,7 +558,6 @@ async function handleWaMessage(msg, {
       maskClient,
       llmReview,
       env: process.env,
-      rubric,
       queue: reviewQueue,
       exclusive: (fn) => pacer.exclusive(fn),
       forward: () => msg.forward(wid),

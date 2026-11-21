@@ -1,6 +1,6 @@
 # Action receipt
 
-After every completed archive or block, the bot messages the operator's own chat. The message names the chat-list contact, the phone, the local reason (link 句式, archive reason, LLM 覆核信心 when present), and may include a rubric score line only when a numeric score was passed into the receipt builder (live inbound uses mask→LLM, not jevlike `/v1/score`). Choosing 留低 does not send that receipt.
+After every completed archive or block, the bot messages the operator's own chat. The message names the chat-list contact, the phone, the local reason (link 句式, archive reason, LLM 覆核信心 when present). It has no score line: live inbound uses mask→LLM, not jevlike `/v1/score`, so neither the receipt nor the guided card shows `分數` or `封存線`. Choosing 留低 does not send that receipt.
 
 ## Sub-features
 
@@ -35,7 +35,7 @@ node --test --test-reporter tap \
   lib/action-notice.test.js
 ```
 
-Exit code `0`. The block receipt matches `已封鎖並封存`, `左邊：阿明`, `電話：85290000000`, `分數 86`, and `封存線 42`. The unresolved-phone receipt matches `已封存，未封鎖` and `電話未解析到`.
+Exit code `0`. The block receipt matches `已封鎖並封存`, `左邊：阿明`, and `電話：85290000000`, with no `分數` line. The unresolved-phone receipt matches `已封存，未封鎖` and `電話未解析到`.
 
 - **Queue isolation.** Run `node --test lib/receipt-latency.test.js`. A second chat archives within 150 ms while the first receipt's 250 ms mask call is pending. Success, failed mask, and failed archive cases retain their receipts and archive-before-receipt order. Reproduce medians with `node scripts/bench-receipt-latency.js` (five runs each at 0, 250, and 1000 ms mask delay).
 
