@@ -34,12 +34,15 @@ async function drive(repo = path.resolve(__dirname, '../..'), options = {}) {
     const entry = createReviewQueue({ filePath: env.REVIEW_QUEUE_PATH }).get('poll1');
     const legacy = { ...entry, score: 0, pollId: 'legacy' };
     queue.add(legacy);
-    await applyReviewChoice(queue.consume('legacy'), 'block', {
-      ...deps, getChat: async () => ({}),
-    });
+    const choices = [];
+    for (const pollId of ['poll1', 'legacy']) {
+      choices.push(await applyReviewChoice(queue.consume(pollId), 'block', {
+        ...deps, getChat: async () => ({}),
+      }));
+    }
     const blockLines = fs.readFileSync(env.BLOCK_LOG_PATH, 'utf8').trim().split('\n');
     const records = readRecentBlockRecords(20, env.BLOCK_LOG_PATH);
-    return { blockLines, records, entry, legacy: createReviewQueue({ filePath: env.REVIEW_QUEUE_PATH }).get('legacy') };
+    return { blockLines, records, entry, choices, legacy: createReviewQueue({ filePath: env.REVIEW_QUEUE_PATH }).get('legacy') };
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
