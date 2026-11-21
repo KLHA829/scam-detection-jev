@@ -17,6 +17,9 @@ const runDir = path.join(skillDir, 'run');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'drops the original when an edit is empty',
+  'does not resend the original after an empty edit with 0 earlier messages',
+  'does not resend the original after an empty edit with 1 earlier messages',
   'sends short-link advice and authority mentions to masked AI review',
   'keeps affirmative impersonation short-link scams on the hard archive path',
   'fails closed when masking short-link advice fails',
