@@ -14,6 +14,7 @@ const evidence = path.resolve(__dirname, '../evidence');
 fs.mkdirSync(evidence, { recursive: true });
 const dir = fs.mkdtempSync(path.join(evidence, 'guided-block-failure-'));
 process.env.BLOCK_LOG_PATH = path.join(dir, 'blocks.jsonl');
+const outcomes = [];
 
 async function main() {
   for (const archiveFails of [false, true]) {
@@ -51,13 +52,32 @@ async function main() {
       parentMessage: { id: { _serialized: 'poll-1' } },
     });
     const unblockPoll = sent.some((text) => typeof text !== 'string');
-    console.log(JSON.stringify({ archiveFails, archived: archived ? 'yes' : 'no', receipt: sent[0], unblockPoll: unblockPoll ? 'yes' : 'no' }));
+    const pollClosed = queue.get('poll-1').resolved;
+    const outcome = { archiveFails, archived: archived ? 'yes' : 'no', receipt: sent[0], unblockPoll: unblockPoll ? 'yes' : 'no', pollClosed };
+    outcomes.push(outcome);
+    console.log(JSON.stringify(outcome));
     assert.equal(unblockPoll, false);
     if (!process.env.EXPECT_BEFORE) {
       assert.equal(archived, !archiveFails);
+      assert.equal(pollClosed, !archiveFails);
       assert.match(sent[0], archiveFails ? /^封鎖未完成，封存未完成/ : /^封鎖未完成，對話已封存/);
     }
   }
 }
 
-main().catch((err) => { console.error(err); process.exitCode = 1; });
+function saveSummary(exitCode, error = null) {
+  fs.writeFileSync(path.join(dir, 'summary.json'), `${JSON.stringify({
+    feature: 'guided-block-failure',
+    root,
+    outcomes,
+    exitCode,
+    error,
+    proved: exitCode === 0 && !process.env.EXPECT_BEFORE,
+  }, null, 2)}\n`);
+}
+
+main().then(() => saveSummary(0)).catch((err) => {
+  console.error(err);
+  saveSummary(1, err.message);
+  process.exitCode = 1;
+});
