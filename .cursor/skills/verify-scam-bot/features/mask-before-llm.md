@@ -8,6 +8,7 @@ Before any chat-API call, the bot asks jevlike `POST /v1/mask` which characters 
 - `mask-xxx` replaces a Hong Kong phone and a 我係 name with `XXX` and leaves the lure word 驗證碼 visible.
 - `mask-incomplete` skips the chat API when the mask throws, is short a row, or has a non-integer span. The DM is not archived or blocked because the mask failed.
 - `mask-empty` accepts a span list of `[]`.
+- `mask-base-url` accepts a worker base or full `/v1/mask` endpoint with trailing slashes, without duplicating the path; lab score still resolves independently (`node --test lib/jevlike-base-url.test.js` exercises the real inbound handler over local HTTP).
 - `review-disabled` skips both review paths with `LLM_REVIEW_ENABLED=false`, even with context on by default; link-rule hard archives still work (`node --test lib/llm-review-disabled.test.js` uses a real local HTTP chat endpoint).
 - `mask-local-identity` attaches the chat-list name and phone on this machine. Those fields are not part of the mask request or the chat-API body.
 
