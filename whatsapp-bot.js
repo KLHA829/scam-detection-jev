@@ -9,7 +9,6 @@ const qrcode = require('qrcode-terminal');
 const log = require('./lib/log');
 const { createMaskClient } = require('./lib/jevlike-client');
 const { loadRubric } = require('./lib/score-message');
-const { TtlCache } = require('./lib/cache');
 const {
   processIncomingMessage,
 } = require('./lib/handle-incoming');
@@ -449,7 +448,6 @@ async function handleWaMessage(msg, {
   recentContext,
   maskClient,
   rubric,
-  cache,
   llmReview,
   contextLlm,
   env,
@@ -489,7 +487,6 @@ async function handleWaMessage(msg, {
       env,
       maskClient,
       rubric,
-      cache,
       llmReview,
       contextLlm,
       threadContext,
@@ -661,8 +658,6 @@ async function main() {
   const maskClient = createMaskClient();
   const llmReview = createLlmReviewConfig();
   const contextOn = contextLlmEnabled();
-  const ttl = Number(process.env.SCORE_CACHE_TTL_MS || 900000);
-  const cache = new TtlCache({ ttlMs: ttl });
   const pacer = createActionPacer();
   const threadContext = createThreadContext({ turns: contextTurnsFromEnv() });
   const recentContext = contextOn
@@ -714,7 +709,6 @@ async function main() {
   attachHandlers(client, {
     maskClient,
     rubric,
-    cache,
     llmReview,
     pacer,
     threadContext,
