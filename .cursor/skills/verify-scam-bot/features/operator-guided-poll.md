@@ -6,6 +6,7 @@ In guided mode the bot forwards a suspicious DM to the operator's own chat, expl
 
 - `setup-poll` asks `呢個 bot 點處理可疑訊息？` with 自動封鎖同封存 and 逐條問我. Until that poll is answered, suspicious chats are archived and nobody is blocked. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Sending `設定` in the operator's own chat asks again.
 - `review-poll` asks `你想點處理？` with 封鎖並封存, 只封存, and 留低. Numeric replies `1`, `2`, and `3` map to those three choices.
+- `current-setup-poll` accepts mode changes only from the most recently sent setup poll, including after a choice or restart. Superseded setup polls are void.
 - `guided-defer` computes the decision and does not call archive or block until the choice arrives.
 - `mask-fail-poll` still shows the poll when the mask or the model fails. The card says `解釋暫時出唔到`.
 - `first-choice` runs the first answer and ignores a second one. 封鎖並封存 is the choice that blocks a saved contact.
@@ -35,6 +36,8 @@ node --test --test-reporter tap \
 ```
 
 Exit code `0`. `封鎖並封存` is `block`, `2` is `archive`, `3 留低` is `leave`, `逐條問我` is `guided`.
+
+- **Current setup poll only.** Run `node --test --test-name-pattern='ignores superseded setup polls' lib/wa-handlers.test.js`. The actual client vote handler ignores old polls and accepts the current poll across restarts.
 
 - **Defer the action.** Run:
 
