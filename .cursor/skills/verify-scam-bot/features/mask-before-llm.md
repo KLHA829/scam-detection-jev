@@ -10,7 +10,7 @@ Before any chat-API call, the bot asks jevlike `POST /v1/mask` which characters 
 - `mask-empty` accepts a span list of `[]`.
 - `mask-base-url` accepts a worker base or full `/v1/mask` endpoint with trailing slashes, without duplicating the path; lab score still resolves independently (`node --test lib/jevlike-base-url.test.js` exercises the real inbound handler over local HTTP).
 - `review-disabled` skips both review paths with `LLM_REVIEW_ENABLED=false`, even with context on by default; link-rule hard archives still work (`node --test lib/llm-review-disabled.test.js` uses a real local HTTP chat endpoint).
-- `LLM_REVIEW_ALL=1` only changes legacy eval trigger gating; it does not re-enable review when `LLM_REVIEW_ENABLED=false` (`lib/llm-review.test.js` covers context default-on and off).
+- `LLM_REVIEW_ALL=1` is a legacy compatibility flag with no effect on review enablement or trigger selection; it does not re-enable review when `LLM_REVIEW_ENABLED=false` (`lib/llm-review.test.js` covers context default-on and off).
 - `mask-local-identity` attaches the chat-list name and phone on this machine. Those fields are not part of the mask request or the chat-API body.
 
 ## How to get to it (user POV)

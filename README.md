@@ -132,7 +132,7 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `CONTEXT_LLM_ENABLED` | On | Use masked recent-message review; `0` or `false` selects single-message review. |
 | `CONTEXT_LLM_MESSAGES` | `10` | Recent inbound message limit including current message; capped at 10. Invalid values or values below 1 use the default. |
 | `LLM_REVIEW_ENABLED` | `true` | Enable LLM judgment; disabling it leaves only heuristic archives. |
-| `LLM_REVIEW_ALL` | `false` | Legacy eval override that also forces LLM review enabled, even if `LLM_REVIEW_ENABLED=false`. |
+| `LLM_REVIEW_ALL` | `false` | Legacy compatibility flag; no longer affects review enablement or trigger selection. `LLM_REVIEW_ENABLED=false` disables both review paths. |
 | `LLM_REVIEW_API_URL`, `OPENAI_BASE_URL`, `OPENAI_API_BASE` | Empty | First nonempty URL wins, in this order. No implicit OpenAI endpoint; without a URL, review fails closed. Whitespace and one trailing slash are removed. A URL ending in `/chat/completions` is kept; one ending in `/v1` gets `/chat/completions` appended; all others get `/v1/chat/completions` appended (suffix checks are case-insensitive). For other API paths, supply the full URL ending in `/chat/completions`. |
 | `LLM_REVIEW_API_KEY`, `OPENAI_API_KEY` | Empty | First nonempty key wins; empty omits the authorization header. |
 | `LLM_REVIEW_MODEL` | `gpt-4o-mini` | Chat model name. |
