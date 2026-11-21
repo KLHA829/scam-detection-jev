@@ -1,0 +1,83 @@
+#!/usr/bin/env node
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const root = path.resolve(process.argv[2] || path.join(__dirname, '../../../..'));
+const { attachHandlers } = require(path.join(root, 'whatsapp-bot'));
+const { createReviewQueue } = require(path.join(root, 'lib/review-queue'));
+const { createOperatorState } = require(path.join(root, 'lib/operator-mode'));
+const { createActionPacer } = require(path.join(root, 'lib/action-pacer'));
+const evidence = path.resolve(__dirname, '../evidence');
+fs.mkdirSync(evidence, { recursive: true });
+const dir = fs.mkdtempSync(path.join(evidence, 'guided-block-failure-'));
+process.env.BLOCK_LOG_PATH = path.join(dir, 'blocks.jsonl');
+const outcomes = [];
+
+async function main() {
+  for (const archiveFails of [false, true]) {
+    const queue = createReviewQueue({ filePath: path.join(dir, `queue-${archiveFails}.json`) });
+    queue.add({ pollId: 'poll-1', chatId: '9@c.us', savedContact: true, resolved: false });
+    let archived = false;
+    const sent = [];
+    const client = {
+      info: { wid: { _serialized: 'me@c.us' } },
+      handlers: {},
+      on(event, fn) { this.handlers[event] = fn; },
+      async sendMessage(_wid, text) {
+        sent.push(text);
+        return { id: { _serialized: `sent-${sent.length}` } };
+      },
+      async getChatById() {
+        return {
+          async getContact() {
+            return { async block() { throw new Error('block failed'); } };
+          },
+          async archive() {
+            if (archiveFails) throw new Error('archive failed');
+            archived = true;
+          },
+        };
+      },
+    };
+    attachHandlers(client, {
+      operator: createOperatorState({ env: {}, filePath: path.join(dir, 'mode.json') }),
+      reviewQueue: queue,
+      pacer: createActionPacer({ env: { WA_ACTION_GAP_MS: '0' } }),
+    });
+    await client.handlers.vote_update({
+      selectedOptions: [{ name: '封鎖並封存' }],
+      parentMessage: { id: { _serialized: 'poll-1' } },
+    });
+    const unblockPoll = sent.some((text) => typeof text !== 'string');
+    const pollClosed = queue.get('poll-1').resolved;
+    const outcome = { archiveFails, archived: archived ? 'yes' : 'no', receipt: sent[0], unblockPoll: unblockPoll ? 'yes' : 'no', pollClosed };
+    outcomes.push(outcome);
+    console.log(JSON.stringify(outcome));
+    assert.equal(unblockPoll, false);
+    if (!process.env.EXPECT_BEFORE) {
+      assert.equal(archived, !archiveFails);
+      assert.equal(pollClosed, !archiveFails);
+      assert.match(sent[0], archiveFails ? /^封鎖未完成，封存未完成/ : /^封鎖未完成，對話已封存/);
+    }
+  }
+}
+
+function saveSummary(exitCode, error = null) {
+  fs.writeFileSync(path.join(dir, 'summary.json'), `${JSON.stringify({
+    feature: 'guided-block-failure',
+    root,
+    outcomes,
+    exitCode,
+    error,
+    proved: exitCode === 0 && !process.env.EXPECT_BEFORE,
+  }, null, 2)}\n`);
+}
+
+main().then(() => saveSummary(0)).catch((err) => {
+  console.error(err);
+  saveSummary(1, err.message);
+  process.exitCode = 1;
+});
