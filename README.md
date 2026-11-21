@@ -140,7 +140,7 @@ The mocked HTTP E2E test drives the real inbound modules against local mask and 
 Smoke check for mask and dry LLM transport:
 
 ```bash
-node scripts/review-eval.js --llm dry --mode triggers
+node scripts/review-eval.js --llm dry --mode all
 ```
 
 Default fixture: `fixtures/review-eval-smoke.json`. Full labelled HK run: `--from-run` plus your `jevlike-lab` export and `--split real_test`.
