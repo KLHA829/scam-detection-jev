@@ -7,6 +7,7 @@ Unsaved contacts are **auto-blocked only** when the current message URL matches 
 - `list-match` matches exact host and subdomains (e.g. `pay.evil.example` matches `evil.example`).
 - `hot-reload` refreshes the cached list after in-place writes, repeated atomic saves, and atomic saves to a symlink target in another directory.
 - `unsaved-block` calls `blockContact` with `封鎖·惡意域名` when the heuristic id is `malicious_host`.
+- `score-free-records` new block records, guided queue entries, and action log lines omit the live placeholder score; old scored queue entries remain actionable (`node --test lib/placeholder-score.test.js`).
 - `before-llm` blocks without waiting for mask/LLM (same fast-heuristic path as link rules; test names may still say `scorer`).
 - `saved-archive-only` saved contacts on a malicious URL archive if the link rule fires; `applyBlockPolicy` does not block.
 - `hold-setup` while the first-run setup poll is unanswered, `holdBlock` suppresses block but still archives lookalike; malicious-host block is also held until the operator picks automatic mode.
