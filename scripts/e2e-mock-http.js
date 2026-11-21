@@ -174,7 +174,14 @@ function makeFakeWhatsApp({
   return { msg, chat, contact, client, events };
 }
 
-function baseEnv({ contextOn, maskPort, llmPort, scenarioId, runtimeDir }) {
+function baseEnv({
+  contextOn,
+  maskPort,
+  llmPort,
+  scenarioId,
+  runtimeDir,
+  cooldownMs = '0',
+}) {
   return {
     JEVLIKE_BASE_URL: `http://127.0.0.1:${maskPort}`,
     JEVLIKE_TIMEOUT_MS: '1000',
@@ -183,7 +190,7 @@ function baseEnv({ contextOn, maskPort, llmPort, scenarioId, runtimeDir }) {
     LLM_REVIEW_API_KEY: 'dummy',
     LLM_REVIEW_ENABLED: 'true',
     LLM_REVIEW_MIN_CONFIDENCE: '0.7',
-    LLM_REVIEW_COOLDOWN_MS: '0',
+    LLM_REVIEW_COOLDOWN_MS: String(cooldownMs),
     LLM_REVIEW_COOLDOWN_PATH: path.join(
       runtimeDir,
       `${scenarioId}-cooldown.json`,
@@ -212,11 +219,14 @@ async function executeScenario({
   setCurrentScenario,
   expected,
   sensitiveDigits,
+  messages,
+  cooldownMs = '0',
 }) {
   setCurrentScenario(id);
   const before = requests.length;
+  const messageBodies = Array.isArray(messages) ? messages : [body];
   const fake = makeFakeWhatsApp({
-    body,
+    body: messageBodies[0],
     savedContact,
     fromMe,
     isGroup,
@@ -239,6 +249,7 @@ async function executeScenario({
     llmPort,
     scenarioId: id,
     runtimeDir,
+    cooldownMs,
   });
   const maskClient = new JevlikeClient({ env });
   const cooldownStore = createLlmReviewCooldownStore({
@@ -246,41 +257,46 @@ async function executeScenario({
     env,
   });
 
-  const result = await processIncomingMessage(
-    {
-      fromMe: Boolean(fake.msg.fromMe),
-      isGroup: Boolean(chat.isGroup),
-      type: fake.msg.type,
-      isMe: Boolean(contact.isMe),
-      pushName: fake.msg._data?.notifyName || contact.pushname || contact.name,
-      contactName: contact.name || contact.pushname,
-      body: fake.msg.body || '',
-      chatId,
-      savedContact: Boolean(contact.isMyContact),
-      messageId: fake.msg.id?._serialized,
-    },
-    {
-      env,
-      maskClient,
-      rubric: loadRubric(undefined, env),
-      resolveNumber: async () => ({
-        digits: contact.number,
-        unresolvedLid: false,
-        source: 'wid',
-      }),
-      archiveChat: async () => fake.chat.archive(),
-      blockContact: (info) =>
-        blockAndRename({
-          client: fake.client,
-          contact: fake.contact,
-          chat: fake.chat,
-          digits: info && info.digits,
-          contactName: info && info.contactName,
+  let result = null;
+  for (const [index, messageBody] of messageBodies.entries()) {
+    fake.msg.body = messageBody;
+    fake.msg.id = { _serialized: `msg-${contact.number}-${index + 1}` };
+    result = await processIncomingMessage(
+      {
+        fromMe: Boolean(fake.msg.fromMe),
+        isGroup: Boolean(chat.isGroup),
+        type: fake.msg.type,
+        isMe: Boolean(contact.isMe),
+        pushName: fake.msg._data?.notifyName || contact.pushname || contact.name,
+        contactName: contact.name || contact.pushname,
+        body: fake.msg.body || '',
+        chatId,
+        savedContact: Boolean(contact.isMyContact),
+        messageId: fake.msg.id?._serialized,
+      },
+      {
+        env,
+        maskClient,
+        rubric: loadRubric(undefined, env),
+        resolveNumber: async () => ({
+          digits: contact.number,
+          unresolvedLid: false,
+          source: 'wid',
         }),
-      llmCooldownStore: cooldownStore,
-      operatorMode: 'auto',
-    },
-  );
+        archiveChat: async () => fake.chat.archive(),
+        blockContact: (info) =>
+          blockAndRename({
+            client: fake.client,
+            contact: fake.contact,
+            chat: fake.chat,
+            digits: info && info.digits,
+            contactName: info && info.contactName,
+          }),
+        llmCooldownStore: cooldownStore,
+        operatorMode: 'auto',
+      },
+    );
+  }
 
   const scenarioRequests = requests.slice(before);
   const requestText = scenarioRequests
@@ -481,6 +497,38 @@ async function main() {
           llmCalls: 1,
           redactedContainsXXX: true,
           rawDigitsPresent: false,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'benign-opener-then-investment-context',
+        messages: ['你好，請問係陳生嗎？', '高回報投資，加我 WhatsApp 了解'],
+        contextOn: true,
+        cooldownMs: '600000',
+        expected: {
+          ignored: false,
+          action: 'archive',
+          archiveReason: 'context_llm',
+          archived: true,
+          blocked: false,
+          llmCalls: 2,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'benign-opener-then-investment-primary',
+        messages: ['你好，請問係陳生嗎？', '高回報投資，加我 WhatsApp 了解'],
+        contextOn: false,
+        cooldownMs: '600000',
+        expected: {
+          ignored: false,
+          action: 'archive',
+          archiveReason: 'llm_review_scam',
+          archived: true,
+          blocked: false,
+          llmCalls: 2,
         },
       }),
     );

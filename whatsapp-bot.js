@@ -115,6 +115,8 @@ async function sendUnblockPoll(client, queue, pacer, row) {
         row.contactName ||
         (row.decision && row.decision.contactName) ||
         null,
+      renamed: row.renamed,
+      savedContact: row.savedContact,
       listName: row.listName || null,
       createdAt: new Date().toISOString(),
       resolved: false,
@@ -244,6 +246,8 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
         chatId: record.chatId,
         digits: record.digits,
         contactName: record.contactName,
+        renamed: result.renamed,
+        savedContact: result.savedContact,
         listName: record.listName,
       });
     }
@@ -268,13 +272,14 @@ async function confirmUnblockChoice(client, queue, pacer, choice, pollId) {
     pause: () => pacer.pause(),
     getChat: (id) => client.getChatById(id),
     getContact: (chat) => chat.getContact(),
-    unblockContact: ({ chat, contact, digits, blockContactName }) =>
+    unblockContact: ({ chat, contact, digits, renamed, savedContact }) =>
       unblockContact({
         client,
         contact,
         chat,
         digits,
-        blockContactName,
+        renamed,
+        savedContact,
         pause: () => pacer.pause(),
       }),
   });
@@ -289,13 +294,14 @@ async function handleOperatorCommand(cmd, deps, wid) {
     pause: () => pacer.pause(),
     getChat: (id) => client.getChatById(id),
     getContact: (chat) => chat.getContact(),
-    unblockContact: ({ chat, contact, digits, blockContactName }) =>
+    unblockContact: ({ chat, contact, digits, renamed, savedContact }) =>
       unblockContact({
         client,
         contact,
         chat,
         digits,
-        blockContactName,
+        renamed,
+        savedContact,
         pause: () => pacer.pause(),
       }),
   };
@@ -515,6 +521,8 @@ async function handleWaMessage(msg, {
           listName,
           digits: result.formattedNumber,
           contactName: result.decision && result.decision.contactName,
+          renamed: result.renamed,
+          savedContact: result.savedContact,
         });
       }
     });
