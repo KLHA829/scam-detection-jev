@@ -31,11 +31,16 @@ python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 python -m pip install -r requirements.txt
 npm install
 scripts/download_jevlike_ckpt.sh
+python scripts/train_pii_mask.py --output models/jevlike_hf_pii_mask.pt
 
-# Terminal 1 — first start downloads hfl/chinese-roberta-wwm-ext (~400 MB)
+# Terminal 1 — activate the venv; training downloads the encoder once (~400 MB)
 python jevlike_serve.py
 
-# Terminal 2
+# Terminal 2 — verify before starting the bot
+curl -s localhost:8766/health
+# Must include "pii_mask": true ("ok": true alone is not enough)
+curl -s -X POST localhost:8766/v1/mask -H 'content-type: application/json' -d '{"messages":["我叫陳大文，電話 91234567"]}'
+# Must return spans, not a 503 error
 npm start
 ```
 
@@ -43,7 +48,7 @@ Scan the QR code. Session data stays in `.wwebjs_auth/` (gitignored). Keep that 
 
 Set `JEVLIKE_DEVICE=cuda` only when you have a compatible NVIDIA GPU. CPU is the default on a Pi.
 
-`jevlike_serve.py` does not read `.env`. Export `JEVLIKE_MASK_CKPT` (and optional lab `JEVLIKE_CKPT`) in the shell that starts the worker.
+The r1 download alone cannot serve `/v1/mask`: training creates the separate PII head (see [models/README.md](models/README.md)). Alternatively, export `JEVLIKE_MASK_CKPT=/path/to/jevlike_hf_pii_mask.pt` for an existing trained head in the worker shell. `jevlike_serve.py` does not read `.env`; export optional lab `JEVLIKE_CKPT` there too. Restart the worker after training or changing the head. Without it, `/v1/mask` returns 503 and the bot skips the LLM.
 
 ### Raspberry Pi (正體中文)
 
@@ -62,14 +67,23 @@ python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 python -m pip install -r requirements.txt
 npm install
 scripts/download_jevlike_ckpt.sh
+python scripts/train_pii_mask.py --output models/jevlike_hf_pii_mask.pt
 
 python jevlike_serve.py   # terminal 1
+
+# terminal 2：先確認脫敏頭已載入，再啟動 bot
+curl -s localhost:8766/health
+# 必須包含 "pii_mask": true；只有 "ok": true 並不足夠
+curl -s -X POST localhost:8766/v1/mask -H 'content-type: application/json' -d '{"messages":["我叫陳大文，電話 91234567"]}'
+# 應回傳 spans，不能是 503 錯誤
 npm start                 # terminal 2
 ```
 
 掃 QR。Session 在 `.wwebjs_auth/`。權重見 Release [jevlike-hf-r1](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1)。不要把 `.pt` 或 encoder 推進 git。詳見 [models/README.md](models/README.md)。
 
 Pi 建議 4 GB RAM 以上。`JEVLIKE_DEVICE=cpu` 為預設。
+
+只下載 r1 並不會產生脫敏頭；上面的訓練會另存 `models/jevlike_hf_pii_mask.pt`，不會覆蓋 r1。首次訓練會下載約 400 MB 編碼器，Pi 上 CPU 訓練可能需較長時間。亦可在其他機器訓練後複製頭檔，並在啟動 worker 的 shell 執行 `export JEVLIKE_MASK_CKPT=/path/to/jevlike_hf_pii_mask.pt`。Worker 不會讀取 `.env`；訓練或換頭後須重新啟動，再檢查上述兩個端點。缺少脫敏頭時 `/v1/mask` 會回 503，bot 會跳過 LLM。
 
 ### Windows notes
 
