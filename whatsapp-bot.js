@@ -60,6 +60,7 @@ const {
 } = require('./lib/llm-review-cooldown');
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
+const VOIDED_POLL_TEXT = '呢個投票已作廢：對方改咗訊息，唔會封存或封鎖。';
 
 function puppeteerArgs(
   uid = typeof process.getuid === 'function' ? process.getuid() : null,
@@ -415,6 +416,10 @@ async function handleSelfMessage(msg, deps) {
     await deps.client.sendMessage(wid, '已經處理咗。');
     return;
   }
+  if (route.kind === 'voided') {
+    await deps.client.sendMessage(wid, VOIDED_POLL_TEXT);
+    return;
+  }
   if (route.kind === 'review') {
     await confirmReviewChoice(
       deps.client,
@@ -442,6 +447,10 @@ async function handleSelfMessage(msg, deps) {
   }
 }
 
+function incomingMessageId(msg) {
+  return msg?.id?._serialized || msg?.id?.id || null;
+}
+
 async function handleWaMessage(msg, {
   client,
   pacer,
@@ -456,7 +465,6 @@ async function handleWaMessage(msg, {
   operator,
   reviewQueue,
   llmCooldownStore,
-  isEdit,
 }) {
   let chat;
   let contact;
@@ -483,7 +491,7 @@ async function handleWaMessage(msg, {
       body: msg.body || '',
       chatId,
       savedContact: Boolean(contact.isMyContact),
-      messageId: msg.id?._serialized || msg.id?.id,
+      messageId: incomingMessageId(msg),
     },
     {
       env,
@@ -551,7 +559,6 @@ async function handleWaMessage(msg, {
           wid,
           new Poll(name, options, { allowMultipleAnswers: false }),
         ),
-      allowDuplicate: Boolean(isEdit),
     }));
     if (delivered && delivered.forwardError) {
       log.warn('guided forward or poll failed', {
@@ -601,7 +608,8 @@ function attachHandlers(client, deps) {
         if (newBody === prevBody) return;
         if (msg) msg.body = newBody;
       }
-      await handleWaMessage(msg, { client, ...deps, isEdit: true });
+      if (deps.reviewQueue) deps.reviewQueue.voidByMessageId(incomingMessageId(msg), 'edited');
+      await handleWaMessage(msg, { client, ...deps });
     } catch (err) {
       log.error('message edit handler failed', { error: err.message });
     }
@@ -628,6 +636,9 @@ function attachHandlers(client, deps) {
       } else if (route.kind === 'already') {
         const wid = selfWid(client);
         if (wid) await client.sendMessage(wid, '已經處理咗。');
+      } else if (route.kind === 'voided') {
+        const wid = selfWid(client);
+        if (wid) await client.sendMessage(wid, VOIDED_POLL_TEXT);
       } else if (route.kind === 'review') {
         await confirmReviewChoice(
           client,

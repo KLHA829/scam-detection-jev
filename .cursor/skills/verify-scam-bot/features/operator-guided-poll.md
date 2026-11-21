@@ -9,6 +9,7 @@ In guided mode the bot forwards a suspicious DM to the operator's own chat, expl
 - `guided-defer` computes the decision and does not call archive or block until the choice arrives.
 - `mask-fail-poll` still shows the poll when the mask or the model fails. The card says `解釋暫時出唔到`.
 - `first-choice` runs the first answer and ignores a second one. 封鎖並封存 is the choice that blocks a saved contact.
+- `edit-voids-poll` voids the open review poll when the sender edits the message. A vote or quoted reply on the old poll does nothing and gets `呢個投票已作廢`. The edited text is reviewed again and gets a new poll only if it is still suspicious.
 
 ## How to get to it (user POV)
 
@@ -65,6 +66,16 @@ node --test --test-reporter tap \
 
 Exit code `0`. The first 封鎖並封存 confirmation matches `已封鎖並封存`. A later choice does not run.
 
+- **Edit voids the old poll.** Run:
+
+```bash
+node --test --test-reporter tap \
+  --test-name-pattern 'voids the guided poll when its message is edited|voids only the open review polls' \
+  lib/wa-handlers.test.js lib/unblock-poll.test.js
+```
+
+Exit code `0`. After an edit to `Hello`, 只封存 on the old poll archives nothing and the reply matches `作廢`. Editing back to the lookalike link opens a new poll.
+
 - **Proof.** Save TAP to `evidence/<UTC-stamp>-operator-guided-poll/node-test.txt`. It includes `ok` for `does not archive or block, and returns the bodies to desensitise` and for `still offers the poll when the explanation is unavailable`.
 
 ## Gotchas
@@ -72,6 +83,7 @@ Exit code `0`. The first 封鎖並封存 confirmation matches `已封鎖並封�
 - The explanation is requested only after `/v1/mask`. A failed mask skips the explanation and still shows the poll. The model cannot archive, block, or hide the card.
 - An explicit 封鎖並封存 is the only path that blocks a saved contact. Link heuristics and models do not auto-block.
 - The first choice on a review poll is the one that runs. A second vote is ignored.
+- An edit voids the open poll for that message. Unblock polls are not touched.
 - Until the setup poll is answered, the bot archives and does not block. That is a different wait from guided mode, which archives nothing until you choose.
 - `自動封鎖同封存` is today's automatic path: malicious-host list may block unsaved contacts; lookalike/short-link and scores archive only. The receipt feature then messages your own chat.
 - Replying `今日食飯` does not select a choice.
