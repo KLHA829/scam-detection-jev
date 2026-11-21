@@ -17,6 +17,7 @@ const runDir = path.join(skillDir, 'run');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'disabled review skips the context chat API and preserves link archives',
   'sends the masked recent messages and archives when the model says archive',
   'replaces phone, name, and otp with XXX and keeps the lure word',
   'does not call the model when masking fails',
@@ -26,6 +27,7 @@ const TEST_NAMES = [
 ];
 
 const TEST_FILES = [
+  'lib/llm-review-disabled.test.js',
   'lib/context-llm.test.js',
   'lib/audit-functions.test.js',
   'lib/scorer.test.js',
