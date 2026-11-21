@@ -61,9 +61,12 @@ const {
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
 
-function puppeteerArgs(uid = typeof process.getuid === 'function' ? process.getuid() : null) {
+function puppeteerArgs(
+  uid = typeof process.getuid === 'function' ? process.getuid() : null,
+  forceNoSandbox = process.env.PUPPETEER_NO_SANDBOX === '1',
+) {
   const args = ['--disable-dev-shm-usage'];
-  if (uid === 0) args.push('--no-sandbox', '--disable-setuid-sandbox');
+  if (uid === 0 || forceNoSandbox) args.push('--no-sandbox', '--disable-setuid-sandbox');
   return args;
 }
 

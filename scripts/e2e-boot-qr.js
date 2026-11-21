@@ -177,6 +177,7 @@ async function main() {
       LLM_REVIEW_ENABLED: 'true',
       LLM_REVIEW_COOLDOWN_MS: '0',
       LLM_REVIEW_COOLDOWN_PATH: path.join(runtimeDir, 'llm-review-cooldown.json'),
+      PUPPETEER_NO_SANDBOX: '1',
       OPERATOR_MODE: 'auto',
       OPERATOR_MODE_PATH: path.join(runtimeDir, 'operator-mode.json'),
       REVIEW_QUEUE_PATH: path.join(runtimeDir, 'review-queue.json'),
