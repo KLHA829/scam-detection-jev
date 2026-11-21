@@ -1,6 +1,7 @@
 # scam-detection-jev
 
 Personal **WhatsApp Web** bot: it masks PII on your machine, sends redacted text to an **OpenAI-compatible** chat API, archives suspicious 1:1 DMs, and blocks **unsaved** contacts only when a URL matches [`data/malicious-hosts.json`](data/malicious-hosts.json).
+An email address on a listed domain triggers archive, not automatic blocking.
 
 Local [jevlike](https://github.com/vinnylarouge/jevlike) serves **`POST /v1/mask`**. Judgment uses **`LLM_REVIEW_*`**. The frozen scam head (`jevlike_hf_chinese_roberta_r1.pt`) is for **lab eval** only. There is no LightJev or `SCORER=model_v2` path.
 
