@@ -32,6 +32,7 @@ const {
   shouldTriggerLlmReview,
   reviewRedactedMessage,
   mergeLlmDecision,
+  resolveChatCompletionsUrl,
 } = require('../lib/llm-review');
 
 function arg(name, fallback) {
@@ -156,7 +157,9 @@ async function main() {
         env,
         enabled: true,
         fetchImpl,
-        ...(LLM === 'dry' && !cfg.apiUrl ? { apiUrl: DRY_RUN_API_URL } : {}),
+        ...(LLM === 'dry' && !resolveChatCompletionsUrl(cfg.apiUrl)
+          ? { apiUrl: DRY_RUN_API_URL }
+          : {}),
       });
       if (!llmReview.ok) stats.failed_transport += 1;
     }
