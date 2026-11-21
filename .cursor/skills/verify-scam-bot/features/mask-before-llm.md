@@ -9,6 +9,7 @@ Before any chat-API call, the bot asks jevlike `POST /v1/mask` which characters 
 - `mask-incomplete` skips the chat API when the mask throws, is short a row, or has a non-integer span. The DM is not archived or blocked because the mask failed.
 - `mask-empty` accepts a span list of `[]`.
 - `review-disabled` skips both review paths with `LLM_REVIEW_ENABLED=false`, even with context on by default; link-rule hard archives still work (`node --test lib/llm-review-disabled.test.js` uses a real local HTTP chat endpoint).
+- `LLM_REVIEW_ALL=1` only changes legacy eval trigger gating; it does not re-enable review when `LLM_REVIEW_ENABLED=false` (`lib/llm-review.test.js` covers context default-on and off).
 - `mask-local-identity` attaches the chat-list name and phone on this machine. Those fields are not part of the mask request or the chat-API body.
 
 ## How to get to it (user POV)
