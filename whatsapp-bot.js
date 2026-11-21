@@ -563,7 +563,6 @@ async function handleWaMessage(msg, {
       rubric,
       queue: reviewQueue,
       exclusive: (fn) => pacer.exclusive(fn),
-      pause: () => pacer.pause(),
       forward: () => msg.forward(wid),
       sendText: (text) => client.sendMessage(wid, text),
       sendPoll: async (name, options) =>

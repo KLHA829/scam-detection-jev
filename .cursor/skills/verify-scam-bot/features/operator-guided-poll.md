@@ -5,8 +5,8 @@ In guided mode the bot forwards a suspicious DM to the operator's own chat, expl
 ## Guided explanation queue isolation
 
 `node --test lib/guided-latency.test.js` locks slow mask/LLM isolation from other
-chats' archives, same-chat delivery order, pacing, concurrent duplicate claims,
-and retry after delivery produces no poll. `node scripts/bench-guided-latency.js`
+chats' archives, same-chat delivery order, exclusive writes with no added pauses,
+concurrent duplicate claims, and retry after delivery produces no poll. `node scripts/bench-guided-latency.js`
 measures the same two-chat path with fixed mask/LLM latency.
 
 ## Sub-features
