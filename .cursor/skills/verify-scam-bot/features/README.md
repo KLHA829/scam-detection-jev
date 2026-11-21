@@ -38,6 +38,7 @@ Each feature file: H1 + paragraph, then `Sub-features`, `How to get to it (user 
 - [Link lookalike archive](./link-lookalike-archive.md) — lookalike or soliciting short link hard-archives; no auto-block.
 - [Malicious-host block](./malicious-host-block.md) — unsaved auto-block only for URLs on `data/malicious-hosts.json`.
 - [LLM review cooldown](./llm-review-cooldown.md) — per-chat skip of mask+LLM after a successful review (link rules still fire).
+- Malformed LLM confidence — malformed confidence is rejected and does not archive; [primary review tests](../../../../lib/llm-review-confidence.test.js) and [context review tests](../../../../lib/context-llm-confidence.test.js) cover invalid types and ranges, missing confidence, and valid confidence boundaries.
 - [Lab jevlike score](./lab-jevlike-score.md) — **lab-only** stub `/v1/score` and `lab/score-message` tests (not live inbound).
 - [Action receipt](./action-receipt.md) — operator self-chat receipt after archive/block.
 - [Guided poll](./operator-guided-poll.md) — guided mode waits for 封鎖並封存 / 只封存 / 留低.
