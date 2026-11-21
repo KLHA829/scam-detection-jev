@@ -14,7 +14,7 @@ Short loop for cloud or local agents working on **scam-detection-jev**. Verifica
 3. **Self-prove before claiming done** — Use [verify-scam-bot](../verify-scam-bot/SKILL.md):
    - `bin/doctor` when stub HTTP is involved (`worth_driving: yes`).
    - Relevant `bin/drive-*` for the area (live-path work: **`drive-mask-before-llm`** as primary smoke; invariants: `drive-agents-invariants`; block policy: `drive-malicious-host-block`; cooldown: `drive-llm-review-cooldown`; lab score only: `drive-score-archive`).
-   - `npm test` (and CI-equivalent `node scripts/review-eval.js --llm dry --mode triggers` when touching LLM fixtures).
+   - `npm test` (and CI-equivalent `node scripts/review-eval.js --llm dry --mode all` when touching LLM fixtures).
 4. **Open a PR** — Never merge unless a human explicitly asked to merge.
 5. **Swarm when units are independent** — Parallel agents or subtasks are fine; **each** unit still self-proves before the batch is “done.”
 6. **Human contact** — Do not ask humans for reversible mid-loop steps (branch, commit, run tests, open draft PR). **Stop and ask** only for product tradeoffs, secrets, live WhatsApp QR sessions, deleting operator data, or changes to block/archive invariants in AGENTS.md.

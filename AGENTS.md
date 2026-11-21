@@ -35,7 +35,8 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 
 - **Primary users are elderly; false block cost is extreme.** Saved contacts are **never** auto-blocked.
   Unsaved contacts block **only** when the current message URL matches a host in `data/malicious-hosts.json`
-  (exact or suffix). Lookalike hosts and soliciting short links **archive only** — they do not block.
+  (exact or suffix). Blocklisted email domains, lookalike hosts, and soliciting short links
+  **archive only** — they do not block.
   Models (context LLM, primary LLM) do not auto-block. **No jevlike score** drives live archive/block.
   Text such as 轉數快 or 驗證碼 does not archive or block by itself.
 - **Every** outbound LLM call is masked by jevlike `POST /v1/mask` first. The bot writes `XXX` over those spans and never sends the raw text or the span list. If the PII head is missing or the mask call fails, the LLM call is skipped (**fail closed**: no archive). The offline regex stub (`test/support/mask-spans-stub.js`) feeds `stub-jevlike.js` only so `npm test` does not load the encoder. Guided-mode explanations use the same mask. Archive/block receipts attach the chat-list name and phone locally; those fields are not added to the prompt.
@@ -126,5 +127,5 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 
 - Node 22 and Python 3.12 are on the default image. `python3-venv` is not, so a venv needs that package first. Scorer dependencies live in `.venv` (gitignored). Start the worker with `.venv/bin/python jevlike_serve.py`. `npm test` uses system `python3` and does not import torch.
 - The r1 head is not in git. `scripts/download_jevlike_ckpt.sh` writes `models/jevlike_hf_chinese_roberta_r1.pt`. The public release URL 404s on this private repo; the script falls back to `gh`. The frozen encoder `hfl/chinese-roberta-wwm-ext` caches under `~/.cache/huggingface`.
-- `npm test` is the offline check (no WhatsApp, no encoder download). CI also runs `node scripts/review-eval.js --llm dry --mode triggers` on `fixtures/review-eval-smoke.json`. Live mask: `POST /v1/mask` with `{"messages":["..."]}`. The worker does not read `.env`.
+- `npm test` is the offline check (no WhatsApp, no encoder download). CI also runs `node scripts/review-eval.js --llm dry --mode all` on `fixtures/review-eval-smoke.json`. Live mask: `POST /v1/mask` with `{"messages":["..."]}`. The worker does not read `.env`.
 - Do not launch `npm start` for routine verification. WhatsApp Web needs an interactive QR login and can log the session out. Chrome for that path is `npx puppeteer browsers install chrome` (not part of `npm ci`).
