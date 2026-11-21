@@ -240,7 +240,7 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
     return;
   }
   if (!record) {
-    await client.sendMessage(wid, '已經處理咗。');
+    await client.sendMessage(wid, queue.isPendingVoid(pollId) ? VOIDED_POLL_TEXT : '已經處理咗。');
     return;
   }
   const result = await applyReviewChoice(record, choice, {
