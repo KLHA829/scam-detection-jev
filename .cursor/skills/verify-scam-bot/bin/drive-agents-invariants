@@ -22,6 +22,7 @@ const TEST_NAMES = [
   'guided block preserves live names: unsaved unnamed contact',
   'guided block does not rename when live contact lookup fails',
   'guided reblocks from two pending polls retain temporary contact cleanup',
+  'does not delete a contact renamed during the wait before deletion',
   'invariant: saved contacts are never auto-blocked (blockEligibility stays null)',
   'invariant: unsaved jevlike score at or above BLOCK_THRESHOLD alone does not block',
   'invariant: unsaved lookalike link rule does not auto-block (archive only)',
@@ -39,7 +40,7 @@ const TEST_NAMES = [
   'invariant: unsaved lookalike archives without waiting on score and does not block',
 ];
 
-const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/guided-block-name.test.js'];
+const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/guided-block-name.test.js', 'lib/wa-actions.test.js'];
 
 const UNSET_ENV = [
   'ARCHIVE_THRESHOLD',
@@ -93,7 +94,7 @@ const testsOk = test.status === 0 && failLine === '# fail 0' && missing.length =
 
 const summary = {
   feature: 'agents-md-invariants',
-  entry: 'node --test lib/agents-invariants.test.js',
+  entry: `node --test ${TEST_FILES.join(' ')}`,
   scorer: 'in-process stub client (no HTTP worker)',
   whatsapp: 'not started',
   nodeTestExit: test.status,

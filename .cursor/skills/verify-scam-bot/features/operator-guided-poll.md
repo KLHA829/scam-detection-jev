@@ -88,6 +88,15 @@ Exit code `0`. Live saved names survive explicit blocks, unsaved contacts are re
 and unblock deletes the temporary contact even after two pending polls both block it.
 These cases also run in `bin/drive-agents-invariants` as part of the CI smoke.
 
+- **Contact renamed during unblock pacing.** Run:
+
+```bash
+node --test --test-name-pattern='does not delete a contact renamed during the wait before deletion' lib/wa-actions.test.js
+```
+
+Exit code `0`. A user rename while unblock waits before deletion is preserved;
+unblock and unmute still run. This also runs in `bin/drive-agents-invariants`.
+
 - **Unblock command history.** Run:
 
 ```bash
