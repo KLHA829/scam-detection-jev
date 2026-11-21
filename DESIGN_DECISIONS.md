@@ -26,7 +26,7 @@ Everything else goes through mask and an OpenAI-compatible review (`LLM_REVIEW_E
 
 After a successful primary or context review recommends archive, the same `chatId` skips further mask and LLM for `LLM_REVIEW_COOLDOWN_MS` (default 10 minutes). Automatic mode starts this window after the archive succeeds; guided mode starts it before the operator acts.
 
-The frozen scam head and **`POST /v1/score`** remain for offline eval (`lab/score-message.js`, `scripts/review-eval.js`). They do **not** gate live archive or block.
+The frozen scam head and **`POST /v1/score`** remain for lab scoring (`lab/score-message.js`). They do **not** gate live archive or block.
 
 ## Kept
 

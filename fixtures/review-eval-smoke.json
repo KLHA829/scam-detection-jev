@@ -2,42 +2,34 @@
   "ci_smoke": [
     {
       "label": 1,
-      "p_scam": 0.96,
       "context": "請立即轉帳到這個戶口，否則帳號會被凍結"
     },
     {
       "label": 0,
-      "p_scam": 0.04,
       "context": "今晚七點食飯？我 AA 轉你"
     },
     {
       "label": 0,
-      "p_scam": 0.12,
       "context": "順便問你週末有冇空幫手搬屋"
     },
     {
       "label": 1,
-      "p_scam": 0.88,
       "context": "你的包裹被海關扣留，按此連結付款"
     },
     {
       "label": 0,
-      "p_scam": 0.55,
       "context": "今晚方便傾兩句嗎？我電話 91234567"
     },
     {
       "label": 0,
-      "p_scam": 0.02,
       "context": "收到，多謝分享"
     },
     {
       "label": 1,
-      "p_scam": 0.05,
       "context": "登入 http://hsbc-secure-verify.evil.com 更新資料"
     },
     {
       "label": 0,
-      "p_scam": 0.91,
       "context": "只是提醒：千祈唔好把驗證碼俾陌生人"
     }
   ]

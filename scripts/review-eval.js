@@ -2,21 +2,20 @@
 'use strict';
 
 /**
- * Offline evaluation against a labelled HK corpus. **Product path (2026-10-16):** link heuristics
- * then mask → LLM (no live jevlike score). This script can still replay fixture `prob_scam` as a
- * legacy stage-1 input for `--mode triggers`; use `--mode all` to mirror production primary review.
+ * Offline evaluation against a labelled HK corpus: link heuristics then mask → LLM.
  *
  * Usage:
  *   node scripts/review-eval.js [--from-run fixtures/review-eval-smoke.json] [--split ci_smoke] \
  *   node scripts/review-eval.js --from-run ../jevlike-lab/runs/r1_head_only.json --split real_test \
- *        [--mode off|triggers|all] [--llm off|dry|live] [--sample 3]
+ *        [--mode off|all] [--llm off|dry|live] [--sample 3]
  *
- *   --mode  off (no LLM), triggers (legacy grey/high/conflict on fixture scores), all (primary: every non-heuristic DM)
+ *   --mode  off (default: no LLM), all (review every non-heuristic DM)
  *   --llm   off   = no call, merge is skipped        (numbers are meaningful)
  *           dry   = mask with the offline stub, capture the payload, DO NOT send, treat LLM as
  *                   unknown so every number stays honest ("what would have been asked");
  *                   needs no credentials, and exits 1 if any call fails to build a request
- *           live  = actually POST to LLM_REVIEW_API_URL (needs LLM_REVIEW_API_KEY or OPENAI_API_KEY)
+ *           live  = with --mode all, POST to LLM_REVIEW_API_URL using the offline stub mask;
+ *                   use only data safe to share (needs LLM_REVIEW_API_KEY or OPENAI_API_KEY)
  */
 
 const fs = require('fs');
@@ -45,29 +44,9 @@ const FROM_RUN = arg(
   path.join(__dirname, '..', 'fixtures', 'review-eval-smoke.json'),
 );
 const SPLIT = arg('split', 'ci_smoke');
-const MODE = arg('mode', 'triggers');
+const MODE = arg('mode', 'off');
 const LLM = arg('llm', 'off');
 const SAMPLE = Number(arg('sample', '3'));
-
-function finiteEnv(name, fallback) {
-  const raw = process.env[name];
-  if (raw == null || String(raw).trim() === '') return fallback;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-const ARCHIVE_THRESHOLD = finiteEnv('ARCHIVE_THRESHOLD', 42);
-const BLOCK_THRESHOLD = finiteEnv('BLOCK_THRESHOLD', 80);
-const SAFE_THRESHOLD = finiteEnv('SAFE_THRESHOLD', 18);
-
-function stage2Env() {
-  return {
-    ...process.env,
-    LLM_REVIEW_ENABLED: MODE === 'off' ? 'false' : 'true',
-    LLM_REVIEW_ALL: MODE === 'all' ? '1' : '0',
-    LLM_REVIEW_ON_HIGH: process.env.LLM_REVIEW_ON_HIGH || 'true',
-  };
-}
 
 // dry-run never sends, so it needs no credentials; this host is reserved and cannot resolve
 const DRY_RUN_API_URL = 'https://llm-review.dry-run.invalid/v1';
@@ -88,11 +67,15 @@ function dryTransport(sink) {
 }
 
 async function main() {
+  if (MODE !== 'off' && MODE !== 'all') {
+    throw new Error(`unsupported --mode ${MODE}; expected off or all`);
+  }
+
   const run = JSON.parse(fs.readFileSync(FROM_RUN, 'utf8'));
   const rows = run[SPLIT];
   if (!Array.isArray(rows)) throw new Error(`split ${SPLIT} not in ${FROM_RUN}`);
 
-  const env = stage2Env();
+  const env = process.env;
   const cfg = createLlmReviewConfig(env);
   const requests = [];
   const fetchImpl = LLM === 'dry' ? dryTransport(requests) : undefined;
@@ -109,31 +92,19 @@ async function main() {
 
   for (const r of rows) {
     const label = r.label === 1 ? 1 : 0;
-    const p = typeof r.p_scam === 'number' ? r.p_scam : 0;
     const text = r.context || '';
     stats.rows += 1;
     if (label === 1) stats.scam += 1; else stats.innocent += 1;
 
-    // stage 1 — exactly the shape lib/jevlike-client.js produces
-    const scoreResult = {
-      label: p * 100 >= ARCHIVE_THRESHOLD ? 'scam' : 'not_scam',
-      score: Math.round(p * 100),
-      prob_scam: p,
-      failed: false,
-      thresholds: { archive: ARCHIVE_THRESHOLD, block: BLOCK_THRESHOLD, safe: SAFE_THRESHOLD },
-    };
     const heuristic = matchObviousScam(text, env);
-    const decision = decideIncomingAction(scoreResult, '+85200000000', false, heuristic);
+    const decision = decideIncomingAction(null, null, false, heuristic);
 
     // stage 2 — the repo's own trigger + redaction + merge
     const trig = shouldTriggerLlmReview({
-      scoreResult,
       heuristic,
-      text,
-      formattedNumber: '+85200000000',
-      savedContact: false,
       decision,
       env,
+      enabled: MODE === 'all',
     });
     if (trig.trigger) {
       stats.triggered += 1;
@@ -167,7 +138,6 @@ async function main() {
     const merged = llmReview ? mergeLlmDecision(decision, llmReview, { env }) : decision;
     const finalDecision = applyBlockPolicy(merged, {
       savedContact: false,
-      scoreResult,
       heuristic,
       env,
     });
@@ -184,7 +154,7 @@ async function main() {
         stats.fp_archived += 1;
         if (blocked) stats.fp_blocked += 1;
         if (samples.fp.length < SAMPLE) {
-          samples.fp.push({ score: scoreResult.score, why: finalDecision.archiveReason, text: text.slice(0, 60) });
+          samples.fp.push({ why: finalDecision.archiveReason, text: text.slice(0, 60) });
         }
       } else {
         stats.tn += 1;
@@ -231,7 +201,7 @@ async function main() {
 
   if (samples.fp.length) {
     console.log('\n-- 誤封 樣本');
-    for (const s of samples.fp) console.log(`   score=${s.score} why=${s.why} | ${s.text}`);
+    for (const s of samples.fp) console.log(`   why=${s.why} | ${s.text}`);
   }
   if (samples.redacted.length) {
     console.log('\n-- 遮罩樣本 (本地 mapping 唔會 outbound)');
