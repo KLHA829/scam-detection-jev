@@ -11,6 +11,7 @@ After every completed archive or block, the bot messages the operator's own chat
 - `receipt-guide` adds `模型講解：` only when a guide was requested. A failed mask or a missing model yields `解釋暫時出唔到` and the receipt still goes out.
 - `edit-context` removes an edited message's original body before building the receipt or guided explanation, without consuming another slot in the bounded thread buffer. Run `node --test lib/thread-context.test.js`; `node scripts/demo-message-edit.js` prints both explanation paths with an echo-model stub.
 - `receipt-queue-isolation` prepares automatic explanations outside the WhatsApp write queue. Another chat's link-rule archive does not wait for that mask call; each receipt follows its archive attempt, and a block receipt and its unblock poll stay together in the write queue.
+- `ignore-skips-queue` keeps a message that ends in ignore out of the WhatsApp write queue, so it does not wait for another chat's paced block or archive.
 - `receipt-leave` answers 留低 with `已留低，冇封存亦冇封鎖。` and does not include the chat-list name.
 
 ## How to get to it (user POV)
@@ -38,6 +39,8 @@ node --test --test-reporter tap \
 Exit code `0`. The block receipt matches `已封鎖並封存`, `左邊：阿明`, and `電話：85290000000`, with no `分數` line. The unresolved-phone receipt matches `已封存，未封鎖` and `電話未解析到`.
 
 - **Queue isolation.** Run `node --test lib/receipt-latency.test.js`. A second chat archives within 150 ms while the first receipt's 250 ms mask call is pending. Success, failed mask, and failed archive cases retain their receipts and archive-before-receipt order. Reproduce medians with `node scripts/bench-receipt-latency.js` (five runs each at 0, 250, and 1000 ms mask delay).
+
+- **Ignore skips the write queue.** Run `node --test --test-name-pattern "does not queue an ignored message" lib/action-pacer.test.js`. Exit code `0`: two ignored messages from one chat return while another chat's write holds the queue, and `exclusive` is never called. Reproduce medians with `node scripts/bench-ignore-latency.js` (three runs each at 1000 and 3000 ms `WA_ACTION_GAP_MS`).
 
 - **Name and phone stay off the chat API.** Run:
 
