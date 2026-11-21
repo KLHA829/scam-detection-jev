@@ -83,6 +83,7 @@ _MASK_HEAD = None
 _MASK_THRESHOLD = 0.5
 _MASK_CFG: dict | None = None
 _MASK_PATH: Path | None = None
+_MASK_OPTION_CACHE = None
 DEFAULT_MASK_CKPT = ROOT / "models" / "jevlike_hf_pii_mask.pt"
 
 
@@ -539,6 +540,7 @@ def mask_coverage_truncated(text: str, offsets) -> bool:
 
 def model_mask_spans(text: str) -> list[dict]:
     """Character spans from the fine-tuned mask head. Empty when it is not loaded."""
+    global _MASK_OPTION_CACHE
     if _MASK_HEAD is None or _MODEL is None or _COLLATOR is None or _DEVICE is None:
         return []
     import torch
@@ -566,27 +568,31 @@ def model_mask_spans(text: str) -> list[dict]:
         return_offsets_mapping=True,
         return_tensors="pt",
     )
-    options = tokenizer(
-        [mask_option, keep_option],
-        truncation=True,
-        max_length=16,
-        add_special_tokens=True,
-        return_tensors="pt",
-        padding=True,
-    )
     encoded = {key: value.to(_DEVICE) for key, value in encoded.items()}
-    options = {key: value.to(_DEVICE) for key, value in options.items()}
+    option_key = (_MODEL.encoder, tokenizer, _DEVICE, mask_option, keep_option)
     with _SCORE_LOCK:
         with torch.no_grad():
             context_hidden = _MODEL.encoder(
                 input_ids=encoded["input_ids"],
                 attention_mask=encoded["attention_mask"],
             ).last_hidden_state
-            option_hidden = _MODEL.encoder(
-                input_ids=options["input_ids"],
-                attention_mask=options["attention_mask"],
-            ).last_hidden_state
-            pooled = pool_token_hidden(option_hidden, options["attention_mask"].bool())
+            if _MASK_OPTION_CACHE is None or _MASK_OPTION_CACHE[0] != option_key:
+                options = tokenizer(
+                    [mask_option, keep_option],
+                    truncation=True,
+                    max_length=16,
+                    add_special_tokens=True,
+                    return_tensors="pt",
+                    padding=True,
+                )
+                options = {key: value.to(_DEVICE) for key, value in options.items()}
+                option_hidden = _MODEL.encoder(
+                    input_ids=options["input_ids"],
+                    attention_mask=options["attention_mask"],
+                ).last_hidden_state
+                pooled = pool_token_hidden(option_hidden, options["attention_mask"].bool())
+                _MASK_OPTION_CACHE = (option_key, pooled)
+            pooled = _MASK_OPTION_CACHE[1]
             logits = mask_option_logits(_MASK_HEAD, context_hidden, pooled)
             probs = torch.sigmoid(logits)[0].detach().cpu().tolist()
     offsets = encoded["offset_mapping"][0].detach().cpu().tolist()
