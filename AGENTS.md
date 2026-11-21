@@ -35,7 +35,8 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 
 - **Primary users are elderly; false block cost is extreme.** Saved contacts are **never** auto-blocked.
   Unsaved contacts block **only** when the current message URL matches a host in `data/malicious-hosts.json`
-  (exact or suffix). Lookalike hosts and soliciting short links **archive only** — they do not block.
+  (exact or suffix). Blocklisted email domains, lookalike hosts, and soliciting short links
+  **archive only** — they do not block.
   Models (context LLM, primary LLM) do not auto-block. **No jevlike score** drives live archive/block.
   Text such as 轉數快 or 驗證碼 does not archive or block by itself.
 - **Every** outbound LLM call is masked by jevlike `POST /v1/mask` first. The bot writes `XXX` over those spans and never sends the raw text or the span list. If the PII head is missing or the mask call fails, the LLM call is skipped (**fail closed**: no archive). The offline regex stub (`test/support/mask-spans-stub.js`) feeds `stub-jevlike.js` only so `npm test` does not load the encoder. Guided-mode explanations use the same mask. Archive/block receipts attach the chat-list name and phone locally; those fields are not added to the prompt.
