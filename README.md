@@ -140,7 +140,6 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `LLM_REVIEW_MIN_CONFIDENCE` | `0.7` | Minimum confidence for primary or context review to archive. |
 | `LLM_REVIEW_COOLDOWN_MS` | `600000` | Per-chat cooldown in ms after successful automatic archive or guided archive recommendation; nonpositive disables it. |
 | `LLM_REVIEW_COOLDOWN_PATH` | `./llm-review-cooldown.json` | Persist cooldown across restarts. Save failure keeps it in memory only. |
-| `RUBRIC_PATH` | Repo `scoring-rubric.json` | Rubric file override; jevlike score thresholds are lab-only, not live archive decisions. |
 | `PUPPETEER_EXECUTABLE_PATH` | Unset | Override Puppeteer's browser executable. |
 | `PUPPETEER_NO_SANDBOX` | Unset | Exactly `1` disables Chromium sandboxing. Root already disables it; do not opt in unless required. |
 | `PUPPETEER_SKIP_DOWNLOAD` | Unset | Puppeteer installation option to skip browser download, not a bot behavior flag. |

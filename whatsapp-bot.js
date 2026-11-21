@@ -8,7 +8,6 @@ const qrcode = require('qrcode-terminal');
 
 const log = require('./lib/log');
 const { createMaskClient } = require('./lib/jevlike-client');
-const { loadRubric } = require('./lib/score-message');
 const {
   processIncomingMessage,
 } = require('./lib/handle-incoming');
@@ -487,7 +486,6 @@ async function handleWaMessage(msg, {
   threadContext,
   recentContext,
   maskClient,
-  rubric,
   llmReview,
   contextLlm,
   env,
@@ -527,7 +525,6 @@ async function handleWaMessage(msg, {
     {
       env,
       maskClient,
-      rubric,
       llmReview,
       contextLlm,
       threadContext,
@@ -700,8 +697,6 @@ function attachHandlers(client, deps) {
 }
 
 async function main() {
-  const rubricPath = process.env.RUBRIC_PATH || undefined;
-  const rubric = loadRubric(rubricPath);
   const maskClient = createMaskClient();
   const llmReview = createLlmReviewConfig();
   const contextOn = contextLlmEnabled();
@@ -738,9 +733,6 @@ async function main() {
 
   log.info('starting WhatsApp scam-risk bot (mask + LLM primary, malicious-host block)', {
     maskWorker: maskClient.baseURL,
-    archiveThreshold: rubric.thresholds.archive,
-    blockThreshold: rubric.thresholds.block,
-    safeThreshold: rubric.thresholds.safe,
     waActionGapMs: pacer.gapMs,
     contextTurns: threadContext.turns,
     llmReviewEnabled: Boolean(llmReview.enabled),
@@ -755,7 +747,6 @@ async function main() {
 
   attachHandlers(client, {
     maskClient,
-    rubric,
     llmReview,
     pacer,
     threadContext,

@@ -239,7 +239,6 @@ async function executeScenario({
   const { JevlikeClient } = require('../lib/jevlike-client');
   const { processIncomingMessage } = require('../lib/handle-incoming');
   const { blockAndRename } = require('../lib/wa-actions');
-  const { loadRubric } = require('../lib/score-message');
   const { createLlmReviewCooldownStore } = require(
     '../lib/llm-review-cooldown',
   );
@@ -277,7 +276,6 @@ async function executeScenario({
       {
         env,
         maskClient,
-        rubric: loadRubric(undefined, env),
         resolveNumber: async () => ({
           digits: contact.number,
           unresolvedLid: false,

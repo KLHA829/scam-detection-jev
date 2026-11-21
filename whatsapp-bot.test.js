@@ -470,7 +470,6 @@ describe('processIncomingMessage', () => {
             return {};
           },
         },
-        rubric,
       },
     );
     assert.equal(out.ignored, true);
@@ -520,7 +519,6 @@ describe('processIncomingMessage', () => {
             throw new Error('mask timeout');
           },
         },
-        rubric,
         llmReview: { enabled: true, apiUrl: 'http://llm.test/v1', fetchImpl: async () => { throw new Error('no'); } },
         resolveNumber: async () => ({
           digits: '85261234567',

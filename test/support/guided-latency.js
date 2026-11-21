@@ -7,7 +7,6 @@ const { performance } = require('node:perf_hooks');
 const { handleWaMessage } = require('../../whatsapp-bot');
 const { createActionPacer } = require('../../lib/action-pacer');
 const { createReviewQueue } = require('../../lib/review-queue');
-const { loadRubric } = require('../../lib/score-message');
 
 async function measureGuidedLatency(delayMs, { stage = 'mask', fails = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'guided-latency-'));
@@ -35,7 +34,6 @@ async function measureGuidedLatency(delayMs, { stage = 'mask', fails = false } =
       },
     },
     pacer: createActionPacer({ env: { WA_ACTION_GAP_MS: '0' } }),
-    rubric: loadRubric(),
     env: { CONTEXT_LLM_ENABLED: '0', LLM_REVIEW_COOLDOWN_MS: '0' },
     operator: { mode: () => 'guided', awaitingChoice: () => false },
     reviewQueue: createReviewQueue({ filePath: path.join(dir, 'queue.json') }),

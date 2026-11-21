@@ -118,6 +118,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 | Verify skill smoke is mask-primary | `lib/agent-trust.test.js` (`verify-scam-bot` + `verify-scam-detection-jev` redirect/shims) |
 | No live jevlike score on inbound | `lib/agent-trust.test.js` (no `scoreMessage` in `handle-incoming`); `lab/score-message.js` quarantine |
 | Live path uses `maskClient` / `createMaskClient` | `lib/agent-trust.test.js` (no `scoreClient` in `handle-incoming`, `whatsapp-bot.js`) |
+| Live bot boots and handles DMs without `scoring-rubric.json` | `lib/agent-trust.test.js` (no `loadRubric` / `RUBRIC_PATH` in `handle-incoming`, `whatsapp-bot.js`) |
 | No model / lookalike / score auto-block | `lib/agents-invariants.test.js`, `lib/block-policy.test.js` |
 | Malicious-host match not starved by lookalike order | `lib/link-rules.js` order; `lib/link-rules.test.js` dual-hit case |
 | Mask fail-closed (no archive on mask fail) | `lib/agents-invariants.test.js` |
