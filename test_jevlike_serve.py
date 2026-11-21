@@ -7,9 +7,105 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import jevlike_serve as serve
+
+
+def tiny_mask_runtime(torch):
+    class Tokenizer:
+        option_calls = 0
+
+        def __call__(self, text, max_length, **kwargs):
+            is_options = isinstance(text, list)
+            self.option_calls += int(is_options)
+            rows = text if is_options else [text]
+            ids = [[0] + [ord(ch) % 97 + 1 for ch in row] + [0] for row in rows]
+            width = min(max(map(len, ids)), max_length)
+            ids = [row[:width] + [0] * max(0, width - len(row)) for row in ids]
+            tokens = torch.tensor(ids)
+            result = {"input_ids": tokens, "attention_mask": (tokens != 0).long()}
+            if not is_options:
+                offsets = [[0, 0]] + [[i, i + 1] for i in range(len(text))] + [[0, 0]]
+                result["offset_mapping"] = torch.tensor([offsets[:width]])
+            return result
+
+    class Encoder:
+        calls = 0
+        option_calls = 0
+
+        def __call__(self, input_ids, attention_mask):
+            self.calls += 1
+            self.option_calls += int(input_ids.shape[0] == 2)
+            hidden = torch.sin(input_ids.float().unsqueeze(-1) + torch.arange(64))
+            return SimpleNamespace(last_hidden_state=hidden)
+
+    class Head:
+        rank = 64
+        context_norm = staticmethod(lambda value: value)
+        option_norm = staticmethod(lambda value: value)
+        query = staticmethod(lambda value: value)
+        key = staticmethod(lambda value: value)
+
+    return {
+        "_MODEL": SimpleNamespace(encoder=Encoder()),
+        "_COLLATOR": SimpleNamespace(tokenizer=Tokenizer()),
+        "_DEVICE": torch.device("cpu"),
+        "_MASK_HEAD": Head(),
+        "_MASK_CFG": {"context_tokens": 96},
+        "_MASK_THRESHOLD": 0.5,
+        "_MASK_OPTION_CACHE": None,
+    }
+
+
+class MaskOptionCacheTests(unittest.TestCase):
+    def test_cached_and_uncached_rows_are_bit_identical(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("torch is not installed")
+        import pii_mask_head
+
+        runtime = tiny_mask_runtime(torch)
+        rows = ["電話91234567", "普通訊息", "😀 驗證碼123456", "", "abc@example.com"] * 2
+        logits = []
+        original = pii_mask_head.mask_option_logits
+
+        def record(*args):
+            result = original(*args)
+            logits.append(result.clone())
+            return result
+
+        with patch.multiple(serve, **runtime), patch.object(
+            pii_mask_head, "mask_option_logits", side_effect=record
+        ):
+            cached = serve.mask_payload(rows)
+            self.assertEqual(runtime["_MODEL"].encoder.calls, 11)
+            self.assertEqual(runtime["_MODEL"].encoder.option_calls, 1)
+            self.assertEqual(runtime["_COLLATOR"].tokenizer.option_calls, 1)
+            self.assertTrue(any(row["spans"] for row in cached["messages"]))
+            uncached = []
+            for row in rows:
+                serve._MASK_OPTION_CACHE = None
+                uncached.append({"spans": serve.model_mask_spans(row)})
+            self.assertEqual(cached["messages"], uncached)
+            for before, after in zip(logits[:10], logits[10:]):
+                self.assertTrue(torch.equal(before, after))
+            self.assertEqual(serve.mask_payload([])["messages"], [])
+            serve._MODEL = tiny_mask_runtime(torch)["_MODEL"]
+            serve.model_mask_spans("new model")
+            self.assertEqual(serve._MODEL.encoder.option_calls, 1)
+            serve.model_mask_spans("next request")
+            self.assertEqual(serve._MODEL.encoder.option_calls, 1)
+            serve._MASK_CFG = {"mask_option": "custom mask"}
+            serve.model_mask_spans("custom options")
+            self.assertEqual(serve._MODEL.encoder.option_calls, 2)
+            with self.assertRaises(serve.MaskTruncated):
+                serve.model_mask_spans("x" * 100)
+            with patch.object(serve, "_MASK_HEAD", None):
+                with self.assertRaises(RuntimeError):
+                    serve.mask_payload(["private"])
 
 
 class ScamProbabilityTests(unittest.TestCase):
