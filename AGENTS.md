@@ -62,6 +62,8 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 
 ## Current state (update with the date when it changes) — 2026-11-21
 
+- Successful poll and command unblocks append to `BLOCK_LOG_PATH`; recent blocks and history-based 解除 skip unblocked contacts until they are blocked again (2026-11-21).
+
 - Short-link impersonation requires affirmative self-identification or a WhatsApp official header; bare authority mentions and anti-scam advice such as 銀行職員唔會叫你撳 bit.ly/xxx go to mask → LLM rather than rule-only archive (2026-11-21).
 - Automatic blocks refresh contact state after pacing, before blocking and renaming; saved or unknown contacts downgrade to archive-only before block. Explicit guided blocks retain their saved-contact permission.
 - Edits invalidate pending guided deliveries as well as open polls, bypassing recommendation cooldown; stale deliveries do not publish new cards, and polls already in flight are registered void.
