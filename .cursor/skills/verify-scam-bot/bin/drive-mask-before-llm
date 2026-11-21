@@ -17,6 +17,9 @@ const runDir = path.join(skillDir, 'run');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'LLM_REVIEW_ALL does not override explicitly disabled review',
+  'LLM_REVIEW_ALL keeps inbound review disabled with context default',
+  'LLM_REVIEW_ALL keeps inbound review disabled with context 0',
   'full mask endpoint reaches review through the real inbound handler',
   'endpoint resolution normalizes shared mask bases and preserves score aliases',
   'disabled review skips the context chat API and preserves link archives',
@@ -29,6 +32,7 @@ const TEST_NAMES = [
 ];
 
 const TEST_FILES = [
+  'lib/llm-review.test.js',
   'lib/jevlike-base-url.test.js',
   'lib/llm-review-disabled.test.js',
   'lib/context-llm.test.js',
