@@ -6,7 +6,8 @@ In automatic mode, a successful primary or context LLM review starts the per-cha
 
 - `same-chat-skip` — after an LLM archive, a second message in the window → `skipped: cooldown`.
 - `archive-failure-retry` — after an automatic archive fails, a follow-up can still be reviewed.
-- `cooldown-write-failure` — an unwritable cooldown file does not block an automatic archive; the current process still tracks cooldown.
+- `cooldown-write-failure` — an unwritable cooldown file does not block an automatic archive or a guided review and archive vote; cooldown still works in memory.
+- `prune-write-failure` — startup loads active cooldowns and drops expired ones in memory even when it cannot write the pruned file.
 - `persist-restart` — a saved cooldown is reloaded from disk on `npm start` and remains active until expiry.
 - `heuristic-inside-window` — lookalike hard archive without LLM.
 
@@ -27,9 +28,8 @@ Preconditions: repo root; stub not required.
 Or manually:
 
 ```bash
-node --test --test-reporter tap \
-  --test-name-pattern 'processIncomingMessage llm cooldown' \
-  lib/llm-review-cooldown.test.js
+LLM_REVIEW_COOLDOWN_MS=0 node --test --test-reporter tap \
+  lib/llm-review-cooldown.test.js lib/wa-handlers.test.js
 ```
 
 Save TAP under `evidence/<UTC-stamp>-llm-review-cooldown/`.
