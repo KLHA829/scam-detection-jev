@@ -2,6 +2,13 @@
 
 In guided mode the bot forwards a suspicious DM to the operator's own chat, explains it only after `POST /v1/mask`, and waits. Nothing is archived or blocked until the operator picks 封鎖並封存, 只封存, or 留低. The explanation model cannot press a choice.
 
+## Guided explanation queue isolation
+
+`node --test lib/guided-latency.test.js` locks slow mask/LLM isolation from other
+chats' archives, same-chat delivery order, pacing, concurrent duplicate claims,
+and retry after delivery produces no poll. `node scripts/bench-guided-latency.js`
+measures the same two-chat path with fixed mask/LLM latency.
+
 ## Sub-features
 
 - `setup-poll` asks `呢個 bot 點處理可疑訊息？` with 自動封鎖同封存 and 逐條問我. Until that poll is answered, suspicious chats are archived and nobody is blocked. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Sending `設定` in the operator's own chat asks again.

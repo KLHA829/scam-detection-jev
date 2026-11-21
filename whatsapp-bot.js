@@ -555,13 +555,15 @@ async function handleWaMessage(msg, {
     return result;
   }
   try {
-    const delivered = await pacer.exclusive(() => deliverGuidedReview({
+    const delivered = await deliverGuidedReview({
       result: { ...result, listName },
       maskClient,
       llmReview,
       env: process.env,
       rubric,
       queue: reviewQueue,
+      exclusive: (fn) => pacer.exclusive(fn),
+      pause: () => pacer.pause(),
       forward: () => msg.forward(wid),
       sendText: (text) => client.sendMessage(wid, text),
       sendPoll: async (name, options) =>
@@ -569,7 +571,7 @@ async function handleWaMessage(msg, {
           wid,
           new Poll(name, options, { allowMultipleAnswers: false }),
         ),
-    }));
+    });
     if (delivered && delivered.forwardError) {
       log.warn('guided forward or poll failed', {
         chatId,
