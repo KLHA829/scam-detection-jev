@@ -3,7 +3,6 @@
 const { performance } = require('node:perf_hooks');
 const { handleWaMessage } = require('../../whatsapp-bot');
 const { createActionPacer } = require('../../lib/action-pacer');
-const { loadRubric } = require('../../lib/score-message');
 
 async function measureReceiptLatency(delayMs, { maskFails = true, archiveFails = false } = {}) {
   const events = [];
@@ -26,7 +25,6 @@ async function measureReceiptLatency(delayMs, { maskFails = true, archiveFails =
   const deps = {
     client,
     pacer: createActionPacer({ env: { WA_ACTION_GAP_MS: '0' } }),
-    rubric: loadRubric(),
     env: { CONTEXT_LLM_ENABLED: '0', LLM_REVIEW_COOLDOWN_MS: '0' },
     maskClient: {
       async maskMessages(messages) {
