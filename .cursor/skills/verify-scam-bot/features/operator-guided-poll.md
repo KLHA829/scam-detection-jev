@@ -18,6 +18,7 @@ measures the same two-chat path with fixed mask/LLM latency.
 - `mask-fail-poll` still shows the poll when the mask or the model fails. The card says `解釋暫時出唔到`.
 - `malformed-guide` rejects non-string or empty model explanations without coercing objects or arrays into card text. Run `node --test --test-name-pattern='uses fallback text for malformed guided explanations' lib/operator-review.test.js`; the card says `解釋暫時出唔到` and still offers the poll.
 - `first-choice` runs the first answer and ignores a second one. 封鎖並封存 is the choice that blocks a saved contact.
+- `live-contact-name` preserves a contact saved or named after the poll was sent while still blocking on explicit confirmation. Unsaved contacts keep the bot label; a second pending poll recognises that temporary label and retains unblock cleanup metadata.
 - `edit-voids-poll` voids the open review poll when the sender edits the message. A vote or quoted reply on the old poll does nothing and gets `呢個投票已作廢`. The edited text is reviewed again and gets a new poll only if it is still suspicious.
 
 ## How to get to it (user POV)
@@ -77,7 +78,17 @@ node --test --test-reporter tap \
 
 Exit code `0`. The first 封鎖並封存 confirmation matches `已封鎖並封存`. A later choice does not run.
 
-- **Unblock history after failed attempts or reblocks.** Run:
+- **Live contact names and repeated guided blocks.** Run:
+
+```bash
+node --test lib/guided-block-name.test.js
+```
+
+Exit code `0`. Live saved names survive explicit blocks, unsaved contacts are renamed,
+and unblock deletes the temporary contact even after two pending polls both block it.
+These cases also run in `bin/drive-agents-invariants` as part of the CI smoke.
+
+- **Unblock command history.** Run:
 
 ```bash
 node --test --test-name-pattern='limits successful block history only after filtering failed attempts|uses the newest successful reblock metadata while preserving open poll priority' lib/operator-commands.test.js

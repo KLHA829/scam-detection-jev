@@ -16,6 +16,12 @@ const root = path.resolve(skillDir, '../../..');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'guided block preserves live names: saved named contact',
+  'guided block preserves live names: saved unnamed contact',
+  'guided block preserves live names: named contact without saved flag',
+  'guided block preserves live names: unsaved unnamed contact',
+  'guided block does not rename when live contact lookup fails',
+  'guided reblocks from two pending polls retain temporary contact cleanup',
   'invariant: saved contacts are never auto-blocked (blockEligibility stays null)',
   'invariant: unsaved jevlike score at or above BLOCK_THRESHOLD alone does not block',
   'invariant: unsaved lookalike link rule does not auto-block (archive only)',
@@ -33,7 +39,7 @@ const TEST_NAMES = [
   'invariant: unsaved lookalike archives without waiting on score and does not block',
 ];
 
-const TEST_FILES = ['lib/agents-invariants.test.js'];
+const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/guided-block-name.test.js'];
 
 const UNSET_ENV = [
   'ARCHIVE_THRESHOLD',
