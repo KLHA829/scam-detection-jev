@@ -81,7 +81,7 @@ function dryTransport(sink) {
       status: 200,
       text: async () =>
         JSON.stringify({
-          choices: [{ message: { content: '{"label":"unknown","reason":"dry-run"}' } }],
+          choices: [{ message: { content: '{"label":"unknown","confidence":0,"reason":"dry-run"}' } }],
         }),
     };
   };
