@@ -28,7 +28,7 @@ const { createActionPacer } = require('./lib/action-pacer');
 const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-context');
 const { createOperatorState } = require('./lib/operator-mode');
 const { createReviewQueue } = require('./lib/review-queue');
-const { deliverGuidedReview } = require('./lib/deliver-review');
+const { deliverGuidedReview, invalidatePendingGuidedReview } = require('./lib/deliver-review');
 const { applyReviewChoice, applyUnblockChoice } = require('./lib/apply-review-choice');
 const { chatListName, composeActionNotice } = require('./lib/action-notice');
 const {
@@ -232,7 +232,14 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
     await client.sendMessage(wid, '已經處理咗。');
     return;
   }
-  const record = queue.consume(pollId);
+  let record;
+  try {
+    record = queue.consume(pollId);
+  } catch (err) {
+    log.error('review choice save failed', { error: err.message });
+    await pacer.exclusive(() => client.sendMessage(wid, '儲存選擇失敗，未執行操作。請稍後再試。'));
+    return;
+  }
   if (!record) {
     await client.sendMessage(wid, '已經處理咗。');
     return;
@@ -280,7 +287,14 @@ async function confirmUnblockChoice(client, queue, pacer, choice, pollId) {
     await client.sendMessage(wid, '已經處理咗。');
     return;
   }
-  const record = queue.consume(pollId);
+  let record;
+  try {
+    record = queue.consume(pollId);
+  } catch (err) {
+    log.error('unblock choice save failed', { error: err.message });
+    await pacer.exclusive(() => client.sendMessage(wid, '儲存選擇失敗，未執行操作。請稍後再試。'));
+    return;
+  }
   if (!record) {
     await client.sendMessage(wid, '已經處理咗。');
     return;
@@ -538,6 +552,7 @@ async function handleWaMessage(msg, {
           digits: info && info.digits,
           contactName: info && info.contactName,
           pause: () => pacer.pause(),
+          refreshUnsavedContact: () => msg.getContact(),
         }),
     },
   );
@@ -616,13 +631,16 @@ function attachHandlers(client, deps) {
         if (newBody === prevBody) return;
         if (msg) msg.body = newBody;
       }
+      const invalidated = deps.reviewQueue
+        ? invalidatePendingGuidedReview(deps.reviewQueue, incomingMessageId(msg))
+        : 0;
       const voided = deps.reviewQueue
         ? deps.reviewQueue.voidByMessageId(incomingMessageId(msg), 'edited')
         : [];
       await handleWaMessage(msg, {
         client,
         ...deps,
-        bypassLlmCooldown: voided.length > 0,
+        bypassLlmCooldown: voided.length + invalidated > 0,
         editedFrom: typeof prevBody === 'string' ? prevBody : null,
       });
     } catch (err) {
