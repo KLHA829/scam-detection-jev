@@ -63,6 +63,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 ## Current state (update with the date when it changes) — 2026-11-21
 
 - Automatic blocks refresh contact state after pacing, before blocking and renaming; saved or unknown contacts downgrade to archive-only before block. Explicit guided blocks retain their saved-contact permission.
+- Edits invalidate pending guided deliveries as well as open polls, bypassing recommendation cooldown; stale deliveries do not publish new cards, and polls already in flight are registered void.
 
 - Automatic LLM cooldown starts only after a successful archive; guided cooldown starts on the recommendation. Benign and low-confidence reviews do not suppress follow-up messages. An edit that voids a guided poll re-reviews the edited text even during the cooldown; the context review sees the edited text in place of the original.
 - Bare-host lookalike checks require a two-letter or common TLD; uncommon-TLD bare hosts remain eligible for malicious-host matching.

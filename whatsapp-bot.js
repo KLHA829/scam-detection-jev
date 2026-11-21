@@ -28,7 +28,7 @@ const { createActionPacer } = require('./lib/action-pacer');
 const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-context');
 const { createOperatorState } = require('./lib/operator-mode');
 const { createReviewQueue } = require('./lib/review-queue');
-const { deliverGuidedReview } = require('./lib/deliver-review');
+const { deliverGuidedReview, invalidatePendingGuidedReview } = require('./lib/deliver-review');
 const { applyReviewChoice, applyUnblockChoice } = require('./lib/apply-review-choice');
 const { chatListName, composeActionNotice } = require('./lib/action-notice');
 const {
@@ -617,13 +617,16 @@ function attachHandlers(client, deps) {
         if (newBody === prevBody) return;
         if (msg) msg.body = newBody;
       }
+      const invalidated = deps.reviewQueue
+        ? invalidatePendingGuidedReview(deps.reviewQueue, incomingMessageId(msg))
+        : 0;
       const voided = deps.reviewQueue
         ? deps.reviewQueue.voidByMessageId(incomingMessageId(msg), 'edited')
         : [];
       await handleWaMessage(msg, {
         client,
         ...deps,
-        bypassLlmCooldown: voided.length > 0,
+        bypassLlmCooldown: voided.length + invalidated > 0,
         editedFrom: typeof prevBody === 'string' ? prevBody : null,
       });
     } catch (err) {
