@@ -107,6 +107,7 @@ node --test --test-reporter tap \
 ```
 
 Exit code `0`. After an edit to `Hello`, 只封存 on the old poll archives nothing and the reply matches `作廢`. Editing back to the lookalike link opens a new poll.
+A failed queue write leaves the old poll open in memory and on disk. Retrying the edit after storage recovers voids the old poll and re-reviews the edited text despite the LLM cooldown.
 
 - **Proof.** Save TAP to `evidence/<UTC-stamp>-operator-guided-poll/node-test.txt`. It includes `ok` for `does not archive or block, and returns the bodies to desensitise` and for `still offers the poll when the explanation is unavailable`.
 
