@@ -14,7 +14,8 @@
  *   --mode  off (no LLM), triggers (legacy grey/high/conflict on fixture scores), all (primary: every non-heuristic DM)
  *   --llm   off   = no call, merge is skipped        (numbers are meaningful)
  *           dry   = mask with the offline stub, capture the payload, DO NOT send, treat LLM as
- *                   unknown so every number stays honest ("what would have been asked")
+ *                   unknown so every number stays honest ("what would have been asked");
+ *                   needs no credentials, and exits 1 if any call fails to build a request
  *           live  = actually POST to LLM_REVIEW_API_URL (needs LLM_REVIEW_API_KEY or OPENAI_API_KEY)
  */
 
@@ -31,6 +32,7 @@ const {
   shouldTriggerLlmReview,
   reviewRedactedMessage,
   mergeLlmDecision,
+  resolveChatCompletionsUrl,
 } = require('../lib/llm-review');
 
 function arg(name, fallback) {
@@ -66,6 +68,9 @@ function stage2Env() {
     LLM_REVIEW_ON_HIGH: process.env.LLM_REVIEW_ON_HIGH || 'true',
   };
 }
+
+// dry-run never sends, so it needs no credentials; this host is reserved and cannot resolve
+const DRY_RUN_API_URL = 'https://llm-review.dry-run.invalid/v1';
 
 // dry-run transport: records the outbound request, never sends it, answers `unknown`
 function dryTransport(sink) {
@@ -148,7 +153,13 @@ async function main() {
       }
       stats.called += 1;
       llmReview = await reviewRedactedMessage(redacted, {
-        ...cfg, env, enabled: true, fetchImpl,
+        ...cfg,
+        env,
+        enabled: true,
+        fetchImpl,
+        ...(LLM === 'dry' && !resolveChatCompletionsUrl(cfg.apiUrl)
+          ? { apiUrl: DRY_RUN_API_URL }
+          : {}),
       });
       if (!llmReview.ok) stats.failed_transport += 1;
     }
@@ -229,6 +240,9 @@ async function main() {
   if (LLM === 'dry') {
     console.log(`\n-- dry run: 建好 ${requests.length} 個 request，冇送出（未計任何判斷）`);
     if (requests[0]) console.log(`   url=${requests[0].url}\n   body=${JSON.stringify(requests[0].body).slice(0, 400)}`);
+  }
+  if (LLM === 'dry' && requests.length !== stats.called) {
+    throw new Error(`dry run built ${requests.length} of ${stats.called} LLM requests`);
   }
   if (LLM === 'live') {
     console.log('\n注意：live 模式嘅數字取決於你用邊個 model，需自行記錄 model id 同呼叫數。');
