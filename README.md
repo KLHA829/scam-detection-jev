@@ -114,7 +114,7 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `JEVLIKE_TIMEOUT_MS` | `30000` | Bot's worker request timeout in ms. |
 | `JEVLIKE_HOST`, `JEVLIKE_PORT` | `127.0.0.1`, `8766` | Worker bind address and port (stub also reads the port). Avoid an open bind without auth. |
 | `JEVLIKE_MAX_BODY` | `65536` | Maximum worker HTTP body bytes; larger requests return 413. |
-| `JEVLIKE_DEVICE` | `cpu` | Worker device; unavailable CUDA falls back to CPU. |
+| `JEVLIKE_DEVICE` | `cpu` | Worker device. Only exactly `cuda` checks CUDA availability and falls back to CPU when unavailable; `cuda:0` and other device strings bypass that check. |
 | `JEVLIKE_CKPT`, `JEVLIKE_CHECKPOINT` | `models/jevlike_hf_chinese_roberta_r1.pt` | Scorer/encoder checkpoint; first nonempty setting wins, then the default file. Missing file is an error. Scoring is lab-only. |
 | `JEVLIKE_ENCODER`, `JEVLIKE_HF_MODEL` | Checkpoint `hf_model`, then `hfl/chinese-roberta-wwm-ext` | Encoder overrides, in that precedence order. |
 | `JEVLIKE_OPTIONS` | `not_scam,scam` | Scorer labels (lab); requires at least two. |
