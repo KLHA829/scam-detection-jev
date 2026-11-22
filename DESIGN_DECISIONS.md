@@ -10,6 +10,8 @@ Primary users are elderly. A wrong block cuts off family and caregivers. The bot
 
 Lookalike hosts and soliciting short links **archive** only. They do not block. Primary and context LLMs **archive** at most. They do not block. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block by themselves.
 
+English OTP advice with a directly negated disclosure verb (for example, “never send”, “don't share”, “won't ask you to send”, or “no one will ask you to send”) does not count as a soliciting short link. Like Chinese negated advice, it goes through mask → LLM unless another link rule matches. Negation removes only that verb, not later requests: “don't hesitate to send me your OTP”, “never mind, send me your OTP”, and a separate affirmative request still qualify. Affirmative “share the OTP code” requests also qualify. English negation never crosses line breaks or intervening free-form clauses; this is a scoped heuristic, not a general English parser.
+
 ## Why mask before any external LLM
 
 PII must not leave the machine in clear text. The jevlike **PII head** (`POST /v1/mask`) returns character spans. The bot replaces those spans with `XXX` and sends only redacted text to the chat API. Guided-mode Cantonese explanations use the same mask.
