@@ -16,6 +16,15 @@ const root = path.resolve(skillDir, '../../..');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'handles operator text commands only in self chat',
+  'checks self-chat identity: own LID',
+  'checks self-chat identity: own phone with LID wid',
+  'checks self-chat identity: direct LID wid',
+  'checks self-chat identity: another LID',
+  'checks self-chat identity: unrelated mapping',
+  'checks self-chat identity: empty mapping',
+  'checks self-chat identity: missing mapping API',
+  'checks self-chat identity: failed mapping',
   'guided block preserves live names: saved named contact',
   'guided block preserves live names: saved unnamed contact',
   'guided block preserves live names: named contact without saved flag',
@@ -40,7 +49,7 @@ const TEST_NAMES = [
   'invariant: unsaved lookalike archives without waiting on score and does not block',
 ];
 
-const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/guided-block-name.test.js', 'lib/wa-actions.test.js'];
+const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/guided-block-name.test.js', 'lib/wa-actions.test.js', 'lib/wa-handlers.test.js'];
 
 const UNSET_ENV = [
   'ARCHIVE_THRESHOLD',

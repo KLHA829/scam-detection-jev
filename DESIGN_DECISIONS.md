@@ -84,7 +84,7 @@ Live DM, after filters:
 
 1. Link rule on the **current** message → archive `obvious_scam`. Skip LLM. Lookalike, soliciting short link, or malicious-host URL. Allowlisted hosts such as `sf-express.com` are not lookalikes. Phrase tropes are not this step.
 2. If `CONTEXT_LLM_ENABLED` (default **on**): mask → context LLM on latest inbound bodies → archive `context_llm` when the model answers `archive` or `block` with confidence ≥ `LLM_REVIEW_MIN_CONFIDENCE`. `no_action`, low confidence, mask failure, or bad reply → **ignore**. Model `block` is archive only. Skipped when step 1 already archived.
-3. If `CONTEXT_LLM_ENABLED` is off: mask → primary LLM (`LLM_REVIEW_*`, default on). `scam` or `should_archive` → archive `llm_review_scam`. `not_scam` → ignore. Mask failure, LLM off, error, or `unknown` → **ignore**.
+3. If `CONTEXT_LLM_ENABLED` is off: mask → primary LLM (`LLM_REVIEW_*`, default on). Label `scam` with confidence at or above `LLM_REVIEW_MIN_CONFIDENCE` (default 0.7) → archive `llm_review_scam`. `should_archive` alone cannot trigger archive. `not_scam` → ignore. Mask failure, LLM off, error, or `unknown` → **ignore**.
 4. After archive, if the contact is unsaved and the current message matched the **malicious-host list** → **block** (`封鎖·惡意域名`), mute, archive, append `blocks.jsonl`. Lookalike and short-link archives stay archive-only.
 5. Saved contacts never auto-block. Primary and context LLMs never auto-block.
 
