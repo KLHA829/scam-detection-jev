@@ -167,9 +167,9 @@ A failed queue write leaves the old poll unresolved in the queue but rejects sta
   Regression: `node --test --test-name-pattern='archives after block throws' lib/operator-review.test.js`.
 
 - The explanation is requested only after `/v1/mask`. A failed mask skips the explanation and still shows the poll. The model cannot archive, block, or hide the card.
-- An explicit 封鎖並封存 is the only path that blocks a saved contact. Link heuristics and models do not auto-block.
+- Suspicious DMs from saved contacts open a card in every mode. Run `node --test --test-name-pattern='alerts on suspicious saved contacts' lib/wa-handlers.test.js` to check that only an explicit vote archives; the test also runs in `bin/drive-malicious-host-block`.
 - The first choice on a review poll is the one that runs. A second vote is ignored.
 - An edit voids the open poll for that message. Unblock polls are not touched.
-- Until the setup poll is answered, the bot archives and does not block. That is a different wait from guided mode, which archives nothing until you choose.
+- Until the setup poll is answered, only unsaved chats may auto-archive, and none auto-block. Guided mode waits for a choice for every suspicious chat.
 - `自動封鎖同封存` is today's automatic path: malicious-host list may block unsaved contacts; lookalike/short-link and scores archive only. The receipt feature then messages your own chat.
 - Replying `今日食飯` does not select a choice.

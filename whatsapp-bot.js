@@ -540,6 +540,7 @@ async function handleWaMessage(msg, {
       archiveChat: async () => {
         await chat.archive();
       },
+      refreshContact: async () => msg.getContact(),
       exclusive: (fn) => pacer.exclusive(fn),
       operatorMode: operator ? operator.mode() : 'auto',
       holdBlock: operator ? operator.awaitingChoice() : false,

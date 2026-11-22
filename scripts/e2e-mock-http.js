@@ -309,6 +309,7 @@ async function executeScenario({
       result && result.decision ? result.decision.blockReason || null : null,
     archived: fake.events.includes('archive'),
     blocked: fake.events.includes('block'),
+    deferred: Boolean(result && result.deferred),
     llmCalls: scenarioRequests.length,
     redactedContainsXXX: requestText.includes('XXX'),
     rawDigitsPresent: sensitiveDigits
@@ -394,8 +395,9 @@ async function main() {
           ignored: false,
           action: 'archive',
           archiveReason: 'obvious_scam',
-          archived: true,
+          archived: false,
           blocked: false,
+          deferred: true,
           llmCalls: 0,
         },
       }),

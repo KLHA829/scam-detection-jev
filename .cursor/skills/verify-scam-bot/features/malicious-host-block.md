@@ -13,8 +13,8 @@ Unsaved contacts are **auto-blocked only** when the current message URL matches 
 - `email-archive-only` archives a blocklisted email domain without calling `blockContact`; a separate blocklisted URL in the same message can still block.
 - `forwarded-warning-review` drives the WhatsApp message handler: warning-only scam reports go to masked AI review for saved/unsaved and forwarded/pasted senders; forwarded lures, direct mixed solicitations and repeated flagged links retain hard-link handling.
 - `before-llm` blocks without waiting for mask/LLM (same fast-heuristic path as link rules; test names may still say `scorer`).
-- `saved-archive-only` saved contacts on a malicious URL archive if the link rule fires; `applyBlockPolicy` does not block.
-- `hold-setup` while the first-run setup poll is unanswered, `holdBlock` suppresses block but still archives lookalike; malicious-host block is also held until the operator picks automatic mode.
+- `saved-alert-only` suspicious DMs from saved contacts open a review card even in automatic mode or before setup. No archive or block runs until the operator chooses. If a queued action finds the contact was just saved, the bot defers it as well.
+- `hold-setup` while the first-run setup poll is unanswered, `holdBlock` suppresses automatic blocks and still lets unsaved chats archive.
 
 ## How to get to it (user POV)
 

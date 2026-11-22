@@ -174,10 +174,10 @@ npm run stub
 
 On the first ready session the bot polls your own chat:
 
-- **自動封鎖同封存** — automatic archive and graded block. After each archive or block you get a receipt with chat-list name, phone, and local reason. A Cantonese note uses masked text only after `POST /v1/mask`. Name and phone stay on this machine.
-- **逐條問我** — forwards suspicious DMs and waits for **封鎖並封存**, **只封存**, or **留低**. The explanation model cannot choose for you. Saved contacts block only when you pick **封鎖並封存**.
+- **自動封鎖同封存** — automatic archive and graded block for unsaved contacts only. After each archive or block you get a receipt with chat-list name, phone, and local reason. A Cantonese note uses masked text only after `POST /v1/mask`. Name and phone stay on this machine.
+- **逐條問我** — forwards suspicious DMs and waits for **封鎖並封存**, **只封存**, or **留低**. The explanation model cannot choose for you.
 
-Until you answer the first poll, suspicious chats archive and nobody blocks. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Send `設定` in your own chat to choose again.
+Suspicious DMs from saved contacts always get a review card instead of an automatic archive or block, in either mode and before setup. Until you answer the first poll, only unsaved chats can archive automatically, and nobody is blocked automatically. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Send `設定` in your own chat to choose again.
 
 WhatsApp writes (block, rename, mute, archive, receipts) run one chat at a time with `WA_ACTION_GAP_MS` between calls.
 
