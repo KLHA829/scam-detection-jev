@@ -204,6 +204,14 @@ node scripts/review-eval.js --llm dry --mode all
 
 Default fixture: `fixtures/review-eval-smoke.json`. Full labelled HK run: `--from-run` plus your `jevlike-lab` export and `--split real_test`.
 
+False block / false archive rate on about 300 legitimate messages (family, banks, delivery, clinics, government, forwarded anti-scam warnings; Chinese, English and mixed). Each runs through the real inbound handler from an unsaved and a saved contact, with the model always answering not_scam, so every hit comes from the bot's own rules:
+
+```bash
+node scripts/legit-fpr.js
+```
+
+`npm test` fails when the list of false positives changes from `fixtures/legit-fpr-baseline.json`.
+
 ## Optional Docker
 
 The image runs WhatsApp Web (Chromium) only. Run jevlike beside it and set `JEVLIKE_BASE_URL`.

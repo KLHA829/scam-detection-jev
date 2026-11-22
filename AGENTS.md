@@ -57,6 +57,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - `npm run lint` and `ruff check .` — JavaScript ESLint and Python Ruff checks.
 - `npm run typecheck` — TypeScript checks production JavaScript without emitting files.
 - `npm run test:e2e` — real local HTTP mask/LLM mocks drive the inbound path; no WhatsApp login.
+- `node scripts/legit-fpr.js` — false block / false archive rate on ~300 legit messages (`fixtures/legit-messages.json`) through the real handler, model answering not_scam. `lib/legit-fpr.test.js` (in `npm test`) fails when that list differs from `fixtures/legit-fpr-baseline.json`; rerun with `--update-baseline` only for an intended change.
 - `npm run test:e2e:boot` — best-effort boot through Chromium launch and QR emission; never scan the QR.
 - `python jevlike_serve.py` (or `npm run jevlike`) in terminal 1 — **PII mask head required**; then `npm start` in terminal 2 with `LLM_REVIEW_*` set.
 - `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — stub worker for offline tests (mask + optional fixed scores).

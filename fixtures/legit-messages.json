@@ -1,0 +1,1877 @@
+{
+ "_about": "Realistic legitimate messages an elderly WhatsApp user receives (family, friends, banks, delivery, clinics, government, utilities, forwarded anti-scam warnings) in Cantonese, Traditional and Simplified Chinese, English and mixed text. Every row is legitimate: any archive or block is a false positive. Phone numbers, OTPs and order numbers are made up. Run: node scripts/legit-fpr.js",
+ "messages": [
+  {
+   "id": "family-001",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿媽，今晚我哋七點到，你唔使煮咁多餸"
+  },
+  {
+   "id": "family-002",
+   "category": "family",
+   "lang": "yue",
+   "body": "爸爸，我轉咗 $500 俾你，用轉數快，收到話我知"
+  },
+  {
+   "id": "family-003",
+   "category": "family",
+   "lang": "yue",
+   "body": "媽，聽日記得帶埋八達通同身份證去覆診"
+  },
+  {
+   "id": "family-004",
+   "category": "family",
+   "lang": "yue",
+   "body": "婆婆生日快樂！祝你身體健康，長命百歲 🎂"
+  },
+  {
+   "id": "family-005",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿爺，我同仔仔星期六上嚟探你，想食咩？"
+  },
+  {
+   "id": "family-006",
+   "category": "family",
+   "lang": "yue",
+   "body": "媽咪，銀行打嚟話要驗證碼，你千祈唔好俾佢哋呀，係騙子嚟"
+  },
+  {
+   "id": "family-007",
+   "category": "family",
+   "lang": "yue",
+   "body": "我換咗新電話，呢個係我新號碼，舊嗰個唔用啦，你 save 低佢"
+  },
+  {
+   "id": "family-008",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿媽，你部電話個 WhatsApp 要更新，我週末過嚟幫你搞"
+  },
+  {
+   "id": "family-009",
+   "category": "family",
+   "lang": "yue",
+   "body": "爸，我幫你喺網上交咗差餉，唔使去郵局排隊"
+  },
+  {
+   "id": "family-010",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿姨，我寄咗啲燕窩俾你，順豐聽日送到，記得喺屋企等"
+  },
+  {
+   "id": "family-011",
+   "category": "family",
+   "lang": "yue",
+   "body": "媽，你嘅生果金過咗戶未？我幫你睇吓"
+  },
+  {
+   "id": "family-012",
+   "category": "family",
+   "lang": "yue",
+   "body": "今日天文台講八號風球可能今晚掛，你唔好出街啦"
+  },
+  {
+   "id": "family-013",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿媽，呢個係我哋去日本嘅相 https://photos.app.goo.gl/Xy7Kq2mPa9RtL3bN8"
+  },
+  {
+   "id": "family-014",
+   "category": "family",
+   "lang": "yue",
+   "body": "爸，你睇吓呢段片，好好笑 https://youtu.be/dQw4w9WgXcQ"
+  },
+  {
+   "id": "family-015",
+   "category": "family",
+   "lang": "yue",
+   "body": "我哋喺呢間酒樓等你 https://maps.app.goo.gl/AbC123xYz789qWe"
+  },
+  {
+   "id": "family-016",
+   "category": "family",
+   "lang": "yue",
+   "body": "媽，我啱啱用 PayMe 俾咗 $200 你買餸，記得 check"
+  },
+  {
+   "id": "family-017",
+   "category": "family",
+   "lang": "yue",
+   "body": "外母，阿敏話你部 iPad 唔識開，我教你：撳住側邊個掣三秒"
+  },
+  {
+   "id": "family-018",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿爺，下個月你九十大壽，我哋訂咗翠園，大家都會嚟"
+  },
+  {
+   "id": "family-019",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿媽，你唔好理啲自稱公安打嚟嘅電話，直接收線"
+  },
+  {
+   "id": "family-020",
+   "category": "family",
+   "lang": "yue",
+   "body": "媽，我今個月人工出咗，過咗 $3000 家用落你恒生戶口"
+  },
+  {
+   "id": "family-021",
+   "category": "family",
+   "lang": "yue",
+   "body": "嫲嫲，我考試合格啦！多謝你嘅利是 🧧"
+  },
+  {
+   "id": "family-022",
+   "category": "family",
+   "lang": "yue",
+   "body": "爸爸，你部電話嘅密碼我改咗做你生日，唔好話俾人知"
+  },
+  {
+   "id": "family-023",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿媽我收工先過嚟，你食咗藥未？"
+  },
+  {
+   "id": "family-024",
+   "category": "family",
+   "lang": "yue",
+   "body": "細佬話佢個 Visa 卡唔見咗，已經打咗去銀行 cancel"
+  },
+  {
+   "id": "family-025",
+   "category": "family",
+   "lang": "yue",
+   "body": "你個孫女今日學行，影咗段片俾你 https://www.instagram.com/reel/C9xYz12AbCd/"
+  },
+  {
+   "id": "family-026",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿媽，屋企個 wifi 密碼係 chan88888，貼咗喺雪櫃"
+  },
+  {
+   "id": "family-027",
+   "category": "family",
+   "lang": "yue",
+   "body": "舅父，你啲強積金我幫你喺 MPF 網站查咗，有成廿幾萬"
+  },
+  {
+   "id": "family-028",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿爸，醫生話你血壓高咗少少，記得每朝食一粒藥"
+  },
+  {
+   "id": "family-029",
+   "category": "family",
+   "lang": "yue",
+   "body": "媽，我喺淘寶幫你買咗個按摩椅，可能下星期先到"
+  },
+  {
+   "id": "family-030",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿姐，阿媽話佢個網上理財登入唔到，你得閒幫佢 reset 個密碼"
+  },
+  {
+   "id": "family-031",
+   "category": "family",
+   "lang": "yue",
+   "body": "今晚打邊爐，我買咗肥牛同蝦，你帶啲菜過嚟"
+  },
+  {
+   "id": "family-032",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿嫲，記得落樓下嘅長者中心攞免費月餅"
+  },
+  {
+   "id": "family-033",
+   "category": "family",
+   "lang": "yue",
+   "body": "媽，你嘅長者卡到期未？要唔要我幫你申請新嘅"
+  },
+  {
+   "id": "family-034",
+   "category": "family",
+   "lang": "yue",
+   "body": "爸，我啱啱幫你喺 HA Go 預約咗下星期三抽血"
+  },
+  {
+   "id": "family-035",
+   "category": "family",
+   "lang": "yue",
+   "body": "細妹結婚嘅電子喜帖 https://www.canva.com/design/DAGabc123/view"
+  },
+  {
+   "id": "family-036",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿媽唔好意思，今日開會開到好夜，聽日先打俾你"
+  },
+  {
+   "id": "family-037",
+   "category": "family",
+   "lang": "yue",
+   "body": "婆婆，我幫你訂咗明天嘅的士，朝早九點喺樓下等"
+  },
+  {
+   "id": "family-038",
+   "category": "family",
+   "lang": "yue",
+   "body": "老豆，你個八達通自動增值我已經 set 好，唔使再去 7-11 增值"
+  },
+  {
+   "id": "family-039",
+   "category": "family",
+   "lang": "yue",
+   "body": "阿媽，銀行話會寄張新信用卡俾你，收到就打卡背個電話啟動"
+  },
+  {
+   "id": "family-040",
+   "category": "family",
+   "lang": "yue",
+   "body": "爺爺，呢個 link 有你最鍾意嘅粵曲 https://www.youtube.com/watch?v=k4s8L0pQ2zA"
+  },
+  {
+   "id": "friends-001",
+   "category": "friends",
+   "lang": "yue",
+   "body": "陳太，明朝飲茶，九點半老地方等"
+  },
+  {
+   "id": "friends-002",
+   "category": "friends",
+   "lang": "yue",
+   "body": "何生，我哋行山隊星期日改咗去大帽山，八點荃灣集合"
+  },
+  {
+   "id": "friends-003",
+   "category": "friends",
+   "lang": "yue",
+   "body": "李姑娘，教會今個禮拜六有探訪，你得唔得閒？"
+  },
+  {
+   "id": "friends-004",
+   "category": "friends",
+   "lang": "yue",
+   "body": "張太，你上次介紹嘅中醫好好，我腰骨好返好多"
+  },
+  {
+   "id": "friends-005",
+   "category": "friends",
+   "lang": "yue",
+   "body": "各位街坊，屋苑星期四停水，記得儲定水"
+  },
+  {
+   "id": "friends-006",
+   "category": "friends",
+   "lang": "yue",
+   "body": "黃生，太極班下星期暫停一堂，師傅去咗旅行"
+  },
+  {
+   "id": "friends-007",
+   "category": "friends",
+   "lang": "yue",
+   "body": "阿芬，我喺街市見到啲好平嘅龍躉，幫你留咗一條"
+  },
+  {
+   "id": "friends-008",
+   "category": "friends",
+   "lang": "yue",
+   "body": "長者中心中秋晚會報名：https://forms.gle/Xa1b2C3d4E5f6G7h8 截止日期九月十日"
+  },
+  {
+   "id": "friends-009",
+   "category": "friends",
+   "lang": "yue",
+   "body": "王太，我哋合唱團下個月表演，呢度報名 bit.ly/choir-2026 免費入場"
+  },
+  {
+   "id": "friends-010",
+   "category": "friends",
+   "lang": "yue",
+   "body": "何太，你啲錢我已經過咗俾你，轉數快收到未？"
+  },
+  {
+   "id": "friends-011",
+   "category": "friends",
+   "lang": "yue",
+   "body": "劉生，我仲欠你 $150 唔記得咗，而家 PayMe 俾你"
+  },
+  {
+   "id": "friends-012",
+   "category": "friends",
+   "lang": "yue",
+   "body": "大家好，社區中心免費驗眼，星期二下晝兩點至五點"
+  },
+  {
+   "id": "friends-013",
+   "category": "friends",
+   "lang": "yue",
+   "body": "陳生，下個月旅行團訂金 $800，可以 FPS 轉俾我，或者見面俾現金"
+  },
+  {
+   "id": "friends-014",
+   "category": "friends",
+   "lang": "yue",
+   "body": "梁太，你個孫考到大學啦？恭喜晒！"
+  },
+  {
+   "id": "friends-015",
+   "category": "friends",
+   "lang": "yue",
+   "body": "譚生，我哋麻雀腳今晚三缺一，你嚟唔嚟？"
+  },
+  {
+   "id": "friends-016",
+   "category": "friends",
+   "lang": "yue",
+   "body": "阿 May，你上次講嘅電飯煲喺豐澤做緊特價"
+  },
+  {
+   "id": "friends-017",
+   "category": "friends",
+   "lang": "yue",
+   "body": "各位：教會今年聖誕聯歡，每人 $120，可以入數或者當日交"
+  },
+  {
+   "id": "friends-018",
+   "category": "friends",
+   "lang": "yue",
+   "body": "曾太，我寄咗張相俾你睇吓，就係你話嘅嗰間茶餐廳"
+  },
+  {
+   "id": "friends-019",
+   "category": "friends",
+   "lang": "yue",
+   "body": "方生，聽講你部電話中咗毒？去電訊公司門市問吓啦"
+  },
+  {
+   "id": "friends-020",
+   "category": "friends",
+   "lang": "yue",
+   "body": "林太，你個驗證碼係人哋叫你俾嘅？千祈唔好俾，打 18222 問警察"
+  },
+  {
+   "id": "friends-021",
+   "category": "friends",
+   "lang": "yue",
+   "body": "馮姑娘，下星期一長者中心有防騙講座，警察會嚟講"
+  },
+  {
+   "id": "friends-022",
+   "category": "friends",
+   "lang": "yue",
+   "body": "區議員辦事處通知：本週六派發防疫包，請帶身份證明文件"
+  },
+  {
+   "id": "friends-023",
+   "category": "friends",
+   "lang": "yue",
+   "body": "大家記得今晚八點睇翡翠台嘅防騙特輯"
+  },
+  {
+   "id": "friends-024",
+   "category": "friends",
+   "lang": "yue",
+   "body": "蘇太，個社區 Facebook 專頁有今個月活動表 https://www.facebook.com/groups/shatin.elderly/"
+  },
+  {
+   "id": "friends-025",
+   "category": "friends",
+   "lang": "yue",
+   "body": "何生，我幫你影咗張巴士時間表，68X 每十五分鐘一班"
+  },
+  {
+   "id": "bank-001",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【滙豐】您的一次性密碼為 482913，有效時間為5分鐘。切勿向任何人透露此密碼。"
+  },
+  {
+   "id": "bank-002",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【恒生銀行】您於11月20日以信用卡尾號1234簽賬HKD 356.00（百佳）。如有疑問請致電2822 0228。"
+  },
+  {
+   "id": "bank-003",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【中銀香港】您的戶口已成功轉入HKD 3,000.00。如非本人操作，請即致電3988 2388。"
+  },
+  {
+   "id": "bank-004",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "中銀香港提提你：本行職員絕不會透過電話、短訊或電郵要求客戶提供網上銀行密碼或一次性密碼。"
+  },
+  {
+   "id": "bank-005",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【滙豐】溫馨提示：滙豐不會透過短訊發送任何連結要求您登入。如有懷疑，請直接使用滙豐HK App。"
+  },
+  {
+   "id": "bank-006",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "恒生銀行通知：閣下的定期存款將於2026年12月1日到期，請親臨分行或使用恒生App辦理續期。"
+  },
+  {
+   "id": "bank-007",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【渣打】您的信用卡月結單已備妥，可於渣打網上理財查閱。到期還款日：12月15日。"
+  },
+  {
+   "id": "bank-008",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【東亞銀行】閣下的提款卡將於下月到期，新卡已寄往閣下登記地址。"
+  },
+  {
+   "id": "bank-009",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "中銀香港：您已成功登記轉數快（FPS）手機號碼。如非本人登記，請即致電3988 2388。"
+  },
+  {
+   "id": "bank-010",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【滙豐】閣下已成功設定新收款人：陳大文。如非本人操作，請即致電2233 3000。"
+  },
+  {
+   "id": "bank-011",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "恒生提提你：防範詐騙，請到 https://www.hangseng.com/zh-hk/security/ 了解最新騙案手法。"
+  },
+  {
+   "id": "bank-012",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "滙豐香港：了解保安資訊 https://www.hsbc.com.hk/zh-hk/help/security-centre/"
+  },
+  {
+   "id": "bank-013",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【中銀香港】安全提示：如收到可疑來電，請掛線後致電官方熱線查詢，或瀏覽 https://www.bochk.com/tc/security.html"
+  },
+  {
+   "id": "bank-014",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【花旗】您的網上理財密碼已於今日更改。如非本人操作，請即致電2860 0333。"
+  },
+  {
+   "id": "bank-015",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【大新銀行】您的定存HKD 50,000已到期並已轉入儲蓄戶口。"
+  },
+  {
+   "id": "bank-016",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【中信銀行（國際）】您的信用卡已成功啟用。"
+  },
+  {
+   "id": "bank-017",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【滙豐】您的PayMe已成功增值HKD 500.00。"
+  },
+  {
+   "id": "bank-018",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【八達通】您的八達通已自動增值HKD 250，增值來源：滙豐信用卡尾號5678。"
+  },
+  {
+   "id": "bank-019",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【恒生銀行】為保障閣下戶口安全，閣下的網上理財已因多次輸入錯誤密碼而暫停。請親臨分行或致電2822 0228。"
+  },
+  {
+   "id": "bank-020",
+   "category": "bank",
+   "lang": "zh-Hant",
+   "body": "【滙豐】您於今日在滙豐HK App設定的流動保安編碼已啟用。"
+  },
+  {
+   "id": "bank-021",
+   "category": "bank",
+   "lang": "en",
+   "body": "HSBC: Your one-time password is 739104. It expires in 5 minutes. Never share it with anyone, including HSBC staff."
+  },
+  {
+   "id": "bank-022",
+   "category": "bank",
+   "lang": "en",
+   "body": "Hang Seng Bank: HKD 1,280.00 was debited from your account ending 4321 at 15:42 on 20 Nov. Call 2822 0228 if you did not make this transaction."
+  },
+  {
+   "id": "bank-023",
+   "category": "bank",
+   "lang": "en",
+   "body": "Standard Chartered: Your new credit card has been dispatched to your registered address. Activate it in the SC Mobile app."
+  },
+  {
+   "id": "bank-024",
+   "category": "bank",
+   "lang": "en",
+   "body": "BOCHK: Your FPS transfer of HKD 500.00 to CHAN TAI MAN was successful. Ref: FPS20261120001."
+  },
+  {
+   "id": "bank-025",
+   "category": "bank",
+   "lang": "en",
+   "body": "Citibank: Reminder, your credit card payment of HKD 2,315.40 is due on 15 Dec."
+  },
+  {
+   "id": "bank-026",
+   "category": "bank",
+   "lang": "en",
+   "body": "HSBC will never ask you to provide your password or OTP by phone, SMS or email. Learn more at https://www.hsbc.com.hk/help/security-centre/"
+  },
+  {
+   "id": "bank-027",
+   "category": "bank",
+   "lang": "en",
+   "body": "Mox: You've received HKD 300.00 from LEE SIU MING. Open the Mox app to view."
+  },
+  {
+   "id": "bank-028",
+   "category": "bank",
+   "lang": "en",
+   "body": "ZA Bank: Your time deposit of HKD 20,000 has matured. Check details in the ZA Bank app."
+  },
+  {
+   "id": "bank-029",
+   "category": "bank",
+   "lang": "en",
+   "body": "DBS: Your card ending 8899 was used for HKD 88.00 at WATSONS on 21 Nov. Not you? Call 2290 8888."
+  },
+  {
+   "id": "bank-030",
+   "category": "bank",
+   "lang": "en",
+   "body": "Octopus: Your Octopus Wallet has been topped up with HKD 100.00."
+  },
+  {
+   "id": "bank-031",
+   "category": "bank",
+   "lang": "mixed",
+   "body": "【滙豐】Your OTP is 551203，請勿向任何人透露，包括銀行職員。"
+  },
+  {
+   "id": "bank-032",
+   "category": "bank",
+   "lang": "mixed",
+   "body": "恒生 Reminder：你嘅 credit card 月結單已出，請喺到期日前還款。"
+  },
+  {
+   "id": "bank-033",
+   "category": "bank",
+   "lang": "mixed",
+   "body": "中銀香港 BOCHK：你嘅 FPS 轉賬 HKD 1,000 已完成，收款人：陳大文"
+  },
+  {
+   "id": "bank-034",
+   "category": "bank",
+   "lang": "mixed",
+   "body": "【AlipayHK】你已成功繳付 CLP 電費 HKD 432.10"
+  },
+  {
+   "id": "bank-035",
+   "category": "bank",
+   "lang": "mixed",
+   "body": "【WeChat Pay HK】你已成功向「陳太」轉賬 HKD 200，如有疑問請聯絡客戶服務"
+  },
+  {
+   "id": "delivery-001",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【順豐速運】您的快件SF1234567890123已到達葵涌集散中心，預計明天送達。查件：https://www.sf-express.com/hk/tc/"
+  },
+  {
+   "id": "delivery-002",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【順豐】您的快件將於今天14:00-18:00派送，派件員電話：6123 4567。"
+  },
+  {
+   "id": "delivery-003",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【順豐速運】您的快件已放入順便智能櫃（沙田站），取件碼：882134，請於48小時內取件。"
+  },
+  {
+   "id": "delivery-004",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【香港郵政】您的郵件RR123456785HK已到達，請攜同通知書到九龍中央郵政局領取。追蹤：https://www.hongkongpost.hk/tc/mail_tracking/"
+  },
+  {
+   "id": "delivery-005",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "香港郵政提提你：本署不會以短訊要求市民繳付額外郵費或點擊連結更改派送地址。"
+  },
+  {
+   "id": "delivery-006",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【HKTVmall】您的訂單#12345678已出貨，預計11月24日送達。"
+  },
+  {
+   "id": "delivery-007",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【HKTVmall】您的訂單已送達，感謝惠顧！歡迎到 https://www.hktvmall.com 評價商品。"
+  },
+  {
+   "id": "delivery-008",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【嘉里物流】您的包裹將於明天送達，如需改期請致電 2410 3600。"
+  },
+  {
+   "id": "delivery-009",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【菜鳥】您的淘寶包裹已到達香港集運倉，請於3天內到自提點取件，取件碼：5321。"
+  },
+  {
+   "id": "delivery-010",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【京東】您的訂單已由順豐承運，運單號SF9876543210987。"
+  },
+  {
+   "id": "delivery-011",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【百佳網購】您的訂單將於今天下午送達，司機會提前致電。"
+  },
+  {
+   "id": "delivery-012",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【惠康網購】您的訂單已確認，送貨日期：11月25日。詳情請瀏覽 https://www.wellcome.com.hk"
+  },
+  {
+   "id": "delivery-013",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【屈臣氏】您在網上預訂的貨品已到達旺角分店，請於7天內取貨。"
+  },
+  {
+   "id": "delivery-014",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【萬寧】會員獎賞：您有 $50 電子禮券將於月底到期。"
+  },
+  {
+   "id": "delivery-015",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【Foodpanda】你的外賣已送出，預計 25 分鐘到達"
+  },
+  {
+   "id": "delivery-016",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【Lalamove】司機陳師傅已接單，車牌 XY1234，預計10分鐘到達。"
+  },
+  {
+   "id": "delivery-017",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【順豐】您的快件因地址不詳未能派送，派件員稍後會致電您確認地址。"
+  },
+  {
+   "id": "delivery-018",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【友和 YOHO】您的訂單已出貨，可於 https://www.yohohongkong.com 查詢。"
+  },
+  {
+   "id": "delivery-019",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【豐澤】您的冷氣機安裝已預約於11月28日上午，技術員會提前一天致電確認。"
+  },
+  {
+   "id": "delivery-020",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【國泰航空】您的航班CX520將於12月3日09:15由香港出發，請提早三小時到達機場。https://www.cathaypacific.com"
+  },
+  {
+   "id": "delivery-021",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【Klook】您的訂單已確認：海洋公園門票 x2，請於入場時出示電子憑證。https://www.klook.com/zh-HK/"
+  },
+  {
+   "id": "delivery-022",
+   "category": "delivery",
+   "lang": "zh-Hant",
+   "body": "【蘋果】您的 iPhone 維修已完成，可於銅鑼灣 Apple Store 取機。"
+  },
+  {
+   "id": "delivery-023",
+   "category": "delivery",
+   "lang": "en",
+   "body": "SF Express: Your parcel SF1234567890123 will be delivered today between 2pm and 6pm. Track at https://www.sf-express.com/hk/en/"
+  },
+  {
+   "id": "delivery-024",
+   "category": "delivery",
+   "lang": "en",
+   "body": "Hongkong Post: Item EE123456789HK is ready for collection at Sha Tin Post Office. Bring this notice and your ID."
+  },
+  {
+   "id": "delivery-025",
+   "category": "delivery",
+   "lang": "en",
+   "body": "Amazon: Your package has shipped and will arrive by Thursday. Track it in the Amazon app."
+  },
+  {
+   "id": "delivery-026",
+   "category": "delivery",
+   "lang": "en",
+   "body": "HKTVmall: Order #87654321 has been delivered. Thank you for shopping with us."
+  },
+  {
+   "id": "delivery-027",
+   "category": "delivery",
+   "lang": "en",
+   "body": "Booking.com: Your reservation at Hotel Nikko Osaka is confirmed. Check-in 3 Dec. Manage it at https://www.booking.com"
+  },
+  {
+   "id": "delivery-028",
+   "category": "delivery",
+   "lang": "en",
+   "body": "Deliveroo: Your rider is on the way. Estimated arrival 7:45pm."
+  },
+  {
+   "id": "delivery-029",
+   "category": "delivery",
+   "lang": "mixed",
+   "body": "【順豐】你嘅 parcel 已到 EF Locker，取件碼 123456，請 48 小時內取"
+  },
+  {
+   "id": "delivery-030",
+   "category": "delivery",
+   "lang": "mixed",
+   "body": "HKTVmall 提提你：你嘅 e-Coupon $30 將於 11月30日 到期"
+  },
+  {
+   "id": "clinic-001",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【醫院管理局】提提您：您於12月2日上午10:30在沙田威爾斯親王醫院專科門診有預約，請準時出席。"
+  },
+  {
+   "id": "clinic-002",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【醫管局】HA Go 提示：您的藥物覆配已完成，請到藥房取藥。"
+  },
+  {
+   "id": "clinic-003",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【衞生署】長者醫療券計劃：您的醫療券餘額為 $1,500，詳情請瀏覽 https://www.hcv.gov.hk"
+  },
+  {
+   "id": "clinic-004",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【李氏牙科】陳先生您好，提提您明天下午3點洗牙預約，如需改期請致電 2345 6789。"
+  },
+  {
+   "id": "clinic-005",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【仁愛普通科門診】您已成功預約11月25日上午9:15診症，請帶備身份證及覆診卡。"
+  },
+  {
+   "id": "clinic-006",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【港怡醫院】您的身體檢查報告已備妥，請於辦公時間內親臨領取或致電 2122 1333 查詢。"
+  },
+  {
+   "id": "clinic-007",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【衞生署】季節性流感疫苗接種計劃已開始，65歲或以上長者可免費接種。詳情：https://www.chp.gov.hk"
+  },
+  {
+   "id": "clinic-008",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【聯合醫院】溫馨提示：明天胃鏡檢查前8小時請勿進食。"
+  },
+  {
+   "id": "clinic-009",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "黃醫生診所：您的血液檢查結果正常，醫生著您下次覆診時再詳談。"
+  },
+  {
+   "id": "clinic-010",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【養和醫院】您預約的眼科檢查已改至12月5日下午2點，如有疑問請致電 2835 8800。"
+  },
+  {
+   "id": "clinic-011",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【中醫診所】陳太，您的藥材已煎好，可於今天下午取藥，每包 $80。"
+  },
+  {
+   "id": "clinic-012",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【東華三院】長者中心通知：本月免費健康講座主題為「認識糖尿病」，歡迎參加。"
+  },
+  {
+   "id": "clinic-013",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【醫管局】您的專科門診預約已改期至2027年1月10日，新預約詳情已寄往您的地址。"
+  },
+  {
+   "id": "clinic-014",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【衞生署】長者健康中心：您的年度身體檢查預約為12月8日上午9時。"
+  },
+  {
+   "id": "clinic-015",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【屈臣氏藥房】您的處方藥物已備妥，請帶同處方到中環分店領取。"
+  },
+  {
+   "id": "clinic-016",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【聖德肋撒醫院】住院按金 $10,000 可以信用卡、八達通或支票繳付，出院時多除少補。"
+  },
+  {
+   "id": "clinic-017",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【眼科中心】您的白內障手術已安排於12月12日，請於手術前一週停止服用薄血藥（如醫生指示）。"
+  },
+  {
+   "id": "clinic-018",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【醫管局】請使用 HA Go 繳付專科門診費用 $135，或於診所繳費處付款。"
+  },
+  {
+   "id": "clinic-019",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "物理治療部：陳伯，你下星期二早上11點嘅物理治療照舊，記得着波鞋。"
+  },
+  {
+   "id": "clinic-020",
+   "category": "clinic",
+   "lang": "zh-Hant",
+   "body": "【衞生署】新冠疫苗加強劑接種預約已確認：12月1日下午2時，九龍灣健康中心。"
+  },
+  {
+   "id": "clinic-021",
+   "category": "clinic",
+   "lang": "en",
+   "body": "Hospital Authority: Reminder of your Specialist Outpatient appointment at Queen Mary Hospital on 2 Dec at 10:30."
+  },
+  {
+   "id": "clinic-022",
+   "category": "clinic",
+   "lang": "en",
+   "body": "Dr. Wong's Clinic: Your blood test results are ready. Please call 2523 4567 to book a follow-up."
+  },
+  {
+   "id": "clinic-023",
+   "category": "clinic",
+   "lang": "en",
+   "body": "Matilda Hospital: Your health check is confirmed for 5 Dec, 8:30am. Please fast for 10 hours beforehand."
+  },
+  {
+   "id": "clinic-024",
+   "category": "clinic",
+   "lang": "en",
+   "body": "Bupa: Your claim for HKD 650.00 has been approved and paid to your bank account ending 2468."
+  },
+  {
+   "id": "clinic-025",
+   "category": "clinic",
+   "lang": "en",
+   "body": "AXA: Your medical insurance premium of HKD 1,250 will be auto-debited on 1 Dec."
+  },
+  {
+   "id": "clinic-026",
+   "category": "clinic",
+   "lang": "en",
+   "body": "Dental reminder: Mrs Chan, your cleaning appointment is tomorrow at 3pm. Reply C to confirm."
+  },
+  {
+   "id": "clinic-027",
+   "category": "clinic",
+   "lang": "mixed",
+   "body": "【HA Go】你嘅 appointment 已 confirm：12月2日 10:30 SOPD，請準時"
+  },
+  {
+   "id": "clinic-028",
+   "category": "clinic",
+   "lang": "mixed",
+   "body": "陳伯，Dr Lee 話你 X-ray 冇事，下個月再覆診"
+  },
+  {
+   "id": "clinic-029",
+   "category": "clinic",
+   "lang": "mixed",
+   "body": "【Bupa】你嘅 claim HKD 480 已批核，款項會過去你嘅 HSBC 戶口"
+  },
+  {
+   "id": "clinic-030",
+   "category": "clinic",
+   "lang": "mixed",
+   "body": "提提你：flu vaccine 預約喺星期五 11am，記得帶 HKID"
+  },
+  {
+   "id": "gov-001",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【政府】一般而言，政府部門不會以短訊要求市民提供銀行資料或個人密碼。"
+  },
+  {
+   "id": "gov-002",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【稅務局】您的2025/26年度報稅表已發出，可於「稅務易」https://www.gov.hk/tc/residents/taxes/etax/ 遞交。"
+  },
+  {
+   "id": "gov-003",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【社會福利署】您的長者生活津貼已存入您的銀行戶口。"
+  },
+  {
+   "id": "gov-004",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【社署】長者生活津貼申請已獲批，首期款項將於下月初存入。"
+  },
+  {
+   "id": "gov-005",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【1823】您的查詢編號為 1-2345678901，相關部門會於10個工作天內回覆。"
+  },
+  {
+   "id": "gov-006",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【水務署】您的水費單已發出，可經繳費靈、轉數快或 https://www.wsd.gov.hk 繳交。"
+  },
+  {
+   "id": "gov-007",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【運輸署】您的車輛牌照將於下月到期，請經 https://www.td.gov.hk 續期。"
+  },
+  {
+   "id": "gov-008",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【HKeToll】您的易通行賬戶已自動扣除隧道費 $20。"
+  },
+  {
+   "id": "gov-009",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【積金局】強積金計劃成員可透過「積金易」平台查閱賬戶，網址：https://www.empf.org.hk"
+  },
+  {
+   "id": "gov-010",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【選舉事務處】提提你：如你已更改住址，請於限期前更新選民登記資料。"
+  },
+  {
+   "id": "gov-011",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【民政事務總署】長者中心防騙講座：11月30日下午2時，荃灣大會堂。"
+  },
+  {
+   "id": "gov-012",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【香港警務處】反詐騙協調中心提提你：如有懷疑，請致電「防騙易熱線」18222。"
+  },
+  {
+   "id": "gov-013",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【房屋署】您的公屋租金 $2,345 將於12月1日自動轉賬繳付。"
+  },
+  {
+   "id": "gov-014",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【康文署】您已成功預約12月3日上午9時沙田體育館羽毛球場。"
+  },
+  {
+   "id": "gov-015",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【入境處】您的智能身份證換領預約為12月10日上午10時，請攜同現有身份證前往。"
+  },
+  {
+   "id": "gov-016",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【勞福局】長者 $2 乘車優惠已延伸至 60 歲人士，詳情：https://www.lwb.gov.hk"
+  },
+  {
+   "id": "gov-017",
+   "category": "gov",
+   "lang": "zh-Hant",
+   "body": "【公司註冊處】你嘅商業登記證將於下月到期。"
+  },
+  {
+   "id": "utility-001",
+   "category": "utility",
+   "lang": "zh-Hant",
+   "body": "【中電】您的電費單已發出，金額為$432.10，到期日為12月5日。可經中電App或 https://www.clp.com.hk 繳費。"
+  },
+  {
+   "id": "utility-002",
+   "category": "utility",
+   "lang": "zh-Hant",
+   "body": "【港燈】您的電力戶口已登記電子賬單，下期起不再寄出紙本賬單。"
+  },
+  {
+   "id": "utility-003",
+   "category": "utility",
+   "lang": "zh-Hant",
+   "body": "【煤氣公司】技術員將於11月28日上午到府進行安全檢查，請預留時間。"
+  },
+  {
+   "id": "utility-004",
+   "category": "utility",
+   "lang": "zh-Hant",
+   "body": "【煤氣】您的煤氣費 $198.50 已成功以自動轉賬繳付。"
+  },
+  {
+   "id": "utility-005",
+   "category": "utility",
+   "lang": "zh-Hant",
+   "body": "【csl】您的月費計劃將於12月1日續約，月費維持 $98。"
+  },
+  {
+   "id": "utility-006",
+   "category": "utility",
+   "lang": "zh-Hant",
+   "body": "【3香港】您本月已使用 18GB 數據，剩餘 2GB。"
+  },
+  {
+   "id": "utility-007",
+   "category": "utility",
+   "lang": "zh-Hant",
+   "body": "【SmarTone】您的賬單 $168 已發出，可透過 My SmarTone App 繳付。"
+  },
+  {
+   "id": "utility-008",
+   "category": "utility",
+   "lang": "zh-Hant",
+   "body": "【中國移動香港】您的漫遊服務已啟用，祝旅途愉快。"
+  },
+  {
+   "id": "utility-009",
+   "category": "utility",
+   "lang": "zh-Hant",
+   "body": "【香港寬頻】技術員將於明天上午10時至1時上門安裝光纖，請保持電話暢通。"
+  },
+  {
+   "id": "utility-010",
+   "category": "utility",
+   "lang": "zh-Hant",
+   "body": "【網上行】您的寬頻服務將於11月25日凌晨2時至5時進行維修，期間或會短暫中斷。"
+  },
+  {
+   "id": "utility-011",
+   "category": "utility",
+   "lang": "zh-Hant",
+   "body": "【屋苑管理處】本週三上午10時至下午4時大廈停電維修升降機，不便之處敬請原諒。"
+  },
+  {
+   "id": "utility-012",
+   "category": "utility",
+   "lang": "zh-Hant",
+   "body": "【管理處】各位住戶，管理費可用轉數快繳付，FPS ID：1234567，請註明單位。"
+  },
+  {
+   "id": "utility-013",
+   "category": "utility",
+   "lang": "en",
+   "body": "CLP: Your electricity bill of HKD 432.10 is due on 5 Dec. Pay via the CLP app or https://www.clp.com.hk"
+  },
+  {
+   "id": "utility-014",
+   "category": "utility",
+   "lang": "en",
+   "body": "csl: Your data usage has reached 80% of your monthly allowance."
+  },
+  {
+   "id": "utility-015",
+   "category": "utility",
+   "lang": "en",
+   "body": "HKBN: Your broadband service will be under maintenance from 2am to 5am on 25 Nov."
+  },
+  {
+   "id": "utility-016",
+   "category": "utility",
+   "lang": "en",
+   "body": "Towngas: Our technician will visit for a safety inspection on 28 Nov between 9am and 1pm."
+  },
+  {
+   "id": "warning-001",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "【防騙提示】最近有騙徒假冒惠康網站 wellcome-hk.com 呃人買平嘢，千祈唔好撳入去！"
+  },
+  {
+   "id": "warning-002",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "body": "【防騙提示】最近有騙徒假冒惠康網站 wellcome-hk.com 呃人買平嘢，千祈唔好撳入去！"
+  },
+  {
+   "id": "warning-003",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "小心！有人收到假水務署短訊叫你去 wsd-gov.com 交水費，係假網站，真嘅係 wsd.gov.hk"
+  },
+  {
+   "id": "warning-004",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "body": "小心！有人收到假水務署短訊叫你去 wsd-gov.com 交水費，係假網站，真嘅係 wsd.gov.hk"
+  },
+  {
+   "id": "warning-005",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "HKCERT 提醒：假冒國泰網站 cathay.cyou 以送機票為名騙取個人資料，切勿登入。"
+  },
+  {
+   "id": "warning-006",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "body": "HKCERT 提醒：假冒國泰網站 cathay.cyou 以送機票為名騙取個人資料，切勿登入。"
+  },
+  {
+   "id": "warning-007",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "警方提醒：假冒反詐騙協調中心網站 adcclaw.lol 聲稱可以幫你追回被騙款項，其實係第二次詐騙。"
+  },
+  {
+   "id": "warning-008",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "【轉發】假積金局網站 www-mpfa-org-hk.axm.info 好似真，大家唔好入個人資料！真積金局係 mpfa.org.hk"
+  },
+  {
+   "id": "warning-009",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "有騙徒扮 Klook 網站 klook-hk.krespy.asia 賣平價門票，大家小心"
+  },
+  {
+   "id": "warning-010",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "【防騙】最近有假冒滙豐短訊，叫你撳 hsbc-hk-secure.com 更新資料，滙豐唔會咁做！"
+  },
+  {
+   "id": "warning-011",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "body": "【防騙】最近有假冒滙豐短訊，叫你撳 hsbc-hk-secure.com 更新資料，滙豐唔會咁做！"
+  },
+  {
+   "id": "warning-012",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "小心假順豐短訊：「您的包裹地址不詳，請登入 sf-express-hk.top 更新」，係假㗎！"
+  },
+  {
+   "id": "warning-013",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "警方提提你：收到「銀行職員」話你戶口有問題，叫你撳 bit.ly 連結，一定係騙案，請致電 18222。"
+  },
+  {
+   "id": "warning-014",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "【警務處】防騙易3.0：輸入可疑電話號碼或網址即可查詢風險，下載「防騙視伏App」。"
+  },
+  {
+   "id": "warning-015",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "【轉發】銀行唔會叫你提供驗證碼，任何人問你要 OTP 都係騙子！"
+  },
+  {
+   "id": "warning-016",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "長者注意：騙徒扮公安話你涉及洗黑錢，要你轉錢去「安全戶口」，即刻收線報警 999！"
+  },
+  {
+   "id": "warning-017",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "【防騙】有人扮你個仔打嚟話「猜猜我是誰」，借錢急用，記得打返去個仔原本嘅電話核實。"
+  },
+  {
+   "id": "warning-018",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "呢排有假 WhatsApp 官方訊息話你帳戶會被停用，叫你提供六位數驗證碼，千祈唔好俾！"
+  },
+  {
+   "id": "warning-019",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "警方：網上購物騙案急升，交易前請用「防騙視伏器」https://cyberdefender.hk 查證。"
+  },
+  {
+   "id": "warning-020",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "body": "警方：網上購物騙案急升，交易前請用「防騙視伏器」https://cyberdefender.hk 查證。"
+  },
+  {
+   "id": "warning-021",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "【轉發】假冒衞生署短訊：「你的疫苗紀錄需要更新，請撳以下連結」，衞生署唔會咁發短訊。"
+  },
+  {
+   "id": "warning-022",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "新聞：一名82歲婆婆收到假冒入境處電話，被騙走200萬元積蓄，警方呼籲市民提高警覺。https://news.rthk.hk/rthk/ch/component/k2/1789012-20261120.htm"
+  },
+  {
+   "id": "warning-023",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "香港01：假冒速遞騙案一年損失過億，騙徒以「補運費」為由騙取信用卡資料 https://www.hk01.com/社會新聞/1012345/"
+  },
+  {
+   "id": "warning-024",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "【轉發】反詐騙協調中心：「網上情緣」騙案，騙徒會叫你投資虛擬貨幣 USDT，千萬唔好信！"
+  },
+  {
+   "id": "warning-025",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "銀行職員唔會叫你撳 bit.ly/xxx 呢類連結，小心"
+  },
+  {
+   "id": "warning-026",
+   "category": "warning",
+   "lang": "zh-Hans",
+   "forwarded": true,
+   "body": "【转发】警惕！近期有骗子冒充顺丰客服，以\"快递丢失理赔\"为由，要求提供银行卡号和验证码。"
+  },
+  {
+   "id": "warning-027",
+   "category": "warning",
+   "lang": "zh-Hans",
+   "forwarded": true,
+   "body": "反诈中心提醒：凡是自称\"公检法\"要求转账到\"安全账户\"的，都是诈骗！"
+  },
+  {
+   "id": "warning-028",
+   "category": "warning",
+   "lang": "zh-Hans",
+   "body": "反诈中心提醒：凡是自称\"公检法\"要求转账到\"安全账户\"的，都是诈骗！"
+  },
+  {
+   "id": "warning-029",
+   "category": "warning",
+   "lang": "en",
+   "forwarded": true,
+   "body": "Police warning: Scammers are posing as bank staff and asking for one-time passwords. Never share your OTP. Call 18222 if in doubt."
+  },
+  {
+   "id": "warning-030",
+   "category": "warning",
+   "lang": "en",
+   "forwarded": true,
+   "body": "HKCERT alert: Fake Wellcome site wellcome-hk.com is offering too-good-to-be-true deals. Do not enter your card details."
+  },
+  {
+   "id": "warning-031",
+   "category": "warning",
+   "lang": "en",
+   "body": "HKCERT alert: Fake Wellcome site wellcome-hk.com is offering too-good-to-be-true deals. Do not enter your card details."
+  },
+  {
+   "id": "warning-032",
+   "category": "warning",
+   "lang": "en",
+   "forwarded": true,
+   "body": "Beware of fake SF Express texts asking you to pay a redelivery fee at sf-express-delivery.top. SF Express never asks for payment by SMS link."
+  },
+  {
+   "id": "warning-033",
+   "category": "warning",
+   "lang": "en",
+   "forwarded": true,
+   "body": "Scam alert: WhatsApp will never ask you for your 6-digit verification code. If someone does, it's a scam."
+  },
+  {
+   "id": "warning-034",
+   "category": "warning",
+   "lang": "mixed",
+   "forwarded": true,
+   "body": "Forward 俾大家：有騙徒扮 HSBC 職員 call 你話張 card 被盜用，叫你講 OTP，千祈唔好！"
+  },
+  {
+   "id": "warning-035",
+   "category": "warning",
+   "lang": "mixed",
+   "forwarded": true,
+   "body": "小心 fake website wsd-gov.com，水務署 official 係 wsd.gov.hk"
+  },
+  {
+   "id": "warning-036",
+   "category": "warning",
+   "lang": "mixed",
+   "body": "小心 fake website wsd-gov.com，水務署 official 係 wsd.gov.hk"
+  },
+  {
+   "id": "warning-037",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "【防騙宣傳】記住三不：不聽、不信、不轉賬！有懷疑打 18222"
+  },
+  {
+   "id": "warning-038",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "forwarded": true,
+   "body": "朋友阿姨收到假冒醫管局電話叫佢俾 $500 預約費，大家話俾屋企老人家知，醫管局唔會咁做"
+  },
+  {
+   "id": "warning-039",
+   "category": "warning",
+   "lang": "zh-Hant",
+   "body": "阿媽，你睇吓呢個新聞：假冒滙豐網站 hsbc-hk-login.com 呃咗好多人，你千祈唔好撳"
+  },
+  {
+   "id": "family-041",
+   "category": "family",
+   "lang": "en",
+   "body": "Hi Grandma, I just landed in London! Will video call you tomorrow. Love you ❤️"
+  },
+  {
+   "id": "family-042",
+   "category": "family",
+   "lang": "en",
+   "body": "Dad, I've sent you HKD 1,000 via FPS for your birthday dinner. Enjoy!"
+  },
+  {
+   "id": "family-043",
+   "category": "family",
+   "lang": "en",
+   "body": "Mum, don't forget your eye appointment on Friday at 10am. I'll pick you up at 9:15."
+  },
+  {
+   "id": "family-044",
+   "category": "family",
+   "lang": "en",
+   "body": "Hi Uncle Peter, the family photos from Christmas are here: https://photos.app.goo.gl/R4nD0mPh0t0sL1nk"
+  },
+  {
+   "id": "family-045",
+   "category": "family",
+   "lang": "en",
+   "body": "Grandpa, here's the video of Emma's piano recital https://youtu.be/xYz123AbC45"
+  },
+  {
+   "id": "family-046",
+   "category": "family",
+   "lang": "en",
+   "body": "Hey Mrs Chan, church choir practice moved to Thursday 7pm this week."
+  },
+  {
+   "id": "family-047",
+   "category": "family",
+   "lang": "en",
+   "body": "Hi Mum, my new number is this one. My old phone broke, so please save this number."
+  },
+  {
+   "id": "family-048",
+   "category": "family",
+   "lang": "en",
+   "body": "Dad, the bank called me about your card. It was real, they just wanted to confirm a payment in Japan. All sorted."
+  },
+  {
+   "id": "family-049",
+   "category": "family",
+   "lang": "en",
+   "body": "Grandma, if anyone calls asking for your bank PIN or a code, hang up and call me."
+  },
+  {
+   "id": "family-050",
+   "category": "family",
+   "lang": "en",
+   "body": "Morning! Dim sum at 11 at Maxim's Palace City Hall? I'll book a table."
+  },
+  {
+   "id": "family-051",
+   "category": "family",
+   "lang": "en",
+   "body": "Hi Mr Lee, this is Sarah from your building management office. The water will be off on Wednesday 10am-4pm."
+  },
+  {
+   "id": "family-052",
+   "category": "family",
+   "lang": "en",
+   "body": "Mum, I ordered your groceries online. They'll arrive tomorrow between 2 and 4."
+  },
+  {
+   "id": "family-053",
+   "category": "family",
+   "lang": "en",
+   "body": "Auntie, I paid the restaurant deposit, you can transfer your share to me via PayMe whenever."
+  },
+  {
+   "id": "family-054",
+   "category": "family",
+   "lang": "en",
+   "body": "Hey, are you free for a walk at the park this evening?"
+  },
+  {
+   "id": "family-055",
+   "category": "family",
+   "lang": "en",
+   "body": "Dad, here's the link to the hospital's visiting hours: https://www.ha.org.hk/visitor/ha_index.asp"
+  },
+  {
+   "id": "family-056",
+   "category": "family",
+   "lang": "en",
+   "body": "Hi Gran, happy Chinese New Year! Kung Hei Fat Choy 🧧"
+  },
+  {
+   "id": "family-057",
+   "category": "family",
+   "lang": "en",
+   "body": "Mum, I set up your new phone. Your WhatsApp backup is restored. Call me if anything looks weird."
+  },
+  {
+   "id": "family-058",
+   "category": "family",
+   "lang": "en",
+   "body": "Grandpa, I'm sending you the boarding pass for our trip: https://www.cathaypacific.com/cx/en_HK/manage-booking.html"
+  },
+  {
+   "id": "family-059",
+   "category": "family",
+   "lang": "en",
+   "body": "Hi everyone, reminder that the Sai Kung hiking group meets at 8am Sunday at the bus terminus."
+  },
+  {
+   "id": "family-060",
+   "category": "family",
+   "lang": "en",
+   "body": "Mrs Wong, your tailor here. Your suit is ready for collection, balance HKD 600."
+  },
+  {
+   "id": "family-061",
+   "category": "family",
+   "lang": "en",
+   "body": "Hi Dad, I got the job! Starting next Monday. Thanks for all your support."
+  },
+  {
+   "id": "family-062",
+   "category": "family",
+   "lang": "en",
+   "body": "Mum, I just forwarded you the doctor's letter. Please print it for your appointment."
+  },
+  {
+   "id": "family-063",
+   "category": "family",
+   "lang": "en",
+   "body": "Hello, this is the Rotary Club. Our charity dinner is on 5 Dec, tickets HKD 800 at https://www.eventbrite.hk/e/charity-dinner-tickets-123456789"
+  },
+  {
+   "id": "family-064",
+   "category": "family",
+   "lang": "en",
+   "body": "Grandma, I'll transfer you the money for the tuition later today, thank you so much!"
+  },
+  {
+   "id": "family-065",
+   "category": "family",
+   "lang": "en",
+   "body": "Uncle, check out this article about retirement planning https://www.scmp.com/business/article/3289012/retirement-planning-hong-kong"
+  },
+  {
+   "id": "family-066",
+   "category": "family",
+   "lang": "zh-Hans",
+   "body": "妈，我给你发了个红包，记得领一下 🧧"
+  },
+  {
+   "id": "family-067",
+   "category": "family",
+   "lang": "zh-Hans",
+   "body": "姑妈，这是我们在深圳的新地址，下次过来直接打车过来就行"
+  },
+  {
+   "id": "family-068",
+   "category": "family",
+   "lang": "zh-Hans",
+   "body": "舅舅，我用支付宝给你转了2000块，买点好吃的"
+  },
+  {
+   "id": "family-069",
+   "category": "family",
+   "lang": "zh-Hans",
+   "body": "奶奶，明天我陪你去医院复查，早上八点在楼下等我"
+  },
+  {
+   "id": "family-070",
+   "category": "family",
+   "lang": "zh-Hans",
+   "body": "爸，验证码千万别告诉别人，银行不会打电话问你要的"
+  },
+  {
+   "id": "family-071",
+   "category": "family",
+   "lang": "zh-Hans",
+   "body": "姨妈，春节我们一家回广州过年，到时候一起吃团年饭"
+  },
+  {
+   "id": "family-072",
+   "category": "family",
+   "lang": "zh-Hans",
+   "body": "外婆，我给你寄了两盒月饼，顺丰明天到"
+  },
+  {
+   "id": "delivery-031",
+   "category": "delivery",
+   "lang": "zh-Hans",
+   "body": "【顺丰速运】您的快件SF1122334455667已签收，感谢使用顺丰。"
+  },
+  {
+   "id": "bank-036",
+   "category": "bank",
+   "lang": "zh-Hans",
+   "body": "【中国银行】您尾号6789的账户11月20日入账人民币3,000.00元。"
+  },
+  {
+   "id": "bank-037",
+   "category": "bank",
+   "lang": "zh-Hans",
+   "body": "【招商银行】您的一卡通验证码为628491，请勿泄露给他人。"
+  },
+  {
+   "id": "bank-038",
+   "category": "bank",
+   "lang": "zh-Hans",
+   "body": "【工商银行】温馨提示：我行工作人员不会要求您提供密码或验证码。"
+  },
+  {
+   "id": "delivery-032",
+   "category": "delivery",
+   "lang": "zh-Hans",
+   "body": "【京东】您的订单已发货，预计明天送达。"
+  },
+  {
+   "id": "delivery-033",
+   "category": "delivery",
+   "lang": "zh-Hans",
+   "body": "【淘宝】您购买的商品已发货，物流单号YT1234567890。"
+  },
+  {
+   "id": "bank-039",
+   "category": "bank",
+   "lang": "zh-Hans",
+   "body": "【微信支付】您已成功向\"张阿姨\"转账200.00元。"
+  },
+  {
+   "id": "delivery-034",
+   "category": "delivery",
+   "lang": "zh-Hans",
+   "body": "【12306】您已成功购买12月3日G6501次高铁票，深圳北-广州南。"
+  },
+  {
+   "id": "delivery-035",
+   "category": "delivery",
+   "lang": "zh-Hans",
+   "body": "【拼多多】您的退款¥58.00已原路退回。"
+  },
+  {
+   "id": "family-073",
+   "category": "family",
+   "lang": "zh-Hans",
+   "body": "表哥，你上次说的那个养老院我去看了，环境挺好的"
+  },
+  {
+   "id": "family-074",
+   "category": "family",
+   "lang": "zh-Hans",
+   "body": "阿姨您好，我是小区物业，明天上午停水维修，请提前储水"
+  },
+  {
+   "id": "family-075",
+   "category": "family",
+   "lang": "zh-Hans",
+   "body": "妈，你手机微信要更新了，周末我回去帮你弄"
+  },
+  {
+   "id": "utility-017",
+   "category": "utility",
+   "lang": "zh-Hans",
+   "body": "【中国移动】您本月话费账单68元，已自动扣款。"
+  },
+  {
+   "id": "family-076",
+   "category": "family",
+   "lang": "zh-Hans",
+   "body": "叔叔，这是我们家族群的照片 https://www.dropbox.com/s/abc123xyz/family.jpg"
+  },
+  {
+   "id": "bank-040",
+   "category": "bank",
+   "lang": "zh-Hans",
+   "body": "【支付宝】您的花呗账单已出，本月应还¥356.20，还款日12月10日。"
+  },
+  {
+   "id": "family-077",
+   "category": "family",
+   "lang": "zh-Hans",
+   "body": "姐，你帮妈预约了社区医院的体检吗？她说想去"
+  },
+  {
+   "id": "delivery-036",
+   "category": "delivery",
+   "lang": "zh-Hans",
+   "body": "【美团】您的外卖已送达，祝您用餐愉快"
+  },
+  {
+   "id": "family-078",
+   "category": "family",
+   "lang": "zh-Hans",
+   "body": "爷爷，我们下个月去香港看你，已经订好酒店了"
+  },
+  {
+   "id": "family-079",
+   "category": "family",
+   "lang": "mixed",
+   "body": "Mum 我 book 咗 dim sum 聽日 12 點 at 美心皇宮，ok?"
+  },
+  {
+   "id": "family-080",
+   "category": "family",
+   "lang": "mixed",
+   "body": "記得 download HA Go app，以後覆診同取藥都方便好多"
+  },
+  {
+   "id": "family-081",
+   "category": "family",
+   "lang": "mixed",
+   "body": "阿爸，你個 iPhone 要 update iOS，我週末幫你搞"
+  },
+  {
+   "id": "family-082",
+   "category": "family",
+   "lang": "mixed",
+   "body": "Hi 陳太，聽日 yoga class 照常，記得帶 mat"
+  },
+  {
+   "id": "family-083",
+   "category": "family",
+   "lang": "mixed",
+   "body": "阿媽，我 FPS 咗 $800 俾你，check 吓收到未"
+  },
+  {
+   "id": "family-084",
+   "category": "family",
+   "lang": "mixed",
+   "body": "Dad, 你個 Octopus card 已經 auto top-up，唔使再去增值"
+  },
+  {
+   "id": "family-085",
+   "category": "family",
+   "lang": "mixed",
+   "body": "今晚 BBQ 喺西貢，我哋六點 pick up 你"
+  },
+  {
+   "id": "family-086",
+   "category": "family",
+   "lang": "mixed",
+   "body": "阿嫲，呢個係我 graduation 嘅相 https://www.facebook.com/photo/?fbid=1234567890"
+  },
+  {
+   "id": "family-087",
+   "category": "family",
+   "lang": "mixed",
+   "body": "Grandma 我幫你 set 好 WhatsApp 嘅 two-step verification，PIN 寫咗喺你本簿度"
+  },
+  {
+   "id": "family-088",
+   "category": "family",
+   "lang": "mixed",
+   "body": "阿爺，我幫你 apply 咗 JoyYou Card（樂悠咭），兩星期內會寄到"
+  },
+  {
+   "id": "family-089",
+   "category": "family",
+   "lang": "mixed",
+   "body": "媽，記得唔好 click 任何 SMS 入面嘅 link，有咩唔明就 call 我"
+  },
+  {
+   "id": "family-090",
+   "category": "family",
+   "lang": "mixed",
+   "body": "Mr Chan，你嘅 MPF statement 已經寄到，有咩問題可以 call 我哋 hotline"
+  },
+  {
+   "id": "family-091",
+   "category": "family",
+   "lang": "mixed",
+   "body": "阿姨，我哋 group 下星期去澳門 day trip，每人 $300 包車"
+  },
+  {
+   "id": "family-092",
+   "category": "family",
+   "lang": "mixed",
+   "body": "Hello 黃生，管理處通知：lift 維修，星期三 10am 至 4pm 暫停使用"
+  },
+  {
+   "id": "family-093",
+   "category": "family",
+   "lang": "mixed",
+   "body": "阿媽，你個 bank app 登入唔到可以 call 銀行 hotline，唔好理 SMS 啲 link"
+  },
+  {
+   "id": "family-094",
+   "category": "family",
+   "lang": "mixed",
+   "body": "今個 weekend 有冇空？一齊去 IKEA 睇梳化"
+  },
+  {
+   "id": "family-095",
+   "category": "family",
+   "lang": "mixed",
+   "body": "阿爸你個 Netflix 我已經幫你 renew 咗，唔使再俾錢"
+  },
+  {
+   "id": "family-096",
+   "category": "family",
+   "lang": "mixed",
+   "body": "Hi 細佬，屋企個 router 壞咗，你 order 個新嘅送去阿媽度"
+  },
+  {
+   "id": "family-097",
+   "category": "family",
+   "lang": "mixed",
+   "body": "媽，呢個係我嘅 new office address，Central 嘅 IFC"
+  },
+  {
+   "id": "family-098",
+   "category": "family",
+   "lang": "mixed",
+   "body": "阿爺，我同你 book 咗 taxi 聽朝 9am 去 QMH 覆診"
+  },
+  {
+   "id": "family-099",
+   "category": "family",
+   "lang": "mixed",
+   "body": "Hi 李太，church 嘅 Christmas party 喺 12月20號，pls RSVP"
+  },
+  {
+   "id": "family-100",
+   "category": "family",
+   "lang": "mixed",
+   "body": "婆婆，我 send 咗張 e-card 俾你 https://www.hallmark.com/ecards/"
+  },
+  {
+   "id": "family-101",
+   "category": "family",
+   "lang": "mixed",
+   "body": "阿媽，你嘅 Bank of China card 我已經幫你 report lost，新卡下星期寄到"
+  },
+  {
+   "id": "family-102",
+   "category": "family",
+   "lang": "mixed",
+   "body": "今日 typhoon signal 8，大家留喺屋企，stay safe"
+  },
+  {
+   "id": "family-103",
+   "category": "family",
+   "lang": "mixed",
+   "body": "Mum，你嘅藥我喺 Watsons 幫你 refill 咗，聽日拎俾你"
+  }
+ ]
+}
