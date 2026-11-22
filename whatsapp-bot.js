@@ -499,6 +499,7 @@ async function handleWaMessage(msg, {
   llmCooldownStore,
   bypassLlmCooldown = false,
   editedFrom = null,
+  isCurrent = () => true,
 }) {
   let chat;
   let contact;
@@ -548,6 +549,7 @@ async function handleWaMessage(msg, {
       llmCooldownStore,
       bypassLlmCooldown,
       editedFrom,
+      isCurrent,
       blockContact: (info) =>
         blockAndRename({
           client,
@@ -565,7 +567,7 @@ async function handleWaMessage(msg, {
       maskClient, llmReview, listName, pacer, reviewQueue,
     });
   }
-  if (!result || !result.deferred || !reviewQueue) return result;
+  if (!result || !result.deferred || !reviewQueue || !isCurrent()) return result;
   const wid = selfWid(client);
   if (!wid) {
     log.error('guided review has no self chat', { chatId });
@@ -600,6 +602,19 @@ async function handleWaMessage(msg, {
 }
 
 function attachHandlers(client, deps) {
+  const inFlight = new Map();
+  async function handleCurrent(msg, options) {
+    const id = incomingMessageId(msg);
+    const revision = {};
+    if (id) inFlight.set(id, revision);
+    const isCurrent = () => !id || inFlight.get(id) === revision;
+    try {
+      return await handleWaMessage(msg, { client, ...deps, ...options, isCurrent });
+    } finally {
+      if (id && isCurrent()) inFlight.delete(id);
+    }
+  }
+
   client.on('qr', (qr) => {
     log.info('scan QR to link WhatsApp Web');
     qrcode.generate(qr, { small: true });
@@ -623,7 +638,7 @@ function attachHandlers(client, deps) {
 
   client.on('message', async (msg) => {
     try {
-      await handleWaMessage(msg, { client, ...deps });
+      await handleCurrent(msg);
     } catch (err) {
       log.error('message handler failed', { error: err.message });
     }
@@ -635,16 +650,15 @@ function attachHandlers(client, deps) {
         if (newBody === prevBody) return;
         if (msg) msg.body = newBody;
       }
+      const id = incomingMessageId(msg);
       const invalidated = deps.reviewQueue
-        ? invalidatePendingGuidedReview(deps.reviewQueue, incomingMessageId(msg))
+        ? invalidatePendingGuidedReview(deps.reviewQueue, id)
         : 0;
       const voided = deps.reviewQueue
-        ? deps.reviewQueue.voidByMessageId(incomingMessageId(msg), 'edited')
+        ? deps.reviewQueue.voidByMessageId(id, 'edited')
         : [];
-      await handleWaMessage(msg, {
-        client,
-        ...deps,
-        bypassLlmCooldown: voided.length + invalidated > 0,
+      await handleCurrent(msg, {
+        bypassLlmCooldown: voided.length + invalidated > 0 || inFlight.has(id),
         editedFrom: typeof prevBody === 'string' ? prevBody : null,
       });
     } catch (err) {

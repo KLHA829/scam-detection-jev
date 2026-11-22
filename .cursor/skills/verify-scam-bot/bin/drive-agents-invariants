@@ -25,6 +25,7 @@ const TEST_NAMES = [
   'failed and kept unblocks do not clear block history',
   'unblock log failures remain best effort after a successful action',
   'handles operator text commands only in self chat',
+  'never publishes a saved-contact poll from a model verdict superseded by an edit',
   'checks self-chat identity: own LID',
   'checks self-chat identity: own phone with LID wid',
   'checks self-chat identity: direct LID wid',
