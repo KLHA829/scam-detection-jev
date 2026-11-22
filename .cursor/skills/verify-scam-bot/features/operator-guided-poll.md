@@ -11,9 +11,13 @@ measures the same two-chat path with fixed mask/LLM latency.
 
 ## Sub-features
 
+- `rename-pacing-wiring` runs the real `vote_update` handler and checks no rename, successful block, and saved-contact metadata on the unblock poll when the contact is saved during rename pacing. `preserves a contact saved during guided vote rename pacing` in `lib/wa-handlers.test.js` runs in `bin/drive-agents-invariants` (already in TEST_FILES).
+- `rename-pacing` rechecks the live contact after the wait before rename; newly saved contacts still block but keep their names and saved-contact unblock metadata. `guided block preserves a contact saved during rename pacing` in `lib/guided-block-name.test.js` runs in `bin/drive-agents-invariants` (already in TEST_FILES).
 - `self-chat-only` accepts operator commands and quoted poll replies only in the operator's own phone/LID chat, never another chat just because the sender is me. `handles operator text commands only in self chat` and `checks self-chat identity:` in `lib/wa-handlers.test.js` cover cross-chat unblock rejection, own-LID mapping, unrelated/empty mappings, and lookup failure; both run in `bin/drive-agents-invariants`.
 - `setup-poll` asks `呢個 bot 點處理可疑訊息？` with 自動封鎖同封存 and 逐條問我. Until that poll is answered, suspicious chats are archived and nobody is blocked. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Sending `設定` in the operator's own chat asks again.
 - `review-poll` asks `你想點處理？` with 封鎖並封存, 只封存, and 留低. Numeric replies `1`, `2`, and `3` map to those three choices.
+- `review-poll-save` does not register a poll when its queue write fails. If delivery is retried after storage recovers, the new poll is saved and recognised after restart. `retries guided delivery after a failed queue save and keeps the retry after restart` in `lib/audit-review-queue.test.js` runs in `bin/drive-agents-invariants`.
+- `unblock-poll-save` keeps an already-sent unblock poll in memory if its registration fails, so a vote still works in the same process once storage recovers. `accepts an unblock poll vote after a failed registration save and storage recovery` in `lib/audit-review-queue.test.js` runs in `bin/drive-agents-invariants`.
 - `current-setup-poll` accepts mode changes only from the most recently sent setup poll, including after a choice or restart. Superseded setup polls are void.
 - `guided-defer` computes the decision and does not call archive or block until the choice arrives.
 - `mask-fail-poll` still shows the poll when the mask or the model fails. The card says `解釋暫時出唔到`.

@@ -18,6 +18,8 @@ const evidenceRoot = path.join(skillDir, 'evidence');
 const TEST_NAMES = [
   'prefers exact unblock numbers over suffix collisions across full history and polls',
   'resolves explicit unblock numbers beyond the latest 20 active blocks',
+  'retries guided delivery after a failed queue save and keeps the retry after restart',
+  'accepts an unblock poll vote after a failed registration save and storage recovery',
   'successful unblock removes history targets and a reblock restores them',
   'unblocks are applied before history limits without hiding other contacts',
   'failed and kept unblocks do not clear block history',
@@ -32,6 +34,8 @@ const TEST_NAMES = [
   'checks self-chat identity: missing mapping API',
   'checks self-chat identity: failed mapping',
   'guided block preserves live names: saved named contact',
+  'guided block preserves a contact saved during rename pacing',
+  'preserves a contact saved during guided vote rename pacing',
   'guided block preserves live names: saved unnamed contact',
   'guided block preserves live names: named contact without saved flag',
   'guided block preserves live names: unsaved unnamed contact',
@@ -61,7 +65,7 @@ const TEST_NAMES = [
   'invariant: unsaved lookalike archives without waiting on score and does not block',
 ];
 
-const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/guided-block-name.test.js', 'lib/wa-actions.test.js', 'lib/unblock-history.test.js', 'lib/sibling-unblock-polls.test.js', 'lib/wa-handlers.test.js', 'lib/operator-commands.test.js'];
+const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/audit-review-queue.test.js', 'lib/guided-block-name.test.js', 'lib/wa-actions.test.js', 'lib/unblock-history.test.js', 'lib/sibling-unblock-polls.test.js', 'lib/wa-handlers.test.js', 'lib/operator-commands.test.js'];
 
 const UNSET_ENV = [
   'ARCHIVE_THRESHOLD',
