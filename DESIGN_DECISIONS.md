@@ -10,6 +10,8 @@ Primary users are elderly. A wrong block cuts off family and caregivers. The bot
 
 Lookalike hosts and soliciting short links **archive** only. They do not block. Primary and context LLMs **archive** at most. They do not block. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block by themselves.
 
+A money request plus the word 連結/link alone is not a soliciting short link: family fee requests can include a school notice. Without urgency/account language, hard archive requires payment explicitly via/at a link, close together in the same clause. Otherwise use masked LLM review. OTP and affirmative impersonation rules are unchanged.
+
 English OTP advice with a directly negated disclosure verb (for example, “never send”, “don't share”, “won't ask you to send”, or “no one will ask you to send”) does not count as a soliciting short link. Like Chinese negated advice, it goes through mask → LLM unless another link rule matches. Negation removes only that verb, not later requests: “don't hesitate to send me your OTP”, “never mind, send me your OTP”, and a separate affirmative request still qualify. English negation never crosses line breaks or intervening free-form clauses; this is a scoped heuristic, not a general English parser.
 
 ## Why mask before any external LLM

@@ -4,6 +4,8 @@ An unsaved contact who sends a lookalike host, or a short link that also asks fo
 
 ## Sub-features
 
+- `family-fee-notice` sends a transfer request with an unrelated notice link to masked AI review. Merely saying 連結 does not hard-archive; payment via/at a link in the same bounded clause still does. `lib/family-fee-link.test.js` covers saved/unsaved senders, default context and primary review; `ties short-link money requests to the payment destination` in `lib/link-rules.test.js` covers clause boundaries and empty input. Included in `bin/drive-mask-before-llm`.
+
 - `lookalike-archive` archives an unsaved chat whose current message contains a lookalike host; decision action stays `archive`.
 - `lookalike-shapes` hits `whatsapp-secure.com`, a one-character misspelling, a homoglyph, and a `userinfo@evil` URL.
 - `allowlist` leaves `sf-express.com`, `hsbc.com.hk`, `wa.me`, `chat.whatsapp.com`, and `whatsapp.com` unflagged.
