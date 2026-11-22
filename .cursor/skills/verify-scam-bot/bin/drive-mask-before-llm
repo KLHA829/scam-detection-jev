@@ -55,6 +55,7 @@ const TEST_NAMES = [
   'full mask endpoint reaches review through the real inbound handler',
   'endpoint resolution normalizes shared mask bases and preserves score aliases',
   'disabled review skips the context chat API and archives only blocklist matches',
+  'treats money received, own-account alerts and do-not-share codes as no_action',
   'sends the masked recent messages and archives when the model says archive',
   'replaces phone, name, and otp with XXX and keeps the lure word',
   'does not call the model when masking fails',
