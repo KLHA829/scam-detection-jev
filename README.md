@@ -125,6 +125,7 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `MALICIOUS_HOSTS_PATH` | `data/malicious-hosts.json` in the repo | Maintained host list override. |
 | `MALICIOUS_HOSTS_ALLOW_EMPTY` | Off | Set `1` or `true` to allow a reload with `hosts:[]` to clear the in-memory list. |
 | `BLOCK_LOG_PATH` | `./blocks.jsonl` | Local block history used by operator commands. |
+| `BOT_CONTACT_NAMES_PATH` | `./bot-contact-names.json` | Numbers whose contact name the bot wrote (block or `（可疑推銷）` label); only those names do not count as saved contacts. |
 | `OPERATOR_MODE` | Unset | `auto` or `guided` pins mode; otherwise use saved choice or ask on first run. |
 | `OPERATOR_MODE_PATH`, `REVIEW_QUEUE_PATH` | `./operator-mode.json`, `./review-queue.json` | Saved operator mode and guided review queue. |
 | `WA_ACTION_GAP_MS` | `3000` | Gap between queued WhatsApp writes in ms. |

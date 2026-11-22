@@ -24,6 +24,7 @@ const {
 } = require('./lib/context-llm');
 const { blockAndRename, labelUnsavedContact, unblockContact } = require('./lib/wa-actions');
 const { isOperatorSavedContact } = require('./lib/block-policy');
+const { createBotContactNames, defaultBotContactNamesPath } = require('./lib/bot-contact-names');
 const { createActionPacer } = require('./lib/action-pacer');
 const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-context');
 const { createOperatorState } = require('./lib/operator-mode');
@@ -498,6 +499,7 @@ async function handleWaMessage(msg, {
   operator,
   reviewQueue,
   llmCooldownStore,
+  botContactNames,
   bypassLlmCooldown = false,
   editedFrom = null,
   isCurrent = () => true,
@@ -527,7 +529,7 @@ async function handleWaMessage(msg, {
       body: msg.body || '',
       isForwarded: msg.isForwarded === true,
       chatId,
-      savedContact: isOperatorSavedContact(contact),
+      savedContact: isOperatorSavedContact(contact, botContactNames),
       messageId: incomingMessageId(msg),
     },
     {
@@ -548,6 +550,7 @@ async function handleWaMessage(msg, {
       holdBlock: operator ? operator.awaitingChoice() : false,
       pauseAction: () => pacer.pause(),
       llmCooldownStore,
+      botContactNames,
       bypassLlmCooldown,
       editedFrom,
       isCurrent,
@@ -560,6 +563,7 @@ async function handleWaMessage(msg, {
           contactName: info && info.contactName,
           pause: () => pacer.pause(),
           refreshUnsavedContact: () => msg.getContact(),
+          botContactNames,
         }),
       labelContact: (info) =>
         labelUnsavedContact({
@@ -568,6 +572,8 @@ async function handleWaMessage(msg, {
           contactName: info && info.contactName,
           pause: () => pacer.pause(),
           refreshUnsavedContact: () => msg.getContact(),
+          botContactNames,
+          isCurrent,
         }),
     },
   );
@@ -741,6 +747,9 @@ async function main() {
     filePath: defaultLlmReviewCooldownPath(process.env),
     env: process.env,
   });
+  const botContactNames = createBotContactNames({
+    filePath: defaultBotContactNamesPath(process.env),
+  });
   const client = createWhatsAppClient();
 
   try {
@@ -784,6 +793,7 @@ async function main() {
     operator,
     reviewQueue,
     llmCooldownStore,
+    botContactNames,
   });
   await client.initialize();
 }
