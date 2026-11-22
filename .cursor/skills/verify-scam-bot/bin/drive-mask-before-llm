@@ -29,6 +29,8 @@ const TEST_NAMES = [
   'keeps affirmative impersonation short-link scams on the hard archive path',
   'fails closed when masking short-link advice fails',
   'sends official hsbc.co.uk links to masked AI review',
+  'sends official hsbc.com.cn links to masked AI review',
+  'sends official hsbc.com.au links to masked AI review',
   'sends official hsbc.com.sg links to masked AI review',
   'still flags HSBC regional lookalikes on unrelated hosts',
   'LLM_REVIEW_ALL does not override explicitly disabled review',
