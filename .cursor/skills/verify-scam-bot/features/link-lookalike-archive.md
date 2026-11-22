@@ -4,6 +4,10 @@ An unsaved contact who sends a lookalike host, or a short link that also asks fo
 
 ## Sub-features
 
+- `payment-clause-safety` leaves URLs untouched: domain dots stay within a clause, while a period followed by whitespace or end of text separates clauses. Glued commas still separate clauses, and URL removal cannot manufacture a standalone link word. Any negation in a payment-link clause conservatively sends that clause to AI review. Locked by the family-fee unit and real-handler cases, including `negated link below`, `notice URL glued to comma`, and `link glued to URL`; included in `bin/drive-mask-before-llm`.
+
+- `family-fee-notice` sends a transfer request with an unrelated notice link to masked AI review. Merely saying 連結 does not hard-archive. The existing money-transfer-ask detector must match, plus urgency/account language or payment via/at a link in the same bounded clause. Payment-link phrasing alone does not add an archive trigger. `lib/family-fee-link.test.js` covers saved/unsaved senders, default context and primary review, retained lures and previously ignored payment phrases; `ties short-link money requests to the payment destination` in `lib/link-rules.test.js` covers clause boundaries and empty input. Included in `bin/drive-mask-before-llm`.
+
 - `lookalike-archive` archives an unsaved chat whose current message contains a lookalike host; decision action stays `archive`.
 - `lookalike-shapes` hits `whatsapp-secure.com`, a one-character misspelling, a homoglyph, and a `userinfo@evil` URL.
 - `allowlist` leaves `sf-express.com`, `hsbc.com.hk`, `wa.me`, `chat.whatsapp.com`, and `whatsapp.com` unflagged.
