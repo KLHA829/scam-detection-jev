@@ -19,7 +19,7 @@ const evidenceRoot = path.join(skillDir, 'evidence');
 const TEST_NAMES = [
   'family fee notice mask failure does not archive',
   ...['default', '0'].flatMap((context) => [true, false].flatMap((saved) =>
-    ['notice', 'transfer via link', 'pay at link', 'English payment', 'transfer to link', 'urgent transfer', 'send cash via link'].map((name) =>
+    ['notice', 'transfer via link', 'pay at link', 'English payment', 'transfer to link', 'urgent transfer', 'send cash via link', 'inline URL', 'inline bare URL', 'inline URL without money ask'].map((name) =>
       `family fee ${name}: context=${context} saved=${saved}`))),
   'ties short-link money requests to the payment destination',
   'English OTP advice and solicitations',
