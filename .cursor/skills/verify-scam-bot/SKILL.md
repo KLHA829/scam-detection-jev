@@ -1,11 +1,11 @@
 ---
 name: verify-scam-bot
-description: "Drive the local WhatsApp scam-DM bot (scam-detection-jev) the way an operator would. Smoke proof uses the stub jevlike HTTP worker (GET /health, POST /v1/mask; POST /v1/score is lab-only) and offline node:test subsets. Use when proving mask-before-LLM, AGENTS.md block/archive invariants, link-rule archive (no auto-block), malicious-host auto-block, action receipts, LLM cooldown, or the guided self-chat poll. Live WhatsApp Web QR is a separate session and is not required."
+description: "Drive the local WhatsApp scam-DM bot (scam-detection-jev) the way an operator would. Smoke proof uses the stub jevlike HTTP worker (GET /health, POST /v1/mask; POST /v1/score is lab-only) and offline node:test subsets. Use when proving mask-before-LLM, AGENTS.md block/archive invariants, masked review of link-rule hits, malicious-host auto-block, action receipts, LLM cooldown, or the guided self-chat poll. Live WhatsApp Web QR is a separate session and is not required."
 ---
 
 # Verify scam-detection-jev
 
-This skill proves operator-facing behavior of the local WhatsApp scam-DM bot. **Live inbound DMs:** link heuristics when matched, else **mask (`POST /v1/mask`) → OpenAI-compatible LLM** → archive `llm_review_scam` or ignore. **Auto-block** applies only when an unsaved contact's current message URL matches `data/malicious-hosts.json`. Models and jevlike `/v1/score` do not drive live archive/block.
+This skill proves operator-facing behavior of the local WhatsApp scam-DM bot. **Live inbound DMs:** only curated URL or email-domain matches in `data/malicious-hosts.json` can archive without masked AI review, subject to the warning-only exception. Lookalike and soliciting short-link hits go through **mask (`POST /v1/mask`) → OpenAI-compatible LLM** and archive only when AI confirms scam. **Auto-block** applies only to unsaved contacts with a curated URL match, never to email-domain matches or model verdicts. jevlike `/v1/score` is lab-only.
 
 Smoke verification does not open Chrome or WhatsApp. It starts `stub-jevlike.js` (same as `npm run stub`) on `127.0.0.1:18766` and runs `node --test` cases that call `processIncomingMessage`. Live WhatsApp (`npm start`) needs a human QR scan and `.wwebjs_auth/`. Do not start it for smoke proof.
 
