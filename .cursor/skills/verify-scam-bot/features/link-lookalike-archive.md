@@ -93,6 +93,6 @@ Exit code `0`. Saved-contact recommendations are deferred and make no automatic 
 - The hardcoded hit is the link on the current message. 驗證碼, 轉數快, 封號, USDT, and 順豐清關 wording do not archive without AI confirmation.
 - `https://www.sf-express.com/hk` is allowlisted. `https://sf-express-hk.com/pay` is a lookalike.
 - `HEURISTIC_ENABLED=0` or `false` turns the link rule off.
-- While the first-run setup poll is unanswered, only unsaved lookalike or short-link chats may auto-archive after AI confirmation, and nobody is auto-blocked.
+- While the first-run setup poll is unanswered, auto-blocks are suppressed, but unsaved chats can still auto-archive.
 - In guided mode an AI-confirmed `archive` is deferred, and `processIncomingMessage` does not call archive until the operator picks **只封存** or **封鎖並封存**.
 - Auto-block is only for URLs on `data/malicious-hosts.json`, not for lookalike heuristics.
