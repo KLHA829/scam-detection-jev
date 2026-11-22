@@ -11,7 +11,7 @@ Unsaved contacts are **auto-blocked only** when the current message URL matches 
 - `unsaved-block` calls `blockContact` with `封鎖·惡意域名` when the heuristic id is `malicious_host`.
 - `score-free-records` new block records, guided queue entries, and action log lines omit the live placeholder score; old scored queue entries remain actionable. Separate proof: `node --test lib/placeholder-score.test.js` (not included in `bin/drive-malicious-host-block`).
 - `email-archive-only` archives a blocklisted email domain without calling `blockContact`; a separate blocklisted URL in the same message can still block.
-- `forwarded-warning-review` drives the WhatsApp message handler: explicit forwarded warnings quoting one listed URL go to masked AI review, while forwarded lures and mixed warning/solicitation still hard-block.
+- `forwarded-warning-review` drives the WhatsApp message handler: warning-only scam reports go to masked AI review for saved/unsaved and forwarded/pasted senders; forwarded lures, direct mixed solicitations and repeated flagged links retain hard-link handling.
 - `before-llm` blocks without waiting for mask/LLM (exclusive to known malicious URLs; test names may still say `scorer`).
 - `saved-archive-only` saved contacts on a malicious URL archive if the link rule fires; `applyBlockPolicy` does not block.
 - `hold-setup` while the first-run setup poll is unanswered, `holdBlock` suppresses block but still archives lookalike if AI confirms; malicious-host block is also held until the operator picks automatic mode.

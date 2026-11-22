@@ -16,6 +16,7 @@ const root = path.resolve(skillDir, '../../..');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'invariant: malicious_email_host fast path skips primary and context LLM',
   'invariant: malicious_host fast path skips primary and context LLM',
   'prefers exact unblock numbers over suffix collisions across full history and polls',
   'resolves explicit unblock numbers beyond the latest 20 active blocks',

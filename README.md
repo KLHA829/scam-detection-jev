@@ -1,7 +1,7 @@
 # scam-detection-jev
 
 Personal **WhatsApp Web** bot: it masks PII on your machine, sends redacted text to an **OpenAI-compatible** chat API, archives suspicious 1:1 DMs, and blocks **unsaved** contacts only when a URL matches [`data/malicious-hosts.json`](data/malicious-hosts.json).
-Keyword and link-rule hits, including an email address on a listed domain, require AI confirmation before archive. Only known malicious URLs can bypass AI, subject to the forwarded-warning exception.
+Keyword and link-rule hits require AI confirmation before archive. A curated URL or email-domain match can still archive directly, subject to the warning-only exception; an email match never auto-blocks.
 
 Local [jevlike](https://github.com/vinnylarouge/jevlike) serves **`POST /v1/mask`**. Judgment uses **`LLM_REVIEW_*`**. The frozen scam head (`jevlike_hf_chinese_roberta_r1.pt`) is for **lab eval** only. There is no LightJev or `SCORER=model_v2` path.
 
@@ -97,7 +97,7 @@ Set `LLM_REVIEW_API_URL`, `LLM_REVIEW_MODEL`, and `LLM_REVIEW_API_KEY` when your
 
 Live inbound order (after filters): link heuristics on the current message, then mask and LLM. **`CONTEXT_LLM_ENABLED` defaults to on** (masked transcript of recent inbound messages). Set `CONTEXT_LLM_ENABLED=0` or `false` for single-message primary LLM only.
 
-If `POST /v1/mask` fails, the bot skips the LLM and does not archive (fail closed). Only known malicious URLs can still archive without the LLM.
+If `POST /v1/mask` fails, the bot skips the LLM and does not archive (fail closed). Curated blocklist matches can still archive without the LLM.
 
 Full flag list: [`.env.example`](.env.example) and [AGENTS.md](AGENTS.md). Behaviour matrix: [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented). Lab-only jevlike thresholds: [SCORING_RUBRIC.md](SCORING_RUBRIC.md).
 
@@ -120,7 +120,7 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `JEVLIKE_ENCODER`, `JEVLIKE_HF_MODEL` | Checkpoint `hf_model`, then `hfl/chinese-roberta-wwm-ext` | Encoder overrides, in that precedence order. |
 | `JEVLIKE_OPTIONS` | `not_scam,scam` | Scorer labels (lab); requires at least two. |
 | `JEVLIKE_MASK_CKPT` | `models/jevlike_hf_pii_mask.pt` if present | PII head. A missing configured file logs a warning and the worker still starts without the head; `/v1/mask` returns 503 until a head is loaded. |
-| `HEURISTIC_ENABLED` | `true` | Enables link rules and the known malicious URL fast path. |
+| `HEURISTIC_ENABLED` | `true` | Enables link rules and the curated blocklist fast path. |
 | `BLOCK_ENABLED` | `true` | Enables malicious-host auto-block of unsaved contacts, not model-based blocking. |
 | `MALICIOUS_HOSTS_PATH` | `data/malicious-hosts.json` in the repo | Maintained host list override. |
 | `MALICIOUS_HOSTS_ALLOW_EMPTY` | Off | Set `1` or `true` to allow a reload with `hosts:[]` to clear the in-memory list. |

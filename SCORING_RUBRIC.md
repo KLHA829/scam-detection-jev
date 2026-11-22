@@ -8,9 +8,10 @@ Facts about live decisions and lab-only jevlike thresholds. Setup and env wiring
 
 | Stage | Trigger | Archive reason | Block |
 |-------|---------|----------------|-------|
-| Known malicious URL | Blocklisted URL on **current** message, subject to the forwarded-warning exception below | `obvious_scam` without AI | Unsaved + malicious-host match only |
-| Keyword or link rule | Lookalike, soliciting short link, or blocklisted email domain | Mask → AI; no rule-only archive | Never from the rule |
-| Context LLM (default) | `CONTEXT_LLM_ENABLED` on (default when unset); not skipped by a malicious-URL archive | `context_llm` when model says `archive` or `block` with sufficient confidence | Never from LLM |
+| Known malicious URL | Blocklisted URL on **current** message, subject to the warning-only exception below | `obvious_scam` without AI | Unsaved + malicious-host match only |
+| Blocklisted email domain | Email address with a listed host on **current** message, subject to the warning-only exception below | `obvious_scam` without AI | Never |
+| Keyword or link rule | Lookalike or soliciting short link | Mask → AI; no rule-only archive | Never from the rule |
+| Context LLM (default) | `CONTEXT_LLM_ENABLED` on (default when unset); not skipped by a direct archive | `context_llm` when model says `archive` or `block` with sufficient confidence | Never from LLM |
 | Primary LLM | `CONTEXT_LLM_ENABLED=0` or `false` | `llm_review_scam` only when label is `scam` and confidence meets `LLM_REVIEW_MIN_CONFIDENCE` (default 0.7) | Never from LLM |
 | No action | `not_scam`, `no_action`, low confidence, mask failure, LLM off or unavailable, error, `unknown` | None | None |
 
@@ -28,12 +29,12 @@ End-to-end order: [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#ac
 
 ### Block policy (live)
 
-| Contact | Malicious-host URL on current message | Lookalike, soliciting short link, or blocklisted email |
-|---------|--------------------------------------|-------------------------|
-| Unsaved | May **block** (`封鎖·惡意域名`) after archive | AI review only; never auto-block |
-| Saved | Never auto-block | AI review only; never auto-block |
+| Contact | Malicious-host URL on current message | Blocklisted email | Lookalike or soliciting short link |
+|---------|--------------------------------------|-------------------|-------------------------|
+| Unsaved | May **block** (`封鎖·惡意域名`) after archive | Archive only | AI review only; never auto-block |
+| Saved | Never auto-block | Archive only | AI review only; never auto-block |
 
-An unsaved sender's WhatsApp-forwarded warning that quotes a single listed URL, identifies it as fake or phishing, and explicitly tells the recipient not to use it goes to **mask → LLM** instead. Forwarded status or a warning headline alone is not enough. Messages that also solicit action or include more links use the normal link rules. The review can archive, but cannot auto-block; normal mask, enablement and cooldown rules apply.
+Warning-only scam reports go to **mask → LLM** before malicious-host, lookalike and short-link rules, regardless of saved status or forwarding metadata. They require scam framing, no direct solicitation outside quoted/reported/negated speech, and exactly one hard-hit URL occurrence. Extra genuine-site references are fine; direct asks, repeated flagged URLs and second flagged links retain normal link rules. The review can archive, but cannot auto-block; normal mask, enablement and cooldown rules apply.
 
 List file: [`data/malicious-hosts.json`](data/malicious-hosts.json). Optional path override: `MALICIOUS_HOSTS_PATH`. Empty `hosts:[]` keeps the previous list unless `MALICIOUS_HOSTS_ALLOW_EMPTY=1`.
 

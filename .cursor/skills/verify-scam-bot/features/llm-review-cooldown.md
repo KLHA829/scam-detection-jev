@@ -1,6 +1,6 @@
 # Per-chat LLM cooldown
 
-In automatic mode, a successful primary or context LLM review starts the per-chat **`LLM_REVIEW_COOLDOWN_MS`** window (default ten minutes) only after the chat is archived. That chat skips mask and LLM until the window expires. Guided mode still starts cooldown when the review recommends archive, before the operator acts. Benign or low-confidence reviews do not start the cooldown. Known malicious URLs still archive or block.
+In automatic mode, a successful primary or context LLM review starts the per-chat **`LLM_REVIEW_COOLDOWN_MS`** window (default ten minutes) only after the chat is archived. That chat skips mask and LLM until the window expires. Guided mode still starts cooldown when the review recommends archive, before the operator acts. Benign or low-confidence reviews do not start the cooldown. Curated blocklist hits still archive; only listed URLs can auto-block.
 
 ## Sub-features
 
