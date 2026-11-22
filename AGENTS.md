@@ -68,6 +68,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - Successful poll and command unblocks append to `BLOCK_LOG_PATH`; recent blocks and history-based 解除 skip unblocked contacts until they are blocked again (2026-11-21).
 - Primary LLM archives require a `scam` label and the confidence gate; contradictory `should_archive: true` on non-scam or unknown labels is ignored (2026-11-21).
 - Short-link impersonation requires affirmative self-identification or a WhatsApp official header; bare authority mentions and anti-scam advice such as 銀行職員唔會叫你撳 bit.ly/xxx go to mask → LLM rather than rule-only archive (2026-11-21).
+- Generic staff self-introductions (我係…職員, e.g. clinic/shop) with a short link no longer count as impersonation and go to mask → LLM; government/courier staff claims (政府/順豐/快遞 + 職員) and authority words still qualify for short-link archive (2026-11-22).
 - Automatic blocks refresh contact state after pacing, before blocking and renaming; saved or unknown contacts downgrade to archive-only before block. Explicit guided blocks retain their saved-contact permission.
 - Edits invalidate pending guided deliveries as well as open polls, bypassing recommendation cooldown; stale deliveries do not publish new cards, and polls already in flight are registered void.
 - Review and unblock choices persist consumption before resolving the in-memory poll. A failed save leaves the choice retryable and notifies the operator without taking action.
