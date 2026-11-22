@@ -135,6 +135,11 @@ an open unblock poll still takes priority.
   It also covers ambiguous suffixes and excludes successfully unblocked records.
   This case runs in `bin/drive-agents-invariants`.
 
+- **Exact unblock numbers.** `prefers exact unblock numbers over suffix collisions across full history and polls`
+  in `lib/operator-commands.test.js` gives exact-number chats priority over suffix-only
+  matches, preserving poll priority for the same chat and ambiguity between distinct
+  exact matches or multiple suffix-only matches. It runs in `bin/drive-agents-invariants`.
+
 - **Edit voids the old poll.** Run:
 
 ```bash

@@ -16,6 +16,7 @@ const root = path.resolve(skillDir, '../../..');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'prefers exact unblock numbers over suffix collisions across full history and polls',
   'resolves explicit unblock numbers beyond the latest 20 active blocks',
   'successful unblock removes history targets and a reblock restores them',
   'unblocks are applied before history limits without hiding other contacts',
