@@ -16,6 +16,7 @@ const root = path.resolve(skillDir, '../../..');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'resolves explicit unblock numbers beyond the latest 20 active blocks',
   'successful unblock removes history targets and a reblock restores them',
   'unblocks are applied before history limits without hiding other contacts',
   'failed and kept unblocks do not clear block history',
@@ -53,7 +54,7 @@ const TEST_NAMES = [
   'invariant: unsaved lookalike archives without waiting on score and does not block',
 ];
 
-const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/guided-block-name.test.js', 'lib/wa-actions.test.js', 'lib/unblock-history.test.js', 'lib/wa-handlers.test.js'];
+const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/guided-block-name.test.js', 'lib/wa-actions.test.js', 'lib/unblock-history.test.js', 'lib/wa-handlers.test.js', 'lib/operator-commands.test.js'];
 
 const UNSET_ENV = [
   'ARCHIVE_THRESHOLD',

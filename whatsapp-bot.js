@@ -43,7 +43,7 @@ const {
   OPERATOR_HELP_TEXT,
   parseOperatorCommand,
   shouldProcessSelfMessageBody,
-  resolveUnblockTarget,
+  resolveUnblockCommand,
   formatRecentBlocksList,
   formatAmbiguousUnblock,
   loadRecentBlocksForCommands,
@@ -354,7 +354,6 @@ async function handleOperatorCommand(cmd, deps, wid) {
     reviewQueue && typeof reviewQueue.findOpenUnblock === 'function'
       ? reviewQueue.findOpenUnblock()
       : [];
-  const recentBlocks = loadRecentBlocksForCommands(process.env, 20);
 
   if (cmd.kind === 'keep_blocked') {
     if (openUnblock.length === 0) {
@@ -372,7 +371,7 @@ async function handleOperatorCommand(cmd, deps, wid) {
   }
 
   if (cmd.kind === 'unblock') {
-    const target = resolveUnblockTarget(cmd.digits, { openUnblockPolls: openUnblock, recentBlocks });
+    const target = resolveUnblockCommand(cmd.digits, { openUnblockPolls: openUnblock });
     if (target.kind === 'not_found') {
       await pacer.exclusive(() => client.sendMessage(wid, '搵唔到符合嘅封鎖紀錄。'));
       return;
