@@ -167,8 +167,10 @@ function makeFakeWhatsApp({
     },
   };
   const client = {
-    async saveOrEditAddressbookContact() {
+    async saveOrEditAddressbookContact(_number, name) {
       events.push('rename');
+      contact.name = name;
+      contact.isMyContact = true;
     },
   };
   return { msg, chat, contact, client, events };
@@ -282,6 +284,7 @@ async function executeScenario({
           source: 'wid',
         }),
         archiveChat: async () => fake.chat.archive(),
+        refreshContact: () => fake.msg.getContact(),
         blockContact: (info) =>
           blockAndRename({
             client: fake.client,
@@ -289,6 +292,7 @@ async function executeScenario({
             chat: fake.chat,
             digits: info && info.digits,
             contactName: info && info.contactName,
+            refreshUnsavedContact: () => fake.msg.getContact(),
           }),
         llmCooldownStore: cooldownStore,
         operatorMode: 'auto',
