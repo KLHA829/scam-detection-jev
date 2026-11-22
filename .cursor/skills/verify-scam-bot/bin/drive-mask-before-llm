@@ -17,6 +17,9 @@ const runDir = path.join(skillDir, 'run');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'reviews warning-only links across sender states and LLM paths',
+  'keeps direct and repeated-link lures on the hard-link path',
+  'fails closed when warning review masking fails',
   'direct harvest credential binding',
   'drops the original when an edit is empty',
   'does not resend the original after an empty edit with 0 earlier messages',
