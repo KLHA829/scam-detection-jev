@@ -5,12 +5,10 @@ const path = require('node:path');
 const { createActionPacer } = require('../lib/action-pacer');
 const { blockAndRename } = require('../lib/wa-actions');
 const { processIncomingMessage } = require('../lib/handle-incoming');
-const { loadRubric } = require('../lib/score-message');
 const { createStubJevlikeClient } = require('../stub-jevlike');
 
 process.env.MALICIOUS_HOSTS_PATH = path.join(__dirname, '..', 'data', 'malicious-hosts.json');
 
-const rubric = loadRubric();
 const env = { LLM_REVIEW_ENABLED: 'false' };
 
 async function measure(gapMs) {
@@ -18,7 +16,6 @@ async function measure(gapMs) {
   const deps = (digits) => ({
     env,
     maskClient: createStubJevlikeClient(),
-    rubric,
     exclusive: (fn) => pacer.exclusive(fn),
     pauseAction: () => pacer.pause(),
     resolveNumber: async () => ({ digits, unresolvedLid: false }),
