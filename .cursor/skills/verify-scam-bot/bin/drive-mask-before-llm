@@ -17,6 +17,11 @@ const runDir = path.join(skillDir, 'run');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  ...['not_scam', 'unknown', 'invalid', null].flatMap((label) => [
+    `rejects should_archive for non-scam label ${label}`,
+    `merge ignores contradictory non-scam label ${label}`,
+    `does not archive contradictory non-scam reply ${label}`,
+  ]),
   'sends short-link advice and authority mentions to masked AI review',
   'keeps affirmative impersonation short-link scams on the hard archive path',
   'fails closed when masking short-link advice fails',
