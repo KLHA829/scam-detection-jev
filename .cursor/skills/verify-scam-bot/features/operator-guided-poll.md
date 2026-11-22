@@ -134,6 +134,17 @@ an open unblock poll still takes priority.
   targets, reblocking, failed/kept actions, and best-effort log writes. These
   cases also run in `bin/drive-agents-invariants`.
 
+- **Older unblock targets.** `resolves explicit unblock numbers beyond the latest 20 active blocks`
+  in `lib/operator-commands.test.js` checks that numbered 解除 searches all active
+  history, while bare 解除 still selects the latest block and 最近封鎖 lists five.
+  It also covers ambiguous suffixes and excludes successfully unblocked records.
+  This case runs in `bin/drive-agents-invariants`.
+
+- **Exact unblock numbers.** `prefers exact unblock numbers over suffix collisions across full history and polls`
+  in `lib/operator-commands.test.js` gives exact-number chats priority over suffix-only
+  matches, preserving poll priority for the same chat and ambiguity between distinct
+  exact matches or multiple suffix-only matches. It runs in `bin/drive-agents-invariants`.
+
 - **Edit voids the old poll.** Run:
 
 ```bash

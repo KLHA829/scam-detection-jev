@@ -18,6 +18,7 @@ const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
   'English OTP advice and solicitations',
+  'direct harvest credential binding',
   'drops the original when an edit is empty',
   'does not resend the original after an empty edit with 0 earlier messages',
   'does not resend the original after an empty edit with 1 earlier messages',
@@ -30,6 +31,8 @@ const TEST_NAMES = [
   'keeps affirmative impersonation short-link scams on the hard archive path',
   'fails closed when masking short-link advice fails',
   'sends official hsbc.co.uk links to masked AI review',
+  'sends official hsbc.com.cn links to masked AI review',
+  'sends official hsbc.com.au links to masked AI review',
   'sends official hsbc.com.sg links to masked AI review',
   'still flags HSBC regional lookalikes on unrelated hosts',
   'LLM_REVIEW_ALL does not override explicitly disabled review',
