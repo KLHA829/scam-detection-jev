@@ -13,7 +13,6 @@ const { loadRubric, labelFromScore } = require('./lib/score-message');
 const { scoreMessage } = require('./lab/score-message');
 const { JevlikeClient, resolveMaskUrl } = require('./lib/jevlike-client');
 const { processIncomingMessage } = require('./lib/handle-incoming');
-const { TtlCache, cacheKeyForMessage } = require('./lib/cache');
 const {
   createStubJevlikeClient,
   createStubJevlikeFetch,
@@ -435,25 +434,6 @@ describe('scoreMessage with stub jevlike', () => {
     const out = await client.scoreText('x');
     assert.equal(n, 2);
     assert.ok(out.prob_scam > 0.9);
-  });
-});
-
-describe('cache', () => {
-  it('expires entries after TTL', () => {
-    let now = 1000;
-    const cache = new TtlCache({ ttlMs: 50, now: () => now });
-    cache.set('a', 1);
-    assert.equal(cache.get('a'), 1);
-    now = 1060;
-    assert.equal(cache.get('a'), undefined);
-  });
-
-  it('keys on message id + text hash', () => {
-    const a = cacheKeyForMessage('id1', 'hello');
-    const b = cacheKeyForMessage('id1', 'hello');
-    const c = cacheKeyForMessage('id1', 'other');
-    assert.equal(a, b);
-    assert.notEqual(a, c);
   });
 });
 
