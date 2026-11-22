@@ -109,6 +109,11 @@ Exit code `0`. Failed attempts do not consume the successful-block history limit
 Number-based unblock commands use the newest successful rename metadata per chat;
 an open unblock poll still takes priority.
 
+- **Unblock history lifecycle.** `node --test lib/unblock-history.test.js` locks
+  successful unblock logging, removal from recent blocks and bare/numbered 解除
+  targets, reblocking, failed/kept actions, and best-effort log writes. These
+  cases also run in `bin/drive-agents-invariants`.
+
 - **Edit voids the old poll.** Run:
 
 ```bash
