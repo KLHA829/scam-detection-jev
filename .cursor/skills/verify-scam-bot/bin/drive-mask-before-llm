@@ -17,6 +17,9 @@ const runDir = path.join(skillDir, 'run');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'drops the original when an edit is empty',
+  'does not resend the original after an empty edit with 0 earlier messages',
+  'does not resend the original after an empty edit with 1 earlier messages',
   ...['not_scam', 'unknown', 'invalid', null].flatMap((label) => [
     `rejects should_archive for non-scam label ${label}`,
     `merge ignores contradictory non-scam label ${label}`,

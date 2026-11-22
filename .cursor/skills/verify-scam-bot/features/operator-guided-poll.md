@@ -21,6 +21,7 @@ measures the same two-chat path with fixed mask/LLM latency.
 - `first-choice` runs the first answer and ignores a second one. 封鎖並封存 is the choice that blocks a saved contact.
 - `live-contact-name` preserves a contact saved or named after the poll was sent while still blocking on explicit confirmation. Unsaved contacts keep the bot label; a second pending poll recognises that temporary label and retains unblock cleanup metadata.
 - `edit-voids-poll` voids the open review poll when the sender edits the message. A vote or quoted reply on the old poll does nothing and gets `呢個投票已作廢`. The edited text is reviewed again and gets a new poll only if it is still suspicious.
+- `empty-edit-context` drops the original even when the new body is empty. `lib/context-llm.test.js` locks `drops the original when an edit is empty` and `does not resend the original after an empty edit with 0 earlier messages` / `1 earlier messages`; `bin/drive-mask-before-llm` includes all three. An empty remaining window skips the model; otherwise only remaining messages are reviewed. Compare real-handler transcripts with `node scripts/demo-empty-edit.js [repo-root]`.
 
 ## How to get to it (user POV)
 
