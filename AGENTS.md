@@ -64,6 +64,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 
 ## Current state (update with the date when it changes) — 2026-11-22
 
+- Short-link money archives still require the existing money-transfer ask: a link word alone no longer counts; without the unchanged urgency/account trigger, the link must be the payment destination in the same clause. This rule only narrows the previous archive set and never archives more than before (2026-11-22).
 - Guided blocks recheck the live contact after rename pacing, preserving newly saved names and saved-contact unblock metadata without cancelling the explicit block (2026-11-22).
 - Successful poll and command unblocks append to `BLOCK_LOG_PATH`; recent blocks and history-based 解除 skip unblocked contacts until they are blocked again (2026-11-21).
 - Primary LLM archives require a `scam` label and the confidence gate; contradictory `should_archive: true` on non-scam or unknown labels is ignored (2026-11-21).
