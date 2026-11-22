@@ -125,6 +125,7 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `MALICIOUS_HOSTS_PATH` | `data/malicious-hosts.json` in the repo | Maintained host list override. |
 | `MALICIOUS_HOSTS_ALLOW_EMPTY` | Off | Set `1` or `true` to allow a reload with `hosts:[]` to clear the in-memory list. |
 | `BLOCK_LOG_PATH` | `./blocks.jsonl` | Local block history used by operator commands. |
+| `BOT_CONTACT_NAMES_PATH` | `./bot-contact-names.json` | Contacts whose name the bot wrote (block or `（可疑推銷）` label); only those names do not count as saved contacts. |
 | `OPERATOR_MODE` | Unset | `auto` or `guided` pins mode; otherwise use saved choice or ask on first run. |
 | `OPERATOR_MODE_PATH`, `REVIEW_QUEUE_PATH` | `./operator-mode.json`, `./review-queue.json` | Saved operator mode and guided review queue. |
 | `WA_ACTION_GAP_MS` | `3000` | Gap between queued WhatsApp writes in ms. |
@@ -220,11 +221,12 @@ The image runs WhatsApp Web (Chromium) only. Run jevlike beside it and set `JEVL
 docker build -t scam-detection-jev .
 docker run --rm -it \
   -e JEVLIKE_BASE_URL=http://host.docker.internal:8766 \
+  -e BOT_CONTACT_NAMES_PATH=/app/.wwebjs_auth/bot-contact-names.json \
   -v "$(pwd)/.wwebjs_auth:/app/.wwebjs_auth" \
   scam-detection-jev
 ```
 
-You still need a terminal or logs to read the QR code. The image runs as user `node`. Fix ownership if `.wwebjs_auth` was created as root.
+You still need a terminal or logs to read the QR code. `BOT_CONTACT_NAMES_PATH` keeps the record of names the bot wrote in the mounted folder, so a new container still treats `（可疑推銷）` senders as unsaved. The image runs as user `node`. Fix ownership if `.wwebjs_auth` was created as root.
 
 ## Optional agent smoke (no QR)
 

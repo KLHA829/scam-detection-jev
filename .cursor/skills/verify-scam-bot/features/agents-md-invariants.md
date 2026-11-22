@@ -9,6 +9,7 @@ The bot must never auto-block a saved contact. An unsaved contact auto-blocks **
 - `lookalike-no-block` lookalike and short_link heuristics do not pass `blockEligibility`.
 - `malicious-host-block` blocks unsaved contacts when `heuristic.id === 'malicious_host'`.
 - `context-archive-only` context model `block` archives only; no `blockContact`.
+- `pitch-label-only` context model `pitch: true` without an archive renames an unsaved sender to `（可疑推銷）` without archive or block, keeps a saved contact's name, and only a name the bot recorded for that number counts as unsaved; a user-saved contact with the same text stays protected and an edit during pacing writes nothing (`keeps a contact the user saved under the label name protected from a listed-URL block`, `does not write the label when the pitch is edited during rename pacing`, `labels an unsaved pitch sender, and the label does not shield a later scam` in `lib/wa-handlers.test.js`, `keeps the name of a contact the user saved` in `lib/wa-actions.test.js`); `drive-agents-invariants` checks both TAP results.
 - `fail-closed-unknown` ignores `unknown` / `ok:false` scores in `decideIncomingAction` and in `processIncomingMessage`; no archive and no block.
 
 ## How to get to it (user POV)

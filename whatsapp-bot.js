@@ -22,7 +22,9 @@ const {
   contextLlmMessageLimit,
   createRecentContext,
 } = require('./lib/context-llm');
-const { blockAndRename, unblockContact } = require('./lib/wa-actions');
+const { blockAndRename, labelUnsavedContact, unblockContact } = require('./lib/wa-actions');
+const { isOperatorSavedContact } = require('./lib/block-policy');
+const { createBotContactNames, defaultBotContactNamesPath } = require('./lib/bot-contact-names');
 const { createActionPacer } = require('./lib/action-pacer');
 const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-context');
 const { createOperatorState } = require('./lib/operator-mode');
@@ -223,7 +225,7 @@ async function confirmOperatorMode(client, operator, mode) {
   );
 }
 
-async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
+async function confirmReviewChoice(client, queue, pacer, choice, pollId, { botContactNames } = {}) {
   const wid = selfWid(client);
   const existing = queue.get(pollId);
   if (!existing || !wid) return;
@@ -248,6 +250,7 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
     pause: () => pacer.pause(),
     getChat: (id) => client.getChatById(id),
     getContact: (chat) => chat.getContact(),
+    botContactNames,
     archiveChat: async (chat) => {
       await chat.archive();
     },
@@ -260,6 +263,7 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
         contactName,
         canRenameContact,
         pause: () => pacer.pause(),
+        botContactNames,
       }),
   });
   if (!result.ok) queue.release(pollId);
@@ -461,6 +465,7 @@ async function handleSelfMessage(msg, deps) {
       deps.pacer,
       route.choice,
       route.pollId,
+      { botContactNames: deps.botContactNames },
     );
     return;
   }
@@ -497,6 +502,7 @@ async function handleWaMessage(msg, {
   operator,
   reviewQueue,
   llmCooldownStore,
+  botContactNames,
   bypassLlmCooldown = false,
   editedFrom = null,
   isCurrent = () => true,
@@ -526,7 +532,7 @@ async function handleWaMessage(msg, {
       body: msg.body || '',
       isForwarded: msg.isForwarded === true,
       chatId,
-      savedContact: Boolean(contact.isMyContact),
+      savedContact: isOperatorSavedContact(contact, botContactNames),
       messageId: incomingMessageId(msg),
     },
     {
@@ -547,6 +553,7 @@ async function handleWaMessage(msg, {
       holdBlock: operator ? operator.awaitingChoice() : false,
       pauseAction: () => pacer.pause(),
       llmCooldownStore,
+      botContactNames,
       bypassLlmCooldown,
       editedFrom,
       isCurrent,
@@ -559,6 +566,17 @@ async function handleWaMessage(msg, {
           contactName: info && info.contactName,
           pause: () => pacer.pause(),
           refreshUnsavedContact: () => msg.getContact(),
+          botContactNames,
+        }),
+      labelContact: (info) =>
+        labelUnsavedContact({
+          client,
+          digits: info && info.digits,
+          contactName: info && info.contactName,
+          pause: () => pacer.pause(),
+          refreshUnsavedContact: () => msg.getContact(),
+          botContactNames,
+          isCurrent,
         }),
     },
   );
@@ -697,6 +715,7 @@ function attachHandlers(client, deps) {
           deps.pacer,
           route.choice,
           route.pollId,
+          { botContactNames: deps.botContactNames },
         );
       } else if (route.kind === 'unblock') {
         await confirmUnblockChoice(
@@ -731,6 +750,9 @@ async function main() {
   const llmCooldownStore = createLlmReviewCooldownStore({
     filePath: defaultLlmReviewCooldownPath(process.env),
     env: process.env,
+  });
+  const botContactNames = createBotContactNames({
+    filePath: defaultBotContactNamesPath(process.env),
   });
   const client = createWhatsAppClient();
 
@@ -775,6 +797,7 @@ async function main() {
     operator,
     reviewQueue,
     llmCooldownStore,
+    botContactNames,
   });
   await client.initialize();
 }
