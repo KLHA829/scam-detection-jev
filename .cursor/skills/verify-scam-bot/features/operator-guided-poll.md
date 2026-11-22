@@ -11,6 +11,7 @@ measures the same two-chat path with fixed mask/LLM latency.
 
 ## Sub-features
 
+- `rename-pacing` rechecks the live contact after the wait before rename; newly saved contacts still block but keep their names and saved-contact unblock metadata. `guided block preserves a contact saved during rename pacing` in `lib/guided-block-name.test.js` runs in `bin/drive-agents-invariants` (already in TEST_FILES).
 - `self-chat-only` accepts operator commands and quoted poll replies only in the operator's own phone/LID chat, never another chat just because the sender is me. `handles operator text commands only in self chat` and `checks self-chat identity:` in `lib/wa-handlers.test.js` cover cross-chat unblock rejection, own-LID mapping, unrelated/empty mappings, and lookup failure; both run in `bin/drive-agents-invariants`.
 - `setup-poll` asks `呢個 bot 點處理可疑訊息？` with 自動封鎖同封存 and 逐條問我. Until that poll is answered, suspicious chats are archived and nobody is blocked. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Sending `設定` in the operator's own chat asks again.
 - `review-poll` asks `你想點處理？` with 封鎖並封存, 只封存, and 留低. Numeric replies `1`, `2`, and `3` map to those three choices.
