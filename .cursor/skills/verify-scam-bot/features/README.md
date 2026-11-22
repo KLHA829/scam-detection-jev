@@ -2,7 +2,7 @@
 
 Maintained recipes for operator-facing behavior. Read this index, then the feature file.
 
-Live inbound: link heuristics → else **mask → LLM**. jevlike **`POST /v1/score`** is **lab/eval only** — not live archive proof.
+Live inbound: curated blocklist fast path → else **mask → LLM**. jevlike **`POST /v1/score`** is **lab/eval only** — not live archive proof.
 
 ## Baseline preconditions
 
@@ -35,7 +35,7 @@ Each feature file: H1 + paragraph, then `Sub-features`, `How to get to it (user 
 
 - [Mask before LLM](./mask-before-llm.md) — **primary smoke**; `XXX` over PII spans before any chat API call; incomplete mask skips LLM (fail closed).
 - [AGENTS.md invariants](./agents-md-invariants.md) — saved never auto-block; lookalike/short-link never auto-block; malicious-host block; mask fail-closed; LLM path archives without score auto-block.
-- [Link lookalike archive](./link-lookalike-archive.md) — lookalike or soliciting short link hard-archives; no auto-block.
+- [Keyword and lookalike AI review](./link-lookalike-archive.md) — lookalike or soliciting short link requires AI confirmation; no auto-block.
 - [Malicious-host block](./malicious-host-block.md) — unsaved auto-block only for URLs on `data/malicious-hosts.json`.
 - [LLM review cooldown](./llm-review-cooldown.md) — per-chat skip of mask+LLM after a successful review (link rules still fire).
 - Malformed LLM confidence — malformed confidence is rejected and does not archive; [primary review tests](../../../../lib/llm-review-confidence.test.js) and [context review tests](../../../../lib/context-llm-confidence.test.js) cover invalid types and ranges, missing confidence, and valid confidence boundaries.

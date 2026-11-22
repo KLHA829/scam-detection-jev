@@ -8,10 +8,12 @@ Facts about live decisions and lab-only jevlike thresholds. Setup and env wiring
 
 | Stage | Trigger | Archive reason | Block |
 |-------|---------|----------------|-------|
-| Link heuristic | Lookalike host, soliciting short link, or malicious-host URL on **current** message, subject to the warning-only exception below. The money path requires the existing money-transfer-ask detector AND (urgency/account language OR payment explicitly via/at a link in the same bounded clause). Payment-link phrasing alone does not qualify; a notice link plus a transfer request alone goes to masked LLM review. | `obvious_scam` | Unsaved + malicious-host match only |
-| Context LLM (default) | `CONTEXT_LLM_ENABLED` on (default when unset); not skipped by link archive | `context_llm` when model says `archive` or `block` with sufficient confidence | Never from LLM |
+| Known malicious URL | Blocklisted URL on **current** message, subject to the warning-only exception below | `obvious_scam` without AI | Unsaved + malicious-host match only |
+| Blocklisted email domain | Email address with a listed host on **current** message, subject to the warning-only exception below | `obvious_scam` without AI | Never |
+| Keyword or link rule | Lookalike or soliciting short link. The money path requires the existing money-transfer ask plus urgency/account language or explicit payment via/at a link in the same bounded clause. Payment-link phrasing alone does not qualify. | Mask → AI; no rule-only archive | Never from the rule |
+| Context LLM (default) | `CONTEXT_LLM_ENABLED` on (default when unset); not skipped by a direct archive | `context_llm` when model says `archive` or `block` with sufficient confidence | Never from LLM |
 | Primary LLM | `CONTEXT_LLM_ENABLED=0` or `false` | `llm_review_scam` only when label is `scam` and confidence meets `LLM_REVIEW_MIN_CONFIDENCE` (default 0.7) | Never from LLM |
-| No action | `not_scam`, `no_action`, low confidence, mask failure, LLM off, error, `unknown` | None | None |
+| No action | `not_scam`, `no_action`, low confidence, mask failure, LLM off or unavailable, error, `unknown` | None | None |
 
 End-to-end order: [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented).
 
@@ -27,10 +29,10 @@ End-to-end order: [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#ac
 
 ### Block policy (live)
 
-| Contact | Malicious-host URL on current message | Lookalike or short link |
-|---------|--------------------------------------|-------------------------|
-| Unsaved | May **block** (`封鎖·惡意域名`) after archive | Archive only |
-| Saved | Operator alert only | Operator alert only |
+| Contact | Malicious-host URL on current message | Blocklisted email | Lookalike or soliciting short link |
+|---------|--------------------------------------|-------------------|-------------------------|
+| Unsaved | May **block** (`封鎖·惡意域名`) after archive | Archive only | AI review only; never auto-block |
+| Saved | Operator alert only | Operator alert only | Masked AI review; operator alert only if AI confirms scam |
 
 Saved contacts also get an alert rather than an automatic archive when flagged by either model, regardless of operator mode.
 
@@ -40,7 +42,7 @@ List file: [`data/malicious-hosts.json`](data/malicious-hosts.json). Optional pa
 
 ### Link rules (not phrase tropes)
 
-Implemented in `lib/link-rules.js`. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) are **not** hard hits.
+Implemented in `lib/link-rules.js`. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) are **not** standalone actions.
 
 ## Lab-only jevlike score
 

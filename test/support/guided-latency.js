@@ -34,7 +34,7 @@ async function measureGuidedLatency(delayMs, { stage = 'mask', fails = false } =
       },
     },
     pacer: createActionPacer({ env: { WA_ACTION_GAP_MS: '0' } }),
-    env: { CONTEXT_LLM_ENABLED: '0', LLM_REVIEW_COOLDOWN_MS: '0' },
+    env: { CONTEXT_LLM_ENABLED: '0', LLM_REVIEW_COOLDOWN_MS: '0', BLOCK_ENABLED: 'false' },
     operator: { mode: () => 'guided', awaitingChoice: () => false },
     reviewQueue: createReviewQueue({ filePath: path.join(dir, 'queue.json') }),
     maskClient: {
@@ -57,7 +57,7 @@ async function measureGuidedLatency(delayMs, { stage = 'mask', fails = false } =
     const id = `${digits}@c.us`;
     return {
       id: { _serialized: `message-${name}` }, from: id, type: 'chat',
-      body: 'https://hsbc.evil.com',
+      body: 'https://malicious-block-test.invalid/login',
       async forward() { events.push('forward'); },
       getContact: async () => ({ id: { _serialized: id }, pushname: name, isMyContact: false }),
       getChat: async () => ({

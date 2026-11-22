@@ -222,15 +222,15 @@ describe('decideIncomingAction matrix', () => {
       { action: 'ignore', archiveReason: null },
     );
     assert.deepEqual(
-      decideIncomingAction(high, '14155550123', false, { hit: true }),
-      { action: 'archive', archiveReason: 'obvious_scam' },
+      decideIncomingAction(high, '14155550123', false, { hit: true, id: 'lookalike_domain' }),
+      { action: 'ignore', archiveReason: null },
     );
   });
 
-  it('archives on obvious heuristic even when score is low', () => {
+  it('archives on explicit malicious URL even when score is low', () => {
     const low = scoreResult({ score: 4, label: 'not_scam' });
     assert.deepEqual(
-      decideIncomingAction(low, '85261234567', true, { hit: true }),
+      decideIncomingAction(low, '85261234567', true, { hit: true, id: 'malicious_host' }),
       { action: 'archive', archiveReason: 'obvious_scam' },
     );
   });
@@ -275,21 +275,21 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('primary action stays archive on heuristic; only malicious_host auto-blocks afterwards', () => {
+  it('only malicious_host archives without AI and auto-blocks afterwards', () => {
     const high = scoreResult({ score: 99, label: 'scam' });
     const lookalike = { hit: true, id: 'lookalike_domain', archiveReason: 'obvious_scam' };
     const d = decideIncomingAction(high, '14155550123', false, lookalike);
-    assert.equal(d.action, 'archive');
-    assert.equal(d.archiveReason, 'obvious_scam');
+    assert.equal(d.action, 'ignore');
+    assert.equal(d.archiveReason, null);
     const notBlocked = applyBlockPolicy(d, {
       savedContact: false,
       scoreResult: high,
       heuristic: lookalike,
     });
-    assert.equal(notBlocked.action, 'archive');
+    assert.equal(notBlocked.action, 'ignore');
 
     const malicious = { hit: true, id: 'malicious_host', archiveReason: 'obvious_scam' };
-    const blocked = applyBlockPolicy(d, {
+    const blocked = applyBlockPolicy(decideIncomingAction(high, '14155550123', false, malicious), {
       savedContact: false,
       scoreResult: high,
       heuristic: malicious,
@@ -301,14 +301,17 @@ describe('decideIncomingAction matrix', () => {
 });
 
 describe('resolveIncomingMessageLabel', () => {
-  it('promotes heuristic to scam; otherwise unknown until LLM', () => {
+  it('promotes malicious URLs to scam; otherwise unknown until LLM', () => {
     const promoted = resolveIncomingMessageLabel(
       scoreResult({ label: 'not_scam', score: 2 }),
-      '登入 https://whatsapp-secure.com/login',
+      '登入 https://malicious-block-test.invalid/login',
     );
     assert.equal(promoted.label, 'scam');
     assert.equal(promoted.archiveReason, 'obvious_scam');
 
+    const lookalike = resolveIncomingMessageLabel(null, '登入 https://whatsapp-secure.com/login');
+    assert.equal(lookalike.heuristic.id, 'lookalike_domain');
+    assert.equal(lookalike.label, 'unknown');
     const unknown = resolveIncomingMessageLabel(null, 'hello');
     assert.equal(unknown.label, 'unknown');
     assert.equal(unknown.archiveReason, null);

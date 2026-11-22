@@ -16,6 +16,8 @@ const root = path.resolve(skillDir, '../../..');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'invariant: malicious_email_host fast path skips primary and context LLM',
+  'invariant: malicious_host fast path skips primary and context LLM',
   'prefers exact unblock numbers over suffix collisions across full history and polls',
   'resolves explicit unblock numbers beyond the latest 20 active blocks',
   'retries guided delivery after a failed queue save and keeps the retry after restart',
@@ -60,13 +62,13 @@ const TEST_NAMES = [
   'invariant: applyBlockPolicy archives unsaved block-line score without link rule or context block',
   'invariant: scorer unknown (ok:false) never promotes to block via applyBlockPolicy',
   'invariant: non-heuristic messages ignore before LLM merge',
-  'invariant: link heuristic archives without a score',
+  'invariant: malicious URL archives without a score',
   'invariant: mask failure alone never archives in the live decision path',
   'invariant: LLM scam archives unsaved contact and never calls blockContact',
   'invariant: saved contact LLM scam is deferred without archiving or blocking',
   'invariant: saved contact on malicious_host is deferred without archiving or blocking',
   'invariant: context-model block archives only and never auto-blocks',
-  'invariant: unsaved lookalike archives without waiting on score and does not block',
+  'invariant: unsaved lookalike does not score, archive or block when AI is disabled',
 ];
 
 const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/audit-review-queue.test.js', 'lib/guided-block-name.test.js', 'lib/wa-actions.test.js', 'lib/unblock-history.test.js', 'lib/sibling-unblock-polls.test.js', 'lib/wa-handlers.test.js', 'lib/operator-commands.test.js'];
