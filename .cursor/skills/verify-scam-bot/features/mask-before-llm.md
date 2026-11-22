@@ -63,6 +63,7 @@ Exit code `0`. The context-LLM case ends `action` `ignore` and `skipped` `mask_f
 
 ## Gotchas
 
+- Primary review requires a `scam` label and sufficient confidence. Contradictory `should_archive: true` on `not_scam`, `unknown`, invalid or missing labels does not archive. `lib/llm-review.test.js` locks parsing, merge and the real handler; `drive-mask-before-llm` runs these cases.
 - A mask that is truncated, short a row, or has a non-integer span is a failed mask. The LLM call is skipped. That failure does not archive or block.
 - Empty `spans` arrays are success.
 - The stub's 200 uses the offline span helper. Live `/v1/mask` returns only the PII head. A missing head is 503, and the bot skips the LLM call the same way.

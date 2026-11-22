@@ -405,9 +405,14 @@ async function handleSelfMessage(msg, deps) {
   let isSelf;
   try {
     const chat = await msg.getChat();
-    const contact = await msg.getContact();
     const chatId = serializedId(chat && chat.id);
-    isSelf = chatId === wid || Boolean(contact && contact.isMe);
+    isSelf = chatId === wid;
+    if (!isSelf && chatId && typeof deps.client.getContactLidAndPhone === 'function') {
+      const mappings = await deps.client.getContactLidAndPhone([wid]);
+      isSelf = Array.isArray(mappings) && mappings.some(({ lid, pn }) =>
+        (pn === wid && lid === chatId) || (lid === wid && pn === chatId),
+      );
+    }
   } catch (err) {
     log.warn('self chat check failed', { error: err.message });
     return;

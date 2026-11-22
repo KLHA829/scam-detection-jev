@@ -10,7 +10,7 @@ Facts about live decisions and lab-only jevlike thresholds. Setup and env wiring
 |-------|---------|----------------|-------|
 | Link heuristic | Lookalike host, soliciting short link, or malicious-host URL on **current** message | `obvious_scam` | Unsaved + malicious-host match only |
 | Context LLM (default) | `CONTEXT_LLM_ENABLED` on (default when unset); not skipped by link archive | `context_llm` when model says `archive` or `block` with sufficient confidence | Never from LLM |
-| Primary LLM | `CONTEXT_LLM_ENABLED=0` or `false` | `llm_review_scam` when model says `scam` or `should_archive` with sufficient confidence | Never from LLM |
+| Primary LLM | `CONTEXT_LLM_ENABLED=0` or `false` | `llm_review_scam` only when label is `scam` and confidence meets `LLM_REVIEW_MIN_CONFIDENCE` (default 0.7) | Never from LLM |
 | No action | `not_scam`, `no_action`, low confidence, mask failure, LLM off, error, `unknown` | None | None |
 
 End-to-end order: [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented).

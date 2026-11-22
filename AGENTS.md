@@ -19,11 +19,11 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 | `lib/filters.js`, `lib/lid.js` | which messages count, `@lid` resolution |
 | `lib/link-rules.js`, `lib/scam-intent.js` | link-only hard hits; solicit helpers for short links |
 | `lib/malicious-hosts.js`, `data/malicious-hosts.json` | maintained known-malicious hosts; only path that auto-blocks unsaved contacts |
-| `lib/thread-context.js` | current body plus last `CONTEXT_TURNS` inbound bodies |
+| `lib/thread-context.js` | current body plus last `CONTEXT_TURNS` inbound bodies; at most 1000 chats by default |
 | `test/support/mask-spans-stub.js` | offline regex stand-in for stub worker; live inbound must not require it |
 | `lib/pii-xxx.js` | apply mask spans to text (`XXX`); not a live mask fallback |
 | `POST /v1/mask` | jevlike PII head spans; the bot replaces them with `XXX` before any external LLM |
-| `lib/context-llm.js` | review of the latest inbound messages (`CONTEXT_LLM_ENABLED`, default **on**) |
+| `lib/context-llm.js` | review of the latest inbound messages (`CONTEXT_LLM_ENABLED`, default **on**); at most 1000 chats by default |
 | `lib/llm-review.js` | **primary** judgment (OpenAI-compatible Chat Completions) after mask |
 | `lib/block-policy.js`, `lib/wa-actions.js`, `lib/action-pacer.js` | graded block, paced WhatsApp writes |
 | `lib/operator-mode.js`, `lib/review-queue.js` | self-chat choice: automatic, or ask before archive/block |
@@ -62,6 +62,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 
 ## Current state (update with the date when it changes) — 2026-11-21
 
+- Primary LLM archives require a `scam` label and the confidence gate; contradictory `should_archive: true` on non-scam or unknown labels is ignored (2026-11-21).
 - Short-link impersonation requires affirmative self-identification or a WhatsApp official header; bare authority mentions and anti-scam advice such as 銀行職員唔會叫你撳 bit.ly/xxx go to mask → LLM rather than rule-only archive (2026-11-21).
 - Automatic blocks refresh contact state after pacing, before blocking and renaming; saved or unknown contacts downgrade to archive-only before block. Explicit guided blocks retain their saved-contact permission.
 - Edits invalidate pending guided deliveries as well as open polls, bypassing recommendation cooldown; stale deliveries do not publish new cards, and polls already in flight are registered void.
