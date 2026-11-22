@@ -35,7 +35,7 @@ The frozen scam head and **`POST /v1/score`** remain for lab scoring (`lab/score
 | **Graded block** — `contact.block()` only for unsaved contacts on malicious-host match | Operator-maintained list is the only automatic block signal. Block reason becomes contact name and `blocks.jsonl` entry. |
 | **Review every** non-ignored 1:1 body (mask then LLM), including saved contacts | Saved contacts are not safe. Account takeover and investment scams arrive from hijacked numbers. |
 | **LID** — resolve `@lid` for logs and LLM context; never treat LID digits as a phone | LID is not a country code. Unresolved `@lid` still runs mask and LLM. |
-| **Link rules + malicious-host list** | Hard archive: lookalike host, soliciting short link, or malicious-host URL. Bare host counts. Allowlisted brands (`sf-express.com`, `whatsapp.com`, `hsbc.com`, …) and hosts like `github.io` are not lookalikes. |
+| **Link rules + malicious-host list** | Hard archive: lookalike host, soliciting short link, or malicious-host URL outside the forwarded-warning exception. Bare host counts. Allowlisted brands (`sf-express.com`, `whatsapp.com`, `hsbc.com`, …) and hosts like `github.io` are not lookalikes. |
 | Filters: `fromMe`, groups, notification types, official WhatsApp names, `isMe` | Avoids loops on your own chats and system accounts. |
 | Session in **`.wwebjs_auth`** via `LocalAuth` | Standard `whatsapp-web.js` operator workflow. |
 | Optional **Docker** for Chromium only | jevlike runs as a sibling Python process. |
@@ -82,10 +82,10 @@ The frozen scam head and **`POST /v1/score`** remain for lab scoring (`lab/score
 
 Live DM, after filters:
 
-1. Link rule on the **current** message → archive `obvious_scam`. Skip LLM. Lookalike, soliciting short link, or malicious-host URL. Allowlisted hosts such as `sf-express.com` are not lookalikes. Phrase tropes are not this step.
+1. Link rule on the **current** message → archive `obvious_scam`. Skip LLM. Lookalike, soliciting short link, or malicious-host URL. Exception: a WhatsApp-forwarded warning from an unsaved contact that quotes one listed URL, calls it fake or phishing, and says not to use it goes to masked review (step 2 or 3). A forwarded lure, mixed solicitation or extra link does not qualify. Allowlisted hosts such as `sf-express.com` are not lookalikes. Phrase tropes are not this step.
 2. If `CONTEXT_LLM_ENABLED` (default **on**): mask → context LLM on latest inbound bodies → archive `context_llm` when the model answers `archive` or `block` with confidence ≥ `LLM_REVIEW_MIN_CONFIDENCE`. `no_action`, low confidence, mask failure, or bad reply → **ignore**. Model `block` is archive only. Skipped when step 1 already archived.
 3. If `CONTEXT_LLM_ENABLED` is off: mask → primary LLM (`LLM_REVIEW_*`, default on). Label `scam` with confidence at or above `LLM_REVIEW_MIN_CONFIDENCE` (default 0.7) → archive `llm_review_scam`. `should_archive` alone cannot trigger archive. `not_scam` → ignore. Mask failure, LLM off, error, or `unknown` → **ignore**.
-4. After archive, if the contact is unsaved and the current message matched the **malicious-host list** → **block** (`封鎖·惡意域名`), mute, archive, append `blocks.jsonl`. Lookalike and short-link archives stay archive-only.
+4. If the contact is unsaved and the current message hard-hit the **malicious-host** link rule in step 1 → **block** (`封鎖·惡意域名`), mute, archive, append `blocks.jsonl`. Lookalike, short-link and LLM archives stay archive-only.
 5. Saved contacts never auto-block. Primary and context LLMs never auto-block.
 
 `OPERATOR_MODE=guided` (or the self-chat poll) computes the same suspicion but waits for **封鎖並封存**, **只封存**, or **留低** before WhatsApp writes. The explanation call is separate and cannot release the card.

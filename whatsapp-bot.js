@@ -523,6 +523,7 @@ async function handleWaMessage(msg, {
       pushName: msg._data?.notifyName || contact.pushname || contact.name,
       contactName: contact.name || contact.pushname,
       body: msg.body || '',
+      isForwarded: msg.isForwarded === true,
       chatId,
       savedContact: Boolean(contact.isMyContact),
       messageId: incomingMessageId(msg),
