@@ -36,6 +36,12 @@ const TEST_NAMES = [
   'guided block preserves live names: unsaved unnamed contact',
   'guided block does not rename when live contact lookup fails',
   'guided reblocks from two pending polls retain temporary contact cleanup',
+  'closes sibling unblock polls after 解除封鎖 through real handlers',
+  'closes sibling unblock polls after 保持封鎖 through real handlers',
+  'persists sibling consumption without closing reviews or other chats; new blocks stay actionable',
+  'does not consume any siblings when persistence fails and allows retry',
+  'keeps only the selected poll retryable after a failed WhatsApp action',
+  'handles missing, resolved and chatless polls without closing unrelated items',
   'does not delete a contact renamed during the wait before deletion',
   'invariant: saved contacts are never auto-blocked (blockEligibility stays null)',
   'invariant: unsaved jevlike score at or above BLOCK_THRESHOLD alone does not block',
@@ -54,7 +60,7 @@ const TEST_NAMES = [
   'invariant: unsaved lookalike archives without waiting on score and does not block',
 ];
 
-const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/guided-block-name.test.js', 'lib/wa-actions.test.js', 'lib/unblock-history.test.js', 'lib/wa-handlers.test.js', 'lib/operator-commands.test.js'];
+const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/guided-block-name.test.js', 'lib/wa-actions.test.js', 'lib/unblock-history.test.js', 'lib/sibling-unblock-polls.test.js', 'lib/wa-handlers.test.js', 'lib/operator-commands.test.js'];
 
 const UNSET_ENV = [
   'ARCHIVE_THRESHOLD',
