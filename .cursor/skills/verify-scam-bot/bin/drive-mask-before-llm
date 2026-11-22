@@ -23,6 +23,7 @@ const TEST_NAMES = [
   'fails closed when warning review masking fails',
   'direct harvest credential binding',
   'staff self-introductions with short links',
+  'offer verbs bind OTP within one sentence',
   'drops the original when an edit is empty',
   'does not resend the original after an empty edit with 0 earlier messages',
   'does not resend the original after an empty edit with 1 earlier messages',
