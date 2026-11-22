@@ -12,6 +12,8 @@ Lookalike hosts and soliciting short links **archive** only. They do not block. 
 
 Generic staff introductions are not impersonation evidence: clinic or shop staff may legitimately send a short appointment or event link. Short-link impersonation retains existing authority/service claims; government and courier names qualify only when immediately followed by 職員 / 职员, not by themselves. Other solicitation signals still apply independently.
 
+A money request plus the word 連結/link alone is not a soliciting short link: family fee requests can include a school notice. The money path always requires the existing money-transfer-ask detector, plus either urgency/account language or payment explicitly via/at a link, close together in the same clause. Payment-link phrasing alone does not add an archive trigger; this narrows the previous money path. Otherwise use masked LLM review. OTP and affirmative impersonation rules are unchanged.
+
 English OTP advice with a directly negated disclosure verb (for example, “never send”, “don't share”, “won't ask you to send”, or “no one will ask you to send”) does not count as a soliciting short link. Like Chinese negated advice, it goes through mask → LLM unless another link rule matches. Negation removes only that verb, not later requests: “don't hesitate to send me your OTP”, “never mind, send me your OTP”, and a separate affirmative request still qualify. English negation never crosses line breaks or intervening free-form clauses; this is a scoped heuristic, not a general English parser.
 
 ## Why mask before any external LLM
