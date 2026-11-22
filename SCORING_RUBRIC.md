@@ -38,6 +38,8 @@ List file: [`data/malicious-hosts.json`](data/malicious-hosts.json). Optional pa
 
 ### Link rules (not phrase tropes)
 
+Generic staff self-introductions (`我係…職員` / `我是…职员`) do not by themselves make a short link soliciting. Authority claims (for example bank, police, government, customs or courier), customer-service claims and official headers still qualify; other solicit signals remain independent. Ordinary appointment links go to masked LLM review.
+
 Implemented in `lib/link-rules.js`. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) are **not** hard hits.
 
 ## Lab-only jevlike score
