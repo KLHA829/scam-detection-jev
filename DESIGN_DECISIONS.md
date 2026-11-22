@@ -8,9 +8,9 @@ Live judgment (since 2026-10-16) is **mask, then OpenAI-compatible LLM**. Local 
 
 Primary users are elderly. A wrong block cuts off family and caregivers. The bot therefore **never** auto-blocks saved contacts. It auto-blocks unsaved contacts **only** when the current message URL matches [`data/malicious-hosts.json`](data/malicious-hosts.json).
 
-Lookalike hosts and soliciting short links **archive** only. They do not block. Primary and context LLMs **archive** at most. They do not block. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block by themselves.
+Lookalike hosts, soliciting short links and email addresses on listed domains go to AI review. They never archive or block by themselves. Primary and context LLMs **archive** at most. They do not block. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block by themselves.
 
-English OTP advice with a directly negated disclosure verb (for example, “never send”, “don't share”, “won't ask you to send”, or “no one will ask you to send”) does not count as a soliciting short link. Like Chinese negated advice, it goes through mask → LLM unless another link rule matches. Negation removes only that verb, not later requests: “don't hesitate to send me your OTP”, “never mind, send me your OTP”, and a separate affirmative request still qualify. English negation never crosses line breaks or intervening free-form clauses; this is a scoped heuristic, not a general English parser.
+English OTP advice with a directly negated disclosure verb (for example, “never send”, “don't share”, “won't ask you to send”, or “no one will ask you to send”) does not count as a soliciting short link. Like Chinese negated advice, it goes through mask → LLM unless a known malicious URL matches. Negation removes only that verb, not later requests: “don't hesitate to send me your OTP”, “never mind, send me your OTP”, and a separate affirmative request still qualify. English negation never crosses line breaks or intervening free-form clauses; this is a scoped heuristic, not a general English parser.
 
 ## Why mask before any external LLM
 
@@ -20,7 +20,7 @@ If the mask head is missing, the response is invalid, or the call fails, the bot
 
 ## Why the LLM instead of jevlike score on inbound
 
-HK and TW DMs reuse payment, OTP, courier, and impersonation patterns, but phrase rules alone false-positive on normal elderly chat. Link heuristics catch obvious URL tricks on the **current** message without an API call.
+HK and TW DMs reuse payment, OTP, courier, and impersonation patterns, but phrase rules alone false-positive on normal elderly chat. Only a known malicious URL on the **current** message bypasses AI, subject to the forwarded-warning exception.
 
 Everything else goes through mask and an OpenAI-compatible review (`LLM_REVIEW_ENABLED` default **on**). Archive from the LLM needs `confidence >= LLM_REVIEW_MIN_CONFIDENCE` (default **0.7**). Lower or missing confidence means ignore. Errors and `unknown` mean ignore.
 
@@ -37,7 +37,7 @@ The frozen scam head and **`POST /v1/score`** remain for lab scoring (`lab/score
 | **Graded block** — `contact.block()` only for unsaved contacts on malicious-host match | Operator-maintained list is the only automatic block signal. Block reason becomes contact name and `blocks.jsonl` entry. |
 | **Review every** non-ignored 1:1 body (mask then LLM), including saved contacts | Saved contacts are not safe. Account takeover and investment scams arrive from hijacked numbers. |
 | **LID** — resolve `@lid` for logs and LLM context; never treat LID digits as a phone | LID is not a country code. Unresolved `@lid` still runs mask and LLM. |
-| **Link rules + malicious-host list** | Hard archive: lookalike host, soliciting short link, or malicious-host URL outside the forwarded-warning exception. Bare host counts. Allowlisted brands (`sf-express.com`, `whatsapp.com`, `hsbc.com`, …) and hosts like `github.io` are not lookalikes. |
+| **Link rules + malicious-host list** | Only a malicious-host URL outside the forwarded-warning exception directly archives. Other rule hits go to masked AI review. Bare host counts. Allowlisted brands (`sf-express.com`, `whatsapp.com`, `hsbc.com`, …) and hosts like `github.io` are not lookalikes. |
 | Filters: `fromMe`, groups, notification types, official WhatsApp names, `isMe` | Avoids loops on your own chats and system accounts. |
 | Session in **`.wwebjs_auth`** via `LocalAuth` | Standard `whatsapp-web.js` operator workflow. |
 | Optional **Docker** for Chromium only | jevlike runs as a sibling Python process. |
@@ -84,10 +84,10 @@ The frozen scam head and **`POST /v1/score`** remain for lab scoring (`lab/score
 
 Live DM, after filters:
 
-1. Link rule on the **current** message → archive `obvious_scam`. Skip LLM. Lookalike, soliciting short link, or malicious-host URL. Exception: a WhatsApp-forwarded warning from an unsaved contact that quotes one listed URL, calls it fake or phishing, and says not to use it goes to masked review (step 2 or 3). A forwarded lure, mixed solicitation or extra link does not qualify. Allowlisted hosts such as `sf-express.com` are not lookalikes. Phrase tropes are not this step.
+1. Known malicious URL on the **current** message → archive `obvious_scam`. Skip LLM. Lookalike URLs, soliciting short links and blocklisted emails go to masked review (step 2 or 3), never directly archive or block. Exception: a WhatsApp-forwarded warning from an unsaved contact that quotes one listed URL, calls it fake or phishing, and says not to use it goes to masked review (step 2 or 3). A forwarded lure, mixed solicitation or extra link does not qualify. Allowlisted hosts such as `sf-express.com` are not lookalikes. Phrase tropes are not this step.
 2. If `CONTEXT_LLM_ENABLED` (default **on**): mask → context LLM on latest inbound bodies → archive `context_llm` when the model answers `archive` or `block` with confidence ≥ `LLM_REVIEW_MIN_CONFIDENCE`. `no_action`, low confidence, mask failure, or bad reply → **ignore**. Model `block` is archive only. Skipped when step 1 already archived.
-3. If `CONTEXT_LLM_ENABLED` is off: mask → primary LLM (`LLM_REVIEW_*`, default on). Label `scam` with confidence at or above `LLM_REVIEW_MIN_CONFIDENCE` (default 0.7) → archive `llm_review_scam`. `should_archive` alone cannot trigger archive. `not_scam` → ignore. Mask failure, LLM off, error, or `unknown` → **ignore**.
-4. If the contact is unsaved and the current message hard-hit the **malicious-host** link rule in step 1 → **block** (`封鎖·惡意域名`), mute, archive, append `blocks.jsonl`. Lookalike, short-link and LLM archives stay archive-only.
+3. If `CONTEXT_LLM_ENABLED` is off: mask → primary LLM (`LLM_REVIEW_*`, default on). Label `scam` with confidence at or above `LLM_REVIEW_MIN_CONFIDENCE` (default 0.7) → archive `llm_review_scam`. `should_archive` alone cannot trigger archive. `not_scam` → ignore. Mask failure, LLM off or unavailable, error, or `unknown` → **ignore**.
+4. If the contact is unsaved and the current message hard-hit the **malicious-host** link rule in step 1 → **block** (`封鎖·惡意域名`), mute, archive, append `blocks.jsonl`. LLM archives do not auto-block.
 5. Saved contacts never auto-block. Primary and context LLMs never auto-block.
 
 `OPERATOR_MODE=guided` (or the self-chat poll) computes the same suspicion but waits for **封鎖並封存**, **只封存**, or **留低** before WhatsApp writes. The explanation call is separate and cannot release the card.

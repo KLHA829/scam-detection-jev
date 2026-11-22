@@ -1,7 +1,7 @@
 # AGENTS.md — read this before changing anything
 
 Local WhatsApp Web bot. **Masks PII locally**, sends masked text to a **required OpenAI-compatible LLM** for
-archive/ignore on each 1:1 DM, archives link-heuristic hits without the LLM, and **blocks unsaved contacts only**
+archive/ignore on each 1:1 DM, archives known malicious URLs without the LLM, and **blocks unsaved contacts only**
 on the maintained malicious-host list. Human docs: [README.md](README.md), [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md),
 [SCORING_RUBRIC.md](SCORING_RUBRIC.md) (decision rubric; jevlike score is lab-only).
 
@@ -10,14 +10,14 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 | Path | Role |
 |---|---|
 | `whatsapp-bot.js` | WhatsApp Web client: QR, orchestration, archive + graded block |
-| `lib/decide-incoming.js` | link-heuristic archive only; else ignore until LLM merge |
+| `lib/decide-incoming.js` | known malicious URL archive only; else ignore until LLM merge |
 | `lib/handle-incoming.js` | inbound orchestration: heuristic fast path → mask → LLM |
 | `lib/jevlike-client.js` | HTTP client (`createMaskClient`; `/v1/mask` live; `/v1/score` lab-only) |
 | `lib/score-message.js` | rubric load + threshold helpers (lab eval; not inbound archive) |
 | `lab/score-message.js` | lab-only `scoreMessage` via `/v1/score` |
 | `jevlike_serve.py` | persistent worker: **`POST /v1/mask`** required; `/v1/score` optional for eval |
 | `lib/filters.js`, `lib/lid.js` | which messages count, `@lid` resolution |
-| `lib/link-rules.js`, `lib/scam-intent.js` | link-only hard hits; solicit helpers for short links |
+| `lib/link-rules.js`, `lib/scam-intent.js` | link and solicitation signals for review; malicious-URL exception |
 | `lib/malicious-hosts.js`, `data/malicious-hosts.json` | maintained known-malicious hosts; only path that auto-blocks unsaved contacts |
 | `lib/thread-context.js` | current body plus last `CONTEXT_TURNS` inbound bodies; at most 1000 chats by default |
 | `test/support/mask-spans-stub.js` | offline regex stand-in for stub worker; live inbound must not require it |
@@ -36,14 +36,14 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - **Primary users are elderly; false block cost is extreme.** Saved contacts are **never** auto-blocked.
   Unsaved contacts block **only** when the current message URL matches a host in `data/malicious-hosts.json`
   (exact or suffix). Blocklisted email domains, lookalike hosts, and soliciting short links
-  **archive only** — they do not block.
+  go to AI review and never archive or block by themselves.
   Models (context LLM, primary LLM) do not auto-block. **No jevlike score** drives live archive/block.
   Text such as 轉數快 or 驗證碼 does not archive or block by itself.
 - **Every** outbound LLM call is masked by jevlike `POST /v1/mask` first. The bot writes `XXX` over those spans and never sends the raw text or the span list. If the PII head is missing or the mask call fails, the LLM call is skipped (**fail closed**: no archive). The offline regex stub (`test/support/mask-spans-stub.js`) feeds `stub-jevlike.js` only so `npm test` does not load the encoder. Guided-mode explanations use the same mask. Archive/block receipts attach the chat-list name and phone locally; those fields are not added to the prompt.
-- Primary LLM (`LLM_REVIEW_ENABLED`, default **on**) runs on every non-heuristic DM: mask → `reviewRedactedMessage` → archive `llm_review_scam` only when `confidence >= LLM_REVIEW_MIN_CONFIDENCE` (default **0.7**); lower or missing confidence → ignore. LLM failure or `unknown` → ignore.
+- Primary LLM (`LLM_REVIEW_ENABLED`, default **on**) runs on every DM outside the malicious-URL fast path: mask → `reviewRedactedMessage` → archive `llm_review_scam` only when `confidence >= LLM_REVIEW_MIN_CONFIDENCE` (default **0.7**); lower or missing confidence → ignore. LLM failure or `unknown` → ignore.
 - After a successful primary or context LLM review recommends archive, the per-chat cooldown (`LLM_REVIEW_COOLDOWN_MS`, default 10 min / 600000) skips further mask+LLM. Automatic mode starts cooldown only once the archive succeeds; guided mode starts it on the recommendation. If the automatic cooldown cannot be saved to `llm-review-cooldown.json` (`LLM_REVIEW_COOLDOWN_PATH` optional), it remains active in memory but does not survive restart.
-- Context LLM (`CONTEXT_LLM_ENABLED`, default **on**) replaces the single-message path with a masked transcript of the latest inbound messages (`CONTEXT_LLM_MESSAGES`, default 10). `LLM_REVIEW_ENABLED=false` disables both review paths; link-rule hard archives still work. Set `CONTEXT_LLM_ENABLED=0` or `false` for single-message primary LLM only. Archive/block answers use the same confidence gate. A model `block` answer is archive only. Saved contacts stay unblockable. Mask failure or a bad model reply does not archive or block. Link-rule archives still skip it.
-- Link-rule hard archives (lookalike, soliciting short link; malicious-host uses same archive path before block policy) skip the LLM.
+- Context LLM (`CONTEXT_LLM_ENABLED`, default **on**) replaces the single-message path with a masked transcript of the latest inbound messages (`CONTEXT_LLM_MESSAGES`, default 10). `LLM_REVIEW_ENABLED=false` disables both review paths; malicious-URL archives still work. Set `CONTEXT_LLM_ENABLED=0` or `false` for single-message primary LLM only. Archive/block answers use the same confidence gate. A model `block` answer is archive only. Saved contacts stay unblockable. Mask failure or a bad model reply does not archive or block. Malicious-URL archives still skip it.
+- Only a malicious URL can take the direct archive path before block policy.
   Explicit WhatsApp-forwarded warnings from unsaved contacts quoting a single listed URL can go to masked LLM review instead; forwarded lures and mixed solicitations still hard-hit.
   Guided mode may still ask the chat API for a Cantonese explanation after the same mask, and that reply cannot archive, block, or hide the card.
 - OTP, money, impersonation, and secrecy detectors do not archive or block. They are used only to recognise a soliciting short link.
@@ -74,7 +74,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 
 - Automatic LLM cooldown starts only after a successful archive; guided cooldown starts on the recommendation. Benign and low-confidence reviews do not suppress follow-up messages. An edit that voids a guided poll re-reviews the edited text even during the cooldown; the context review sees the edited text in place of the original.
 - Bare-host lookalike checks require a two-letter or common TLD; uncommon-TLD bare hosts remain eligible for malicious-host matching.
-- Hard archive hits are link rules: lookalike hosts, a soliciting short link, or a URL on the malicious-host list (same `obvious_scam` archive path). Lookalike and short-link hits **do not** auto-block. Only a malicious-host match on an unsaved contact blocks (`封鎖·惡意域名`). Extend the list in `data/malicious-hosts.json` (optional `MALICIOUS_HOSTS_PATH`). A bare host with no scheme counts. Allowlisted hosts such as `sf-express.com` are not lookalikes, and neither are `github.io`, `medium.com`, or `blogspot.com`. The brand has to start the label, on the registrable name or a subdomain, so `not-hangseng.com` and `not-hangseng.evil.com` do not match; `hsbc.evil.com` and `whatsapp-secure.evil.com` do. A hyphen stays inside the label, so `not-bit.ly` is not a short link. Fullwidth URLs are folded before the check. `youtu.be` is not a short link. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block. All other DMs: mask → primary LLM. No thread window scoring. Edited messages re-run the same path, and an open guided poll for the original text is void: a later vote on it does nothing and the bot says it was void. A phone JID is kept when the paired id is `@lid`.
+- Only a URL on the malicious-host list can bypass AI (`obvious_scam`). Lookalike and short-link hits require masked AI confirmation. Only a malicious-host match on an unsaved contact blocks (`封鎖·惡意域名`). Extend the list in `data/malicious-hosts.json` (optional `MALICIOUS_HOSTS_PATH`). A bare host with no scheme counts. Allowlisted hosts such as `sf-express.com` are not lookalikes, and neither are `github.io`, `medium.com`, or `blogspot.com`. The brand has to start the label, on the registrable name or a subdomain, so `not-hangseng.com` and `not-hangseng.evil.com` do not match; `hsbc.evil.com` and `whatsapp-secure.evil.com` do. A hyphen stays inside the label, so `not-bit.ly` is not a short link. Fullwidth URLs are folded before the check. `youtu.be` is not a short link. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block. All other DMs: mask → context or primary LLM. No thread window scoring. Edited messages re-run the same path, and an open guided poll for the original text is void: a later vote on it does nothing and the bot says it was void. A phone JID is kept when the paired id is `@lid`.
 - A failed archive still messages the operator. The receipt says the archive did not happen. Block, rename, mute, archive, the receipt, and the guided card share one WhatsApp write queue. A message that ends in ignore does not enter that queue.
 - Unblock deletes the temporary contact only while its live name still exactly matches the bot-written block name; edited or saved contacts are left alone.
 - A mask response that is truncated, short a row, or has a non-integer span is a failed mask. The LLM call is skipped. Empty span lists (no PII) are still success.
@@ -92,9 +92,9 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
   `find_mask_spans` remains the training-label helper and the offline stub, not a live fallback.
   Its digit classes are ASCII `[0-9]`, the same characters JavaScript `\d` matches. Fullwidth phones
   and Chinese-numeral phones stay on the training-only extra gold, not on that shared stub.
-- Unsaved contacts auto-block only on a current-message malicious-host match. Lookalike and short-link rules archive and still trigger operator receipts; they do not block. `sf-express.com` and the other allowlisted hosts are not lookalikes. A news quote of 封號 / USDT / 轉數快 / 驗證碼 / 順豐清關 does not hard-hit.
+- Unsaved contacts auto-block only on a current-message malicious-host match. Lookalike and short-link rules need an AI archive recommendation; they do not block. `sf-express.com` and the other allowlisted hosts are not lookalikes. A news quote of 封號 / USDT / 轉數快 / 驗證碼 / 順豐清關 does not hard-hit.
 - Operator mode archives without blocking until the self-chat poll is answered (or `OPERATOR_MODE` is set).
-  Link heuristics on the current message are acted on before mask/LLM, so a slow LLM does not delay archive (or malicious-host block). `guided` forwards a suspicious DM to the operator, explains it only after
+  Known malicious URLs are acted on before mask/LLM, so a slow LLM does not delay their archive or block. `guided` forwards a suspicious DM to the operator, explains it only after
   `/v1/mask`, and waits for 封鎖並封存 / 只封存 / 留低. A failed mask skips the explanation and still shows
   the poll. The explanation model cannot take that action. An explicit 封鎖並封存 is the only way a saved
   contact is blocked.  After every completed archive or block (automatic, or a guided 封鎖並封存 / 只封存),

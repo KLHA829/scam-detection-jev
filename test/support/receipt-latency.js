@@ -25,7 +25,7 @@ async function measureReceiptLatency(delayMs, { maskFails = true, archiveFails =
   const deps = {
     client,
     pacer: createActionPacer({ env: { WA_ACTION_GAP_MS: '0' } }),
-    env: { CONTEXT_LLM_ENABLED: '0', LLM_REVIEW_COOLDOWN_MS: '0' },
+    env: { CONTEXT_LLM_ENABLED: '0', LLM_REVIEW_COOLDOWN_MS: '0', BLOCK_ENABLED: 'false' },
     maskClient: {
       async maskMessages(messages) {
         if (messages[0].includes('chat A')) {
@@ -54,7 +54,7 @@ async function measureReceiptLatency(delayMs, { maskFails = true, archiveFails =
     return {
       from: id,
       type: 'chat',
-      body: `chat ${name} https://hsbc.evil.com`,
+      body: `chat ${name} https://malicious-block-test.invalid/login`,
       getContact: async () => ({ id: { _serialized: id }, pushname: `Local ${name}` }),
       getChat: async () => ({
         id: { _serialized: id },

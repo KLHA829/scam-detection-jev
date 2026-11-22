@@ -8,10 +8,11 @@ Facts about live decisions and lab-only jevlike thresholds. Setup and env wiring
 
 | Stage | Trigger | Archive reason | Block |
 |-------|---------|----------------|-------|
-| Link heuristic | Lookalike host, soliciting short link, or malicious-host URL on **current** message, subject to the forwarded-warning exception below | `obvious_scam` | Unsaved + malicious-host match only |
-| Context LLM (default) | `CONTEXT_LLM_ENABLED` on (default when unset); not skipped by link archive | `context_llm` when model says `archive` or `block` with sufficient confidence | Never from LLM |
+| Known malicious URL | Blocklisted URL on **current** message, subject to the forwarded-warning exception below | `obvious_scam` without AI | Unsaved + malicious-host match only |
+| Keyword or link rule | Lookalike, soliciting short link, or blocklisted email domain | Mask → AI; no rule-only archive | Never from the rule |
+| Context LLM (default) | `CONTEXT_LLM_ENABLED` on (default when unset); not skipped by a malicious-URL archive | `context_llm` when model says `archive` or `block` with sufficient confidence | Never from LLM |
 | Primary LLM | `CONTEXT_LLM_ENABLED=0` or `false` | `llm_review_scam` only when label is `scam` and confidence meets `LLM_REVIEW_MIN_CONFIDENCE` (default 0.7) | Never from LLM |
-| No action | `not_scam`, `no_action`, low confidence, mask failure, LLM off, error, `unknown` | None | None |
+| No action | `not_scam`, `no_action`, low confidence, mask failure, LLM off or unavailable, error, `unknown` | None | None |
 
 End-to-end order: [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented).
 
@@ -27,10 +28,10 @@ End-to-end order: [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#ac
 
 ### Block policy (live)
 
-| Contact | Malicious-host URL on current message | Lookalike or short link |
+| Contact | Malicious-host URL on current message | Lookalike, soliciting short link, or blocklisted email |
 |---------|--------------------------------------|-------------------------|
-| Unsaved | May **block** (`封鎖·惡意域名`) after archive | Archive only |
-| Saved | Never auto-block | Archive only |
+| Unsaved | May **block** (`封鎖·惡意域名`) after archive | AI review only; never auto-block |
+| Saved | Never auto-block | AI review only; never auto-block |
 
 An unsaved sender's WhatsApp-forwarded warning that quotes a single listed URL, identifies it as fake or phishing, and explicitly tells the recipient not to use it goes to **mask → LLM** instead. Forwarded status or a warning headline alone is not enough. Messages that also solicit action or include more links use the normal link rules. The review can archive, but cannot auto-block; normal mask, enablement and cooldown rules apply.
 
@@ -38,7 +39,7 @@ List file: [`data/malicious-hosts.json`](data/malicious-hosts.json). Optional pa
 
 ### Link rules (not phrase tropes)
 
-Implemented in `lib/link-rules.js`. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) are **not** hard hits.
+Implemented in `lib/link-rules.js`. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) are **not** standalone actions.
 
 ## Lab-only jevlike score
 

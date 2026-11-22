@@ -12,9 +12,9 @@ Unsaved contacts are **auto-blocked only** when the current message URL matches 
 - `score-free-records` new block records, guided queue entries, and action log lines omit the live placeholder score; old scored queue entries remain actionable. Separate proof: `node --test lib/placeholder-score.test.js` (not included in `bin/drive-malicious-host-block`).
 - `email-archive-only` archives a blocklisted email domain without calling `blockContact`; a separate blocklisted URL in the same message can still block.
 - `forwarded-warning-review` drives the WhatsApp message handler: explicit forwarded warnings quoting one listed URL go to masked AI review, while forwarded lures and mixed warning/solicitation still hard-block.
-- `before-llm` blocks without waiting for mask/LLM (same fast-heuristic path as link rules; test names may still say `scorer`).
+- `before-llm` blocks without waiting for mask/LLM (exclusive to known malicious URLs; test names may still say `scorer`).
 - `saved-archive-only` saved contacts on a malicious URL archive if the link rule fires; `applyBlockPolicy` does not block.
-- `hold-setup` while the first-run setup poll is unanswered, `holdBlock` suppresses block but still archives lookalike; malicious-host block is also held until the operator picks automatic mode.
+- `hold-setup` while the first-run setup poll is unanswered, `holdBlock` suppresses block but still archives lookalike if AI confirms; malicious-host block is also held until the operator picks automatic mode.
 
 ## How to get to it (user POV)
 
@@ -53,7 +53,7 @@ Exit code `0`. TAP shows block with `blockReason` `malicious_host` and contact n
 
 ## Gotchas
 
-- Lookalike URLs such as `whatsapp-secure.com` are **not** on the default list; they archive only (see [link-lookalike-archive](./link-lookalike-archive.md)).
+- Lookalike URLs such as `whatsapp-secure.com` are **not** on the default list; they require AI review (see [link-lookalike-archive](./link-lookalike-archive.md)).
 - `BLOCK_ENABLED=false` keeps archive-only even for listed hosts.
 - Do not use the list for heuristic recall; it is operator-confirmed malicious domains only.
 - Extending the list: add strings to the `hosts` array in JSON; no code change required.

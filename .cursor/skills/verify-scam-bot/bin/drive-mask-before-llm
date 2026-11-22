@@ -17,6 +17,11 @@ const runDir = path.join(skillDir, 'run');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  ...['default context', 'single-message'].flatMap((path) =>
+    ['benign', 'scam', 'invalid', 'unavailable'].map(
+      (verdict) => `invariant: keyword rules require AI confirmation (${path}, ${verdict})`,
+    ),
+  ),
   'English OTP advice and solicitations',
   'direct harvest credential binding',
   'drops the original when an edit is empty',
@@ -28,7 +33,7 @@ const TEST_NAMES = [
     `does not archive contradictory non-scam reply ${label}`,
   ]),
   'sends short-link advice and authority mentions to masked AI review',
-  'keeps affirmative impersonation short-link scams on the hard archive path',
+  'flags affirmative impersonation short-link scams for AI review',
   'fails closed when masking short-link advice fails',
   'sends official hsbc.co.uk links to masked AI review',
   'sends official hsbc.com.cn links to masked AI review',
@@ -40,7 +45,7 @@ const TEST_NAMES = [
   'LLM_REVIEW_ALL keeps inbound review disabled with context 0',
   'full mask endpoint reaches review through the real inbound handler',
   'endpoint resolution normalizes shared mask bases and preserves score aliases',
-  'disabled review skips the context chat API and preserves link archives',
+  'disabled review skips the context chat API and archives only malicious URLs',
   'sends the masked recent messages and archives when the model says archive',
   'replaces phone, name, and otp with XXX and keeps the lure word',
   'does not call the model when masking fails',
@@ -50,6 +55,7 @@ const TEST_NAMES = [
 ];
 
 const TEST_FILES = [
+  'lib/agents-invariants.test.js',
   'lib/scam-intent.test.js',
   'lib/link-rules.test.js',
   'lib/llm-review.test.js',

@@ -9,7 +9,7 @@
  *   node scripts/review-eval.js --from-run ../jevlike-lab/runs/r1_head_only.json --split real_test \
  *        [--mode off|all] [--llm off|dry|live] [--sample 3]
  *
- *   --mode  off (default: no LLM), all (review every non-heuristic DM)
+ *   --mode  off (default: no LLM), all (review every DM except direct malicious-URL archives)
  *   --llm   off   = no call, merge is skipped        (numbers are meaningful)
  *           dry   = mask with the offline stub, capture the payload, DO NOT send, treat LLM as
  *                   unknown so every number stays honest ("what would have been asked");

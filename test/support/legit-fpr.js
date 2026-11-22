@@ -38,7 +38,7 @@ async function runLegitMessage(message, { savedContact }) {
       isForwarded: message.forwarded === true,
     },
     {
-      env: { LLM_REVIEW_COOLDOWN_MS: '0' },
+      env: { LLM_REVIEW_COOLDOWN_MS: '0', LLM_REVIEW_MIN_CONFIDENCE: '0.7' },
       operatorMode: 'auto',
       maskClient: createStubJevlikeClient(),
       recentContext: createRecentContext(),

@@ -63,7 +63,7 @@ node --test --test-reporter tap \
   lib/operator-review.test.js
 ```
 
-Exit code `0`. The lookalike DM returns `deferred: true`, decision action `archive`, and empty archive/block callback lists. An ordinary DM is left alone.
+Exit code `0`. The AI-confirmed lookalike DM returns `deferred: true`, decision action `archive`, and empty archive/block callback lists. An ordinary DM is left alone.
 
 - **Poll survives a failed mask.** Run:
 
@@ -171,5 +171,5 @@ A failed queue write leaves the old poll unresolved in the queue but rejects sta
 - The first choice on a review poll is the one that runs. A second vote is ignored.
 - An edit voids the open poll for that message. Unblock polls are not touched.
 - Until the setup poll is answered, the bot archives and does not block. That is a different wait from guided mode, which archives nothing until you choose.
-- `自動封鎖同封存` is today's automatic path: malicious-host list may block unsaved contacts; lookalike/short-link and scores archive only. The receipt feature then messages your own chat.
+- `自動封鎖同封存` is today's automatic path: malicious-host list may block unsaved contacts; lookalike/short-link rules require masked AI confirmation; scores do not drive live actions. The receipt feature then messages your own chat.
 - Replying `今日食飯` does not select a choice.

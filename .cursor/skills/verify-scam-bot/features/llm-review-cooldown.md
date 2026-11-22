@@ -1,6 +1,6 @@
 # Per-chat LLM cooldown
 
-In automatic mode, a successful primary or context LLM review starts the per-chat **`LLM_REVIEW_COOLDOWN_MS`** window (default ten minutes) only after the chat is archived. That chat skips mask and LLM until the window expires. Guided mode still starts cooldown when the review recommends archive, before the operator acts. Benign or low-confidence reviews do not start the cooldown. Link heuristics still archive or block.
+In automatic mode, a successful primary or context LLM review starts the per-chat **`LLM_REVIEW_COOLDOWN_MS`** window (default ten minutes) only after the chat is archived. That chat skips mask and LLM until the window expires. Guided mode still starts cooldown when the review recommends archive, before the operator acts. Benign or low-confidence reviews do not start the cooldown. Known malicious URLs still archive or block.
 
 ## Sub-features
 
@@ -9,7 +9,7 @@ In automatic mode, a successful primary or context LLM review starts the per-cha
 - `cooldown-write-failure` — an unwritable cooldown file does not block an automatic archive or a guided review and archive vote; cooldown still works in memory.
 - `prune-write-failure` — startup loads active cooldowns and drops expired ones in memory even when it cannot write the pruned file.
 - `persist-restart` — a saved cooldown is reloaded from disk on `npm start` and remains active until expiry.
-- `heuristic-inside-window` — lookalike hard archive without LLM.
+- `heuristic-inside-window` — known malicious URL archive without LLM.
 
 ## How to get to it (user POV)
 

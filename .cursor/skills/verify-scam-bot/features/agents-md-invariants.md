@@ -13,7 +13,7 @@ The bot must never auto-block a saved contact. An unsaved contact auto-blocks **
 
 ## How to get to it (user POV)
 
-- Live session: a saved contact who sends a lookalike or listed URL is archived only. An unsaved stranger with a **listed** URL is blocked and renamed. A lookalike without a list entry archives but does not block. LLM-driven archives do not auto-block without a malicious-host match.
+- Live session: a saved contact who sends a lookalike is reviewed and a listed URL still archives. An unsaved stranger with a **listed** URL is blocked and renamed. A lookalike without a list entry archives but does not block. LLM-driven archives do not auto-block without a malicious-host match.
 - Smoke path: `node --test lib/agents-invariants.test.js` exercises `blockEligibility`, `applyBlockPolicy`, `decideIncomingAction`, and `processIncomingMessage` with the in-process stub client. No WhatsApp session and no HTTP stub worker are required.
 
 ## Driving it with verify-scam-bot

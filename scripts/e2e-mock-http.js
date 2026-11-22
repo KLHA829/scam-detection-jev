@@ -406,25 +406,25 @@ async function main() {
         body: '登入 https://hsbc.evil.com/login',
         expected: {
           ignored: false,
-          action: 'archive',
-          archiveReason: 'obvious_scam',
-          archived: true,
+          action: 'ignore',
+          archived: false,
           blocked: false,
-          llmCalls: 0,
+          llmCalls: 1,
         },
       }),
     );
     results.push(
       await run({
         id: 'soliciting-short-link',
-        body: '請提供驗證碼 https://bit.ly/fee',
+        body: '請提供驗證碼領取投資收益 https://bit.ly/fee',
+        contextOn: false,
         expected: {
           ignored: false,
           action: 'archive',
-          archiveReason: 'obvious_scam',
+          archiveReason: 'llm_review_scam',
           archived: true,
           blocked: false,
-          llmCalls: 0,
+          llmCalls: 1,
         },
       }),
     );
