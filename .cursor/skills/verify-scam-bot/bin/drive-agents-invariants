@@ -45,7 +45,7 @@ const TEST_NAMES = [
   'does not consume any siblings when persistence fails and allows retry',
   'retries a failed unblock through a sibling poll using real vote handlers',
   'reopens only siblings closed by the failed action and persists their retry state',
-  'leaves the consumed siblings unchanged when rollback persistence fails',
+  'keeps consumed siblings retryable in memory when rollback persistence fails',
   'handles missing, resolved and chatless polls without closing unrelated items',
   'does not delete a contact renamed during the wait before deletion',
   'invariant: saved contacts are never auto-blocked (blockEligibility stays null)',
