@@ -57,6 +57,8 @@ const TEST_NAMES = [
   'keeps the name of a contact the user saved',
   'keeps a contact the user saved under the label name protected from a listed-URL block',
   'does not write the label when the pitch is edited during rename pacing',
+  'renames a bot-labelled sender to the block name on a guided block, so unblock can clean it up',
+  'records an @lid sender under its contact id, so the next message still reads as unsaved',
   'invariant: saved contacts are never auto-blocked (blockEligibility stays null)',
   'invariant: unsaved jevlike score at or above BLOCK_THRESHOLD alone does not block',
   'invariant: unsaved lookalike link rule does not auto-block (archive only)',

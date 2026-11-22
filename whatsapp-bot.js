@@ -225,7 +225,7 @@ async function confirmOperatorMode(client, operator, mode) {
   );
 }
 
-async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
+async function confirmReviewChoice(client, queue, pacer, choice, pollId, { botContactNames } = {}) {
   const wid = selfWid(client);
   const existing = queue.get(pollId);
   if (!existing || !wid) return;
@@ -250,6 +250,7 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
     pause: () => pacer.pause(),
     getChat: (id) => client.getChatById(id),
     getContact: (chat) => chat.getContact(),
+    botContactNames,
     archiveChat: async (chat) => {
       await chat.archive();
     },
@@ -262,6 +263,7 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
         contactName,
         canRenameContact,
         pause: () => pacer.pause(),
+        botContactNames,
       }),
   });
   if (!result.ok) queue.release(pollId);
@@ -463,6 +465,7 @@ async function handleSelfMessage(msg, deps) {
       deps.pacer,
       route.choice,
       route.pollId,
+      { botContactNames: deps.botContactNames },
     );
     return;
   }
@@ -712,6 +715,7 @@ function attachHandlers(client, deps) {
           deps.pacer,
           route.choice,
           route.pollId,
+          { botContactNames: deps.botContactNames },
         );
       } else if (route.kind === 'unblock') {
         await confirmUnblockChoice(
