@@ -130,6 +130,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 | `data/corpus/` not imported live | `lib/agent-trust.test.js` |
 | README must not regress to score-primary docs | `lib/agent-trust.test.js` |
 | Empty `hosts:[]` reload does not silently wipe list | `lib/malicious-hosts.test.js`; set `MALICIOUS_HOSTS_ALLOW_EMPTY=1` to clear |
+| Non-string `hosts` entry fails the reload and keeps the previous list | `lib/malicious-hosts.test.js` |
 | Test-infra-only malicious hosts warn at load | `lib/malicious-hosts.js` (`warnIfTestInfraOnly`) |
 
 ## Cursor Cloud specific instructions
