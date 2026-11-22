@@ -29,9 +29,10 @@ const TEST_NAMES = [
   'distinguishes blocklisted email addresses from links in the inbound handler',
   'blocks a malicious host without waiting for the scorer',
   'holds auto-block while the setup choice is unanswered (malicious host only)',
+  'reviews forwarded warnings quoting a blocklisted URL without weakening lure blocks',
 ];
 
-const TEST_FILES = ['lib/malicious-hosts.test.js', 'lib/block-policy.test.js'];
+const TEST_FILES = ['lib/malicious-hosts.test.js', 'lib/block-policy.test.js', 'lib/wa-handlers.test.js'];
 
 const UNSET_ENV = [
   'ARCHIVE_THRESHOLD',
@@ -85,7 +86,7 @@ const testsOk = test.status === 0 && failLine === '# fail 0' && missing.length =
 
 const summary = {
   feature: 'malicious-host-block',
-  entry: 'node --test lib/malicious-hosts.test.js lib/block-policy.test.js',
+  entry: `node --test ${TEST_FILES.join(' ')}`,
   scorer: 'in-process stub client (no HTTP worker)',
   whatsapp: 'not started',
   nodeTestExit: test.status,
