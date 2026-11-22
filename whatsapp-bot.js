@@ -22,7 +22,8 @@ const {
   contextLlmMessageLimit,
   createRecentContext,
 } = require('./lib/context-llm');
-const { blockAndRename, unblockContact } = require('./lib/wa-actions');
+const { blockAndRename, labelUnsavedContact, unblockContact } = require('./lib/wa-actions');
+const { isOperatorSavedContact } = require('./lib/block-policy');
 const { createActionPacer } = require('./lib/action-pacer');
 const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-context');
 const { createOperatorState } = require('./lib/operator-mode');
@@ -526,7 +527,7 @@ async function handleWaMessage(msg, {
       body: msg.body || '',
       isForwarded: msg.isForwarded === true,
       chatId,
-      savedContact: Boolean(contact.isMyContact),
+      savedContact: isOperatorSavedContact(contact),
       messageId: incomingMessageId(msg),
     },
     {
@@ -555,6 +556,14 @@ async function handleWaMessage(msg, {
           client,
           contact,
           chat,
+          digits: info && info.digits,
+          contactName: info && info.contactName,
+          pause: () => pacer.pause(),
+          refreshUnsavedContact: () => msg.getContact(),
+        }),
+      labelContact: (info) =>
+        labelUnsavedContact({
+          client,
           digits: info && info.digits,
           contactName: info && info.contactName,
           pause: () => pacer.pause(),

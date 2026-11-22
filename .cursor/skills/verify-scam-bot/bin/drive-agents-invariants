@@ -53,6 +53,8 @@ const TEST_NAMES = [
   'keeps consumed siblings retryable in memory when rollback persistence fails',
   'handles missing, resolved and chatless polls without closing unrelated items',
   'does not delete a contact renamed during the wait before deletion',
+  'labels an unsaved pitch sender, and the label does not shield a later scam',
+  'keeps the name of a contact the user saved',
   'invariant: saved contacts are never auto-blocked (blockEligibility stays null)',
   'invariant: unsaved jevlike score at or above BLOCK_THRESHOLD alone does not block',
   'invariant: unsaved lookalike link rule does not auto-block (archive only)',
