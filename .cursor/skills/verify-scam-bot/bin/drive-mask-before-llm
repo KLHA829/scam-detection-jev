@@ -17,6 +17,7 @@ const runDir = path.join(skillDir, 'run');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'direct harvest credential binding',
   'drops the original when an edit is empty',
   'does not resend the original after an empty edit with 0 earlier messages',
   'does not resend the original after an empty edit with 1 earlier messages',
@@ -48,6 +49,7 @@ const TEST_NAMES = [
 ];
 
 const TEST_FILES = [
+  'lib/scam-intent.test.js',
   'lib/link-rules.test.js',
   'lib/llm-review.test.js',
   'lib/jevlike-base-url.test.js',
