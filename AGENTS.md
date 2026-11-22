@@ -44,7 +44,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - After a successful primary or context LLM review recommends archive, the per-chat cooldown (`LLM_REVIEW_COOLDOWN_MS`, default 10 min / 600000) skips further mask+LLM. Automatic mode starts cooldown only once the archive succeeds; guided mode starts it on the recommendation. If the automatic cooldown cannot be saved to `llm-review-cooldown.json` (`LLM_REVIEW_COOLDOWN_PATH` optional), it remains active in memory but does not survive restart.
 - Context LLM (`CONTEXT_LLM_ENABLED`, default **on**) replaces the single-message path with a masked transcript of the latest inbound messages (`CONTEXT_LLM_MESSAGES`, default 10). `LLM_REVIEW_ENABLED=false` disables both review paths; link-rule hard archives still work. Set `CONTEXT_LLM_ENABLED=0` or `false` for single-message primary LLM only. Archive/block answers use the same confidence gate. A model `block` answer is archive only. Saved contacts stay unblockable. Mask failure or a bad model reply does not archive or block. Link-rule archives still skip it.
 - Link-rule hard archives (lookalike, soliciting short link; malicious-host uses same archive path before block policy) skip the LLM.
-  Explicit WhatsApp-forwarded warnings from unsaved contacts quoting a single listed URL can go to masked LLM review instead; forwarded lures and mixed solicitations still hard-hit.
+  Warning-only scam reports go to masked LLM review regardless of saved status or forwarding metadata, before all hard-link rules. One hard-hit URL occurrence is allowed alongside genuine-site references; direct solicitations, repeated flagged URLs and additional flagged links still hard-hit.
   Guided mode may still ask the chat API for a Cantonese explanation after the same mask, and that reply cannot archive, block, or hide the card.
 - OTP, money, impersonation, and secrecy detectors do not archive or block. They are used only to recognise a soliciting short link.
 - No network lookup of phone numbers or URLs (no Scameter, no third-party registry).
@@ -63,6 +63,8 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — stub worker for offline tests (mask + optional fixed scores).
 
 ## Current state (update with the date when it changes) — 2026-11-22
+
+- Warning-only scam reports bypass all hard-link rules for saved and unsaved senders, forwarded or not; quoted/reported/negated lures can be reviewed, but direct asks and multiple flagged URL occurrences retain hard-link handling (2026-11-22).
 
 - Guided blocks recheck the live contact after rename pacing, preserving newly saved names and saved-contact unblock metadata without cancelling the explicit block (2026-11-22).
 - Successful poll and command unblocks append to `BLOCK_LOG_PATH`; recent blocks and history-based 解除 skip unblocked contacts until they are blocked again (2026-11-21).
