@@ -39,7 +39,7 @@ Exit code `0`. TAP shows passing tests under the three `AGENTS.md invariants` su
 
 ## Gotchas
 
-- These tests read thresholds from `loadRubric()` / `resolveBlockThreshold()`. Do not edit numeric constants in production code to make proof pass.
+- These tests read thresholds from `loadRubric()`. Do not edit numeric constants in production code to make proof pass.
 - `BLOCK_ENABLED=false` keeps archive-only even when a malicious-host match would otherwise block; that toggle is not the default invariant path.
 - Context-model tests stub the chat API with `fetchImpl`; they expect archive-only on `block` answers.
 - Phrase tropes (驗證碼, 轉數快, and similar) are out of scope here; they are not hard-archive gates — judgment is link heuristics and mask→LLM.
