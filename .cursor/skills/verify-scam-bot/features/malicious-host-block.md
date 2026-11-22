@@ -5,6 +5,7 @@ Unsaved contacts are **auto-blocked only** when the current message URL matches 
 ## Sub-features
 
 - `list-match` matches exact host and subdomains (e.g. `pay.evil.example` matches `evil.example`).
+- `idn-match` matches Unicode and punycode URL spellings against either list spelling, without widening path entries or changing IPv6 rules. Bare Unicode host extraction remains outside this proof.
 - `hot-reload` refreshes the cached list after in-place writes, repeated atomic saves, and atomic saves to a symlink target in another directory.
 - `reject-malformed` a reload with a non-string `hosts` entry (e.g. an object) fails and keeps the previous list; at startup it exits like invalid JSON.
 - `unsaved-block` calls `blockContact` with `封鎖·惡意域名` when the heuristic id is `malicious_host`.

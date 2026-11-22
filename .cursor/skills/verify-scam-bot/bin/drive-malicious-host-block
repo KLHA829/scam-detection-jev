@@ -15,6 +15,10 @@ const root = path.resolve(skillDir, '../../..');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'matches IDN URLs spelled as xn--fsqu00a.com against either list spelling',
+  'matches IDN URLs spelled as 例子.com against either list spelling',
+  'preserves path and IPv6 list entries without widening host rules',
+  'ignores non-string entries in explicitly supplied host lists',
   'matches exact host and subdomains from the data file',
   'keeps the previous list when reload hits a non-string host entry',
   'startMaliciousHostsWatcher reloads after the file changes',
