@@ -59,7 +59,7 @@ async function measureGuidedLatency(delayMs, { stage = 'mask', fails = false } =
       id: { _serialized: `message-${name}` }, from: id, type: 'chat',
       body: 'https://malicious-block-test.invalid/login',
       async forward() { events.push('forward'); },
-      getContact: async () => ({ id: { _serialized: id }, pushname: name }),
+      getContact: async () => ({ id: { _serialized: id }, pushname: name, isMyContact: false }),
       getChat: async () => ({
         id: { _serialized: id },
         async archive() {

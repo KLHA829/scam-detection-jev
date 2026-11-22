@@ -14,7 +14,7 @@ measures the same two-chat path with fixed mask/LLM latency.
 - `rename-pacing-wiring` runs the real `vote_update` handler and checks no rename, successful block, and saved-contact metadata on the unblock poll when the contact is saved during rename pacing. `preserves a contact saved during guided vote rename pacing` in `lib/wa-handlers.test.js` runs in `bin/drive-agents-invariants` (already in TEST_FILES).
 - `rename-pacing` rechecks the live contact after the wait before rename; newly saved contacts still block but keep their names and saved-contact unblock metadata. `guided block preserves a contact saved during rename pacing` in `lib/guided-block-name.test.js` runs in `bin/drive-agents-invariants` (already in TEST_FILES).
 - `self-chat-only` accepts operator commands and quoted poll replies only in the operator's own phone/LID chat, never another chat just because the sender is me. `handles operator text commands only in self chat` and `checks self-chat identity:` in `lib/wa-handlers.test.js` cover cross-chat unblock rejection, own-LID mapping, unrelated/empty mappings, and lookup failure; both run in `bin/drive-agents-invariants`.
-- `setup-poll` asks `呢個 bot 點處理可疑訊息？` with 自動封鎖同封存 and 逐條問我. Until that poll is answered, suspicious chats are archived and nobody is blocked. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Sending `設定` in the operator's own chat asks again.
+- `setup-poll` asks `呢個 bot 點處理可疑訊息？` with 自動封鎖同封存 and 逐條問我. Until that poll is answered, only unsaved contacts can be auto-archived, and nobody is auto-blocked. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Sending `設定` in the operator's own chat asks again.
 - `review-poll` asks `你想點處理？` with 封鎖並封存, 只封存, and 留低. Numeric replies `1`, `2`, and `3` map to those three choices.
 - `review-poll-save` does not register a poll when its queue write fails. If delivery is retried after storage recovers, the new poll is saved and recognised after restart. `retries guided delivery after a failed queue save and keeps the retry after restart` in `lib/audit-review-queue.test.js` runs in `bin/drive-agents-invariants`.
 - `unblock-poll-save` keeps an already-sent unblock poll in memory if its registration fails, so a vote still works in the same process once storage recovers. `accepts an unblock poll vote after a failed registration save and storage recovery` in `lib/audit-review-queue.test.js` runs in `bin/drive-agents-invariants`.
@@ -26,6 +26,7 @@ measures the same two-chat path with fixed mask/LLM latency.
 - `live-contact-name` preserves a contact saved or named after the poll was sent while still blocking on explicit confirmation. Unsaved contacts keep the bot label; a second pending poll recognises that temporary label and retains unblock cleanup metadata.
 - `sibling-unblock-polls` closes all pending unblock polls for the same chat after successful 解除封鎖 or explicit 保持封鎖. A failed unblock reopens every poll closed by that attempt, allowing a sibling vote to retry; previously closed polls stay closed.
 - `edit-voids-poll` voids the open review poll when the sender edits the message. A vote or quoted reply on the old poll does nothing and gets `呢個投票已作廢`. The edited text is reviewed again and gets a new poll only if it is still suspicious.
+- `edit-during-review` discards the original model verdict and replaces the transcript entry by message ID, even after two rapid edits. `never publishes a saved-contact poll from a model verdict superseded by an edit` in `lib/wa-handlers.test.js` runs in `bin/drive-agents-invariants`.
 - `empty-edit-context` drops the original even when the new body is empty. `lib/context-llm.test.js` locks `drops the original when an edit is empty` and `does not resend the original after an empty edit with 0 earlier messages` / `1 earlier messages`; `bin/drive-mask-before-llm` includes all three. An empty remaining window skips the model; otherwise only remaining messages are reviewed. Compare real-handler transcripts with `node scripts/demo-empty-edit.js [repo-root]`.
 
 ## How to get to it (user POV)
@@ -167,9 +168,9 @@ A failed queue write leaves the old poll unresolved in the queue but rejects sta
   Regression: `node --test --test-name-pattern='archives after block throws' lib/operator-review.test.js`.
 
 - The explanation is requested only after `/v1/mask`. A failed mask skips the explanation and still shows the poll. The model cannot archive, block, or hide the card.
-- An explicit 封鎖並封存 is the only path that blocks a saved contact. Link heuristics and models do not auto-block.
+- Suspicious DMs from saved contacts open a card in every mode. Run `node --test --test-name-pattern='alerts on suspicious saved contacts' lib/wa-handlers.test.js` to check that only an explicit vote archives; the test also runs in `bin/drive-malicious-host-block`.
 - The first choice on a review poll is the one that runs. A second vote is ignored.
 - An edit voids the open poll for that message. Unblock polls are not touched.
-- Until the setup poll is answered, the bot archives and does not block. That is a different wait from guided mode, which archives nothing until you choose.
+- Until the setup poll is answered, only unsaved chats may auto-archive, and none auto-block. Guided mode waits for a choice for every suspicious chat.
 - `自動封鎖同封存` is today's automatic path: malicious-host list may block unsaved contacts; lookalike/short-link rules require masked AI confirmation; scores do not drive live actions. The receipt feature then messages your own chat.
 - Replying `今日食飯` does not select a choice.

@@ -55,7 +55,7 @@ async function measureReceiptLatency(delayMs, { maskFails = true, archiveFails =
       from: id,
       type: 'chat',
       body: `chat ${name} https://malicious-block-test.invalid/login`,
-      getContact: async () => ({ id: { _serialized: id }, pushname: `Local ${name}` }),
+      getContact: async () => ({ id: { _serialized: id }, pushname: `Local ${name}`, isMyContact: false }),
       getChat: async () => ({
         id: { _serialized: id },
         async archive() {

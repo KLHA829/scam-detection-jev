@@ -1,6 +1,6 @@
 # Link lookalike AI review (no auto-block)
 
-An unsaved contact who sends a lookalike host, or a short link that also asks for a code, impersonates, or urgently demands money, goes to masked AI review and is archived only if the AI confirms a scam. Auto-block does **not** run on these heuristics (elderly precision-first). An allowlisted host such as `sf-express.com` does not hit. A host on `github.io`, `medium.com`, or `blogspot.com` does not hit. A bare `whatsapp-secure.com/login` does. `youtu.be` is not a short link. A saved contact is not auto-blocked.
+An unsaved contact who sends a lookalike host, or a short link that also asks for a code, impersonates, or urgently demands money, goes to masked AI review and is archived only if the AI confirms a scam. Auto-block does **not** run on these heuristics (elderly precision-first). An allowlisted host such as `sf-express.com` does not hit. A host on `github.io`, `medium.com`, or `blogspot.com` does not hit. A bare `whatsapp-secure.com/login` does. `youtu.be` is not a short link. For a saved contact, an AI-confirmed scam opens an operator review card instead of taking automatic action.
 
 ## Sub-features
 
@@ -17,14 +17,14 @@ An unsaved contact who sends a lookalike host, or a short link that also asks fo
 - `warning-only-review` in `lib/link-rules.test.js` covers narrative/quoted/English warnings, fake + genuine URLs, all hard-link types, both contact states and both review paths, mask failure, direct asks and repeated flagged links. Included in `bin/drive-mask-before-llm`.
 - `direct-harvest-credential` requires a direct forwarding verb and a nearby credential in the same clause. `send 相片畀我。今日改咗密碼。 https://bit.ly/photo` goes to mask → LLM; `send 你個密碼畀我`, `將驗證碼發給我`, `send me your OTP`, and `轉發驗證碼` with short links still hit the rule and require AI confirmation. The `direct harvest credential binding` suite in `lib/scam-intent.test.js` covers unit signals, real-handler routing, empty input, and mask failure; included in `bin/drive-mask-before-llm`.
 - `short-link-advice` sends authority mentions and anti-scam advice to mask → LLM, not a rule-only archive. Impersonation requires an affirmative self-identification or a WhatsApp official header, not the bare words 銀行職員 / WhatsApp 官方. Locked by `sends short-link advice and authority mentions to masked AI review` and `flags affirmative impersonation short-link scams for AI review` in `lib/link-rules.test.js`; included in `bin/drive-mask-before-llm`.
-- `saved-unblockable` keeps a saved contact in masked AI review when a lookalike or short-link rule matches. Auto-block does not run.
+- `saved-alert-only` sends a saved contact's lookalike or short-link hit to masked AI review and opens an operator review card only if AI confirms the scam.
 - `before-llm` acts on the link rule without waiting for mask/LLM (test names may still say `scorer`).
 - Advice remains fail-closed on mask errors (`fails closed when masking short-link advice fails`, also in `bin/drive-mask-before-llm`).
 
 ## How to get to it (user POV)
 
 - Live session: an unsaved number sends a 1:1 message that contains the URL. If AI confirms a scam, the chat is archived; the contact is not renamed with `封鎖·` unless the URL is also on the malicious-host list (see [malicious-host-block](./malicious-host-block.md)).
-- A saved address-book contact who sends the same URL also goes to AI review. Block requires an explicit **封鎖並封存** on the guided poll.
+- A saved address-book contact who sends the same URL also goes to AI review and gets a review card if AI confirms the scam. The operator decides whether to archive, block and archive, or leave the chat.
 - Smoke path: `node --test` on `lib/link-rules.test.js` and block-policy cases with `savedContact: false` and the in-process benign stub. The link rule fires even when that stub score is 4.
 
 ## Driving it with verify-scam-bot
@@ -76,15 +76,15 @@ node --test --test-reporter tap \
 
 Exit code `0`. Decision action is `archive`; `blockContact` is not called.
 
-- **Saved contact stays unblocked.** Run:
+- **Saved contact does not get auto-archived or auto-blocked.** Run:
 
 ```bash
 node --test --test-reporter tap \
-  --test-name-pattern 'archives grey scores and never blocks saved contacts|does not block a saved contact even on a high score' \
-  lib/block-policy.test.js
+  --test-name-pattern 'alerts on suspicious saved contacts|family fee' \
+  lib/wa-handlers.test.js lib/family-fee-link.test.js
 ```
 
-Exit code `0`. Action stays `archive`.
+Exit code `0`. Saved-contact recommendations are deferred and make no automatic writes.
 
 - **Proof.** Save TAP to `.cursor/skills/verify-scam-bot/evidence/<UTC-stamp>-link-lookalike-archive/node-test.txt`. The file contains `ok` for `archives an unsaved lookalike without auto-block` and for `does not flag allowlisted hosts, a bare short link, or a short link with bill-splitting`.
 
@@ -93,6 +93,6 @@ Exit code `0`. Action stays `archive`.
 - The hardcoded hit is the link on the current message. 驗證碼, 轉數快, 封號, USDT, and 順豐清關 wording do not archive without AI confirmation.
 - `https://www.sf-express.com/hk` is allowlisted. `https://sf-express-hk.com/pay` is a lookalike.
 - `HEURISTIC_ENABLED=0` or `false` turns the link rule off.
-- While the first-run setup poll is unanswered, a lookalike or short-link chat only archives if AI confirms, and nobody is auto-blocked.
+- While the first-run setup poll is unanswered, only unsaved lookalike or short-link chats may auto-archive after AI confirmation, and nobody is auto-blocked.
 - In guided mode an AI-confirmed `archive` is deferred, and `processIncomingMessage` does not call archive until the operator picks **只封存** or **封鎖並封存**.
 - Auto-block is only for URLs on `data/malicious-hosts.json`, not for lookalike heuristics.

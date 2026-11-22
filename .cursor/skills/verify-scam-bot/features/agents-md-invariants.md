@@ -4,7 +4,7 @@ The bot must never auto-block a saved contact. An unsaved contact auto-blocks **
 
 ## Sub-features
 
-- `saved-no-auto-block` keeps saved contacts at archive when a malicious-host or block-line score would block an unsaved chat.
+- `saved-alert-only` requires manual review instead of auto-archive or auto-block for saved contacts.
 - `score-no-block` archives unsaved block-line jevlike scores and never calls block without a malicious-host match.
 - `lookalike-no-block` lookalike and short_link heuristics do not pass `blockEligibility`.
 - `malicious-host-block` blocks unsaved contacts when `heuristic.id === 'malicious_host'`.
@@ -13,7 +13,7 @@ The bot must never auto-block a saved contact. An unsaved contact auto-blocks **
 
 ## How to get to it (user POV)
 
-- Live session: a saved contact who sends a lookalike is reviewed and a listed URL still archives. An unsaved stranger with a **listed** URL is blocked and renamed. A lookalike without a list entry archives but does not block. LLM-driven archives do not auto-block without a malicious-host match.
+- Live session: a suspicious message from a saved contact only opens a review card. An unsaved stranger with a **listed** URL is blocked and renamed in automatic mode. A lookalike without a list entry archives an unsaved chat only if masked AI confirms the scam. AI verdicts do not auto-block.
 - Smoke path: `node --test lib/agents-invariants.test.js` exercises `blockEligibility`, `applyBlockPolicy`, `decideIncomingAction`, and `processIncomingMessage` with the in-process stub client. No WhatsApp session and no HTTP stub worker are required.
 
 ## Driving it with verify-scam-bot

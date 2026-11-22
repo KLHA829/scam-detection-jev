@@ -13,15 +13,15 @@ async function main() {
   for (const operatorMode of ['auto', 'guided']) {
     const threadContext = createThreadContext({ turns: 4 });
     const deps = llmOffDeps({ operatorMode, threadContext });
-    const send = (body, editedFrom) => processIncomingMessage(
-      { type: 'chat', chatId: 'demo@c.us', body, messageId: 'demo-message' },
+    const send = (body, messageId, editedFrom) => processIncomingMessage(
+      { type: 'chat', chatId: 'demo@c.us', body, messageId },
       { ...deps, editedFrom },
     );
-    await send('earlier one');
-    await send('earlier two');
+    await send('earlier one', '1');
+    await send('earlier two', '2');
     const original = 'ORIGINAL https://whatsapp-secure.com';
-    await send(original);
-    const result = await send('EDITED https://whatsapp-secure.com', original);
+    await send(original, '3');
+    const result = await send('EDITED https://whatsapp-secure.com', '3', original);
     const options = {
       messages: result.reviewMessages,
       maskClient: deps.maskClient,

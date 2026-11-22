@@ -466,7 +466,7 @@ describe('processIncomingMessage', () => {
         type: 'chat',
         body: '今晚食飯嗎',
         chatId: '85261234567@c.us',
-        savedContact: true,
+        savedContact: false,
         messageId: 'm1',
       },
       primaryPathDeps({

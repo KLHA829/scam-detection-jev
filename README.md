@@ -1,7 +1,7 @@
 # scam-detection-jev
 
 Personal **WhatsApp Web** bot: it masks PII on your machine, sends redacted text to an **OpenAI-compatible** chat API, archives suspicious 1:1 DMs, and blocks **unsaved** contacts only when a URL matches [`data/malicious-hosts.json`](data/malicious-hosts.json).
-Keyword and link-rule hits require AI confirmation before archive. A curated URL or email-domain match can still archive directly, subject to the warning-only exception; an email match never auto-blocks.
+Keyword and link-rule hits require AI confirmation before archive. A curated URL or email-domain match can still recommend archive without AI, subject to the warning-only exception; an email match never auto-blocks. Saved contacts get a review card instead of an automatic archive or block.
 
 Local [jevlike](https://github.com/vinnylarouge/jevlike) serves **`POST /v1/mask`**. Judgment uses **`LLM_REVIEW_*`**. The frozen scam head (`jevlike_hf_chinese_roberta_r1.pt`) is for **lab eval** only. There is no LightJev or `SCORER=model_v2` path.
 
@@ -174,10 +174,10 @@ npm run stub
 
 On the first ready session the bot polls your own chat:
 
-- **自動封鎖同封存** — automatic archive and graded block. After each archive or block you get a receipt with chat-list name, phone, and local reason. A Cantonese note uses masked text only after `POST /v1/mask`. Name and phone stay on this machine.
-- **逐條問我** — forwards suspicious DMs and waits for **封鎖並封存**, **只封存**, or **留低**. The explanation model cannot choose for you. Saved contacts block only when you pick **封鎖並封存**.
+- **自動封鎖同封存** — automatic archive and graded block for unsaved contacts only. After each archive or block you get a receipt with chat-list name, phone, and local reason. A Cantonese note uses masked text only after `POST /v1/mask`. Name and phone stay on this machine.
+- **逐條問我** — forwards suspicious DMs and waits for **封鎖並封存**, **只封存**, or **留低**. The explanation model cannot choose for you.
 
-Until you answer the first poll, suspicious chats archive and nobody blocks. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Send `設定` in your own chat to choose again.
+Suspicious DMs from saved contacts always get a review card instead of an automatic archive or block, in either mode and before setup. Until you answer the first poll, only unsaved chats can archive automatically, and nobody is blocked automatically. `OPERATOR_MODE=auto` or `OPERATOR_MODE=guided` skips the question. Send `設定` in your own chat to choose again.
 
 WhatsApp writes (block, rename, mute, archive, receipts) run one chat at a time with `WA_ACTION_GAP_MS` between calls.
 

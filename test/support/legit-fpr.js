@@ -57,7 +57,8 @@ async function runLegitMessage(message, { savedContact }) {
     },
   );
   return {
-    action: out.decision.action,
+    action: out.blocked ? 'block' : out.archived ? 'archive' : 'ignore',
+    deferred: out.deferred,
     reason: out.decision.blockReason || out.decision.archiveReason || null,
     rule: out.heuristic && out.heuristic.hit ? out.heuristic.id : null,
     reachedLlm: llmCalls.length > 0,
@@ -110,6 +111,7 @@ function summarize(results) {
       messages: runs.length,
       blocked: rate(runs.filter((r) => r.action === 'block').length, runs.length),
       archived: rate(runs.filter((r) => r.action !== 'ignore').length, runs.length),
+      deferred: rate(runs.filter((r) => r.deferred).length, runs.length),
       reachedLlm: rate(runs.filter((r) => r.reachedLlm).length, runs.length),
     });
   }
