@@ -10,7 +10,7 @@ Facts about live decisions and lab-only jevlike thresholds. Setup and env wiring
 |-------|---------|----------------|-------|
 | Known malicious URL | Blocklisted URL on **current** message, subject to the warning-only exception below | `obvious_scam` without AI | Unsaved + malicious-host match only |
 | Blocklisted email domain | Email address with a listed host on **current** message, subject to the warning-only exception below | `obvious_scam` without AI | Never |
-| Keyword or link rule | Lookalike or soliciting short link | Mask → AI; no rule-only archive | Never from the rule |
+| Keyword or link rule | Lookalike or soliciting short link. The money path requires the existing money-transfer ask plus urgency/account language or explicit payment via/at a link in the same bounded clause. Payment-link phrasing alone does not qualify. | Mask → AI; no rule-only archive | Never from the rule |
 | Context LLM (default) | `CONTEXT_LLM_ENABLED` on (default when unset); not skipped by a direct archive | `context_llm` when model says `archive` or `block` with sufficient confidence | Never from LLM |
 | Primary LLM | `CONTEXT_LLM_ENABLED=0` or `false` | `llm_review_scam` only when label is `scam` and confidence meets `LLM_REVIEW_MIN_CONFIDENCE` (default 0.7) | Never from LLM |
 | No action | `not_scam`, `no_action`, low confidence, mask failure, LLM off or unavailable, error, `unknown` | None | None |

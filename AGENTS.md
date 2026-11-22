@@ -64,6 +64,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 
 ## Current state (update with the date when it changes) — 2026-11-22
 
+- Short-link money hits still require the existing money-transfer ask: a link word alone no longer counts; without the unchanged urgency/account trigger, the link must be the payment destination in the same clause. This narrows the heuristic; masked AI still decides whether to archive (2026-11-22).
 - Warning-only scam reports bypass all hard-link rules for saved and unsaved senders, forwarded or not; quoted/reported/negated lures can be reviewed, but direct asks and multiple flagged URL occurrences retain hard-link handling (2026-11-22).
 
 - Guided blocks recheck the live contact after rename pacing, preserving newly saved names and saved-contact unblock metadata without cancelling the explicit block (2026-11-22).
