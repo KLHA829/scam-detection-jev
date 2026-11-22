@@ -251,13 +251,14 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId) {
     archiveChat: async (chat) => {
       await chat.archive();
     },
-    blockContact: ({ chat, contact, record: row, contactName }) =>
+    blockContact: ({ chat, contact, record: row, contactName, canRenameContact }) =>
       blockAndRename({
         client,
         contact,
         chat,
         digits: row.digits,
         contactName,
+        canRenameContact,
         pause: () => pacer.pause(),
       }),
   });
