@@ -24,7 +24,7 @@ measures the same two-chat path with fixed mask/LLM latency.
 - `malformed-guide` rejects non-string or empty model explanations without coercing objects or arrays into card text. Run `node --test --test-name-pattern='uses fallback text for malformed guided explanations' lib/operator-review.test.js`; the card says `解釋暫時出唔到` and still offers the poll.
 - `first-choice` runs the first answer and ignores a second one. 封鎖並封存 is the choice that blocks a saved contact.
 - `live-contact-name` preserves a contact saved or named after the poll was sent while still blocking on explicit confirmation. Unsaved contacts keep the bot label; a second pending poll recognises that temporary label and retains unblock cleanup metadata.
-- `sibling-unblock-polls` closes all pending unblock polls for the same chat when either 解除封鎖 or 保持封鎖 is chosen. Later votes and bare 解除 cannot act through those closed polls.
+- `sibling-unblock-polls` closes all pending unblock polls for the same chat after successful 解除封鎖 or explicit 保持封鎖. A failed unblock reopens every poll closed by that attempt, allowing a sibling vote to retry; previously closed polls stay closed.
 - `edit-voids-poll` voids the open review poll when the sender edits the message. A vote or quoted reply on the old poll does nothing and gets `呢個投票已作廢`. The edited text is reviewed again and gets a new poll only if it is still suspicious.
 - `empty-edit-context` drops the original even when the new body is empty. `lib/context-llm.test.js` locks `drops the original when an edit is empty` and `does not resend the original after an empty edit with 0 earlier messages` / `1 earlier messages`; `bin/drive-mask-before-llm` includes all three. An empty remaining window skips the model; otherwise only remaining messages are reviewed. Compare real-handler transcripts with `node scripts/demo-empty-edit.js [repo-root]`.
 
@@ -102,11 +102,12 @@ node --test lib/sibling-unblock-polls.test.js
 ```
 
 Exit code `0`. Real client handlers with WhatsApp stubbed create two guided blocks
-for one chat. Either unblock-poll answer closes its sibling, so a later vote or
-bare 解除 cannot reuse it. The handler cases isolate pending polls from the separate
+for one chat. Successful unblock or explicit keep closes its sibling, so a later
+vote or bare 解除 cannot reuse it. A failed unblock leaves both cards retryable;
+a sibling vote retries the WhatsApp action. The handler cases isolate pending polls from the separate
 block-history fallback with a temporary `BLOCK_LOG_PATH`. Queue cases cover
 restart persistence, unrelated polls, new blocks, failed saves, action retry,
-and missing or chatless polls. All six cases also run in
+and missing or chatless polls. These cases also run in
 `bin/drive-agents-invariants` as part of the CI smoke.
 
 - **Contact renamed during unblock pacing.** Run:
