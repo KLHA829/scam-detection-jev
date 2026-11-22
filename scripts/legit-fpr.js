@@ -23,10 +23,10 @@ async function main() {
   const found = falsePositives(results);
   const bodies = new Map(results.map((r) => [r.message.id, r.message]));
 
-  console.log('| contact | runs | false block | false archive (blocked chats are archived too) | reached masked LLM |');
-  console.log('|---|---|---|---|---|');
+  console.log('| contact | runs | false block | false archive (counts blocks) | alert instead of automatic action | reached masked LLM |');
+  console.log('|---|---|---|---|---|---|');
   for (const row of summarize(results)) {
-    console.log(`| ${row.contact} | ${row.messages} | ${row.blocked} | ${row.archived} | ${row.reachedLlm} |`);
+    console.log(`| ${row.contact} | ${row.messages} | ${row.blocked} | ${row.archived} | ${row.deferred} | ${row.reachedLlm} |`);
   }
   console.log(`\nfalse positives (${found.length}):`);
   for (const fp of found) {

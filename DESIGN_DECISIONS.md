@@ -6,7 +6,7 @@ Live judgment (since 2026-10-16) is **mask, then OpenAI-compatible LLM**. Local 
 
 ## Why false blocks matter most
 
-Primary users are elderly. A wrong block cuts off family and caregivers. The bot therefore **never** auto-blocks saved contacts. It auto-blocks unsaved contacts **only** when the current message URL matches [`data/malicious-hosts.json`](data/malicious-hosts.json).
+Primary users are elderly. A wrong block cuts off family and caregivers. The bot **never** auto-archives or auto-blocks saved contacts. It auto-blocks unsaved contacts **only** when the current message URL matches [`data/malicious-hosts.json`](data/malicious-hosts.json).
 
 Lookalike hosts and soliciting short links **archive** only. They do not block. Primary and context LLMs **archive** at most. They do not block. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block by themselves.
 
@@ -86,11 +86,13 @@ The frozen scam head and **`POST /v1/score`** remain for lab scoring (`lab/score
 
 Live DM, after filters:
 
+Steps 1–3 compute archive recommendations; step 4 may upgrade one to block. The operator policy in step 5 determines whether anything runs automatically.
+
 1. Link rule on the **current** message → archive `obvious_scam`. Skip LLM. Lookalike, soliciting short link, or malicious-host URL. Exception: warning-only scam reports go to masked review (step 2 or 3), regardless of saved status or forwarding metadata. Scam framing and no direct solicitation outside quoted, reported or negated speech are required. Exactly one hard-hit URL occurrence is allowed; genuine-site references are fine. Forwarded lures, mixed solicitations, repeated flagged URLs and second flagged links do not qualify. Allowlisted hosts such as `sf-express.com` are not lookalikes. Phrase tropes are not this step.
 2. If `CONTEXT_LLM_ENABLED` (default **on**): mask → context LLM on latest inbound bodies → archive `context_llm` when the model answers `archive` or `block` with confidence ≥ `LLM_REVIEW_MIN_CONFIDENCE`. `no_action`, low confidence, mask failure, or bad reply → **ignore**. Model `block` is archive only. Skipped when step 1 already archived.
 3. If `CONTEXT_LLM_ENABLED` is off: mask → primary LLM (`LLM_REVIEW_*`, default on). Label `scam` with confidence at or above `LLM_REVIEW_MIN_CONFIDENCE` (default 0.7) → archive `llm_review_scam`. `should_archive` alone cannot trigger archive. `not_scam` → ignore. Mask failure, LLM off, error, or `unknown` → **ignore**.
 4. If the contact is unsaved and the current message hard-hit the **malicious-host** link rule in step 1 → **block** (`封鎖·惡意域名`), mute, archive, append `blocks.jsonl`. Lookalike, short-link and LLM archives stay archive-only.
-5. Saved contacts never auto-block. Primary and context LLMs never auto-block.
+5. Saved contacts always defer recommendations to the operator's self-chat card instead of auto-archiving or auto-blocking, including before setup. Primary and context LLMs never auto-block.
 
 `OPERATOR_MODE=guided` (or the self-chat poll) computes the same suspicion but waits for **封鎖並封存**, **只封存**, or **留低** before WhatsApp writes. The explanation call is separate and cannot release the card.
 

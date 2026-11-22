@@ -167,8 +167,10 @@ function makeFakeWhatsApp({
     },
   };
   const client = {
-    async saveOrEditAddressbookContact() {
+    async saveOrEditAddressbookContact(_number, name) {
       events.push('rename');
+      contact.name = name;
+      contact.isMyContact = true;
     },
   };
   return { msg, chat, contact, client, events };
@@ -282,6 +284,7 @@ async function executeScenario({
           source: 'wid',
         }),
         archiveChat: async () => fake.chat.archive(),
+        refreshContact: () => fake.msg.getContact(),
         blockContact: (info) =>
           blockAndRename({
             client: fake.client,
@@ -289,6 +292,7 @@ async function executeScenario({
             chat: fake.chat,
             digits: info && info.digits,
             contactName: info && info.contactName,
+            refreshUnsavedContact: () => fake.msg.getContact(),
           }),
         llmCooldownStore: cooldownStore,
         operatorMode: 'auto',
@@ -309,6 +313,7 @@ async function executeScenario({
       result && result.decision ? result.decision.blockReason || null : null,
     archived: fake.events.includes('archive'),
     blocked: fake.events.includes('block'),
+    deferred: Boolean(result && result.deferred),
     llmCalls: scenarioRequests.length,
     redactedContainsXXX: requestText.includes('XXX'),
     rawDigitsPresent: sensitiveDigits
@@ -394,8 +399,9 @@ async function main() {
           ignored: false,
           action: 'archive',
           archiveReason: 'obvious_scam',
-          archived: true,
+          archived: false,
           blocked: false,
+          deferred: true,
           llmCalls: 0,
         },
       }),

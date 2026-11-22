@@ -30,7 +30,9 @@ End-to-end order: [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#ac
 | Contact | Malicious-host URL on current message | Lookalike or short link |
 |---------|--------------------------------------|-------------------------|
 | Unsaved | May **block** (`封鎖·惡意域名`) after archive | Archive only |
-| Saved | Never auto-block | Archive only |
+| Saved | Operator alert only | Operator alert only |
+
+Saved contacts also get an alert rather than an automatic archive when flagged by either model, regardless of operator mode.
 
 Warning-only scam reports go to **mask → LLM** before malicious-host, lookalike and short-link rules, regardless of saved status or forwarding metadata. They require scam framing, no direct solicitation outside quoted/reported/negated speech, and exactly one hard-hit URL occurrence. Extra genuine-site references are fine; direct asks, repeated flagged URLs and second flagged links retain normal link rules. The review can archive, but cannot auto-block; normal mask, enablement and cooldown rules apply.
 
