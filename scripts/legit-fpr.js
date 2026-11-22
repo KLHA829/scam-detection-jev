@@ -23,7 +23,7 @@ async function main() {
   const found = falsePositives(results);
   const bodies = new Map(results.map((r) => [r.message.id, r.message]));
 
-  console.log('| contact | runs | false block | false archive | reached masked LLM |');
+  console.log('| contact | runs | false block | false archive (blocked chats are archived too) | reached masked LLM |');
   console.log('|---|---|---|---|---|');
   for (const row of summarize(results)) {
     console.log(`| ${row.contact} | ${row.messages} | ${row.blocked} | ${row.archived} | ${row.reachedLlm} |`);

@@ -12,6 +12,7 @@ const { notScamLlmFetch } = require('../../lib/test-llm');
 const ROOT = path.join(__dirname, '..', '..');
 const CORPUS_PATH = path.join(ROOT, 'fixtures', 'legit-messages.json');
 const BASELINE_PATH = path.join(ROOT, 'fixtures', 'legit-fpr-baseline.json');
+const MALICIOUS_HOSTS_PATH = path.join(ROOT, 'data', 'malicious-hosts.json');
 
 function loadLegitMessages(file = CORPUS_PATH) {
   return JSON.parse(fs.readFileSync(file, 'utf8')).messages;
@@ -67,7 +68,10 @@ async function runLegitMessage(message, { savedContact }) {
 async function runLegitBenchmark(messages = loadLegitMessages()) {
   const quiet = ['scan', 'info', 'ok', 'warn'];
   const saved = quiet.map((level) => log[level]);
+  const hostsPath = process.env.MALICIOUS_HOSTS_PATH;
   for (const level of quiet) log[level] = () => {};
+  // Measure the shipped host list, not a local override.
+  process.env.MALICIOUS_HOSTS_PATH = MALICIOUS_HOSTS_PATH;
   try {
     const results = [];
     for (const message of messages) {
@@ -78,6 +82,8 @@ async function runLegitBenchmark(messages = loadLegitMessages()) {
     return results;
   } finally {
     quiet.forEach((level, i) => { log[level] = saved[i]; });
+    if (hostsPath === undefined) delete process.env.MALICIOUS_HOSTS_PATH;
+    else process.env.MALICIOUS_HOSTS_PATH = hostsPath;
   }
 }
 
@@ -103,7 +109,7 @@ function summarize(results) {
       contact,
       messages: runs.length,
       blocked: rate(runs.filter((r) => r.action === 'block').length, runs.length),
-      archived: rate(runs.filter((r) => r.action === 'archive').length, runs.length),
+      archived: rate(runs.filter((r) => r.action !== 'ignore').length, runs.length),
       reachedLlm: rate(runs.filter((r) => r.reachedLlm).length, runs.length),
     });
   }
