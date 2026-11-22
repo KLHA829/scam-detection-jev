@@ -14,6 +14,7 @@ Before any chat-API call, the bot asks jevlike `POST /v1/mask` which characters 
 - `keyword-rules` exercises lookalikes and soliciting short links in both the default context and single-message paths. A benign, invalid, or unavailable review leaves the message alone; a confident scam verdict archives without auto-blocking.
 - `review-disabled` skips both review paths with `LLM_REVIEW_ENABLED=false`, even with context on by default; only the curated URL and email-domain bypasses still work (`node --test lib/llm-review-disabled.test.js` uses a real local HTTP chat endpoint).
 - `LLM_REVIEW_ALL=1` is a legacy compatibility flag with no effect on review enablement or trigger selection; it does not re-enable review when `LLM_REVIEW_ENABLED=false` (`lib/llm-review.test.js` covers context default-on and off).
+- `benign-notices-prompt` runs `treats money received, own-account alerts and do-not-share codes as no_action` in `lib/context-llm.test.js`: the context prompt's `no_action for ordinary chat` clause names money already sent to the user, own-account bank alerts and do-not-share one-time codes; `drive-mask-before-llm` checks this test's TAP result.
 - `mask-local-identity` attaches the chat-list name and phone on this machine. Those fields are not part of the mask request or the chat-API body.
 
 ## How to get to it (user POV)
