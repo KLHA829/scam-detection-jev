@@ -1,0 +1,64 @@
+name: Scam / False-Positive Case
+description: Report a missed scam, false positive, or suspicious pitch message for regression testing / fix
+title: "[Case]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do **not** paste unmasked phone numbers, bank accounts, or personal details. Replace PII with `XXX`.
+        Add the `auto-pr` label only when you want an agent to open a draft PR for this case.
+
+  - type: textarea
+    id: message
+    attributes:
+      label: Masked message / transcript
+      description: Paste the message(s) with personal info replaced by XXX. Include `user:` prefix for the user's own replies if relevant.
+      placeholder: |
+        [sender] 你個戶口有異常...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: sender_status
+    attributes:
+      label: Sender status
+      options:
+        - Unsaved number (first message)
+        - Unsaved number (ongoing chat)
+        - Saved contact
+        - Bot-labelled （可疑推銷）
+    validations:
+      required: true
+
+  - type: dropdown
+    id: expected_outcome
+    attributes:
+      label: Expected outcome
+      options:
+        - ignore (ordinary chat / no action)
+        - archive (LLM scam review)
+        - pitch (label （可疑推銷）, do not archive)
+        - block (only for unsaved + data/malicious-hosts.json)
+        - guided review card (saved contact)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: actual_outcome
+    attributes:
+      label: Actual outcome
+      options:
+        - ignore
+        - archive
+        - pitch
+        - block
+        - guided review card
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes / constraints
+      description: Optional context (e.g., why it should/shouldn't archive, whether a URL/host should be added to data/malicious-hosts.json).
