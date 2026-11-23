@@ -79,11 +79,13 @@ function createMockServer(requests, currentScenario) {
       });
 
       const investment = /投資|investment/i.test(userPrompt(body));
+      const bankImpersonation = /銀行職員/.test(userPrompt(body));
       const content = isContextRequest(body)
         ? JSON.stringify({
-            action: investment ? 'archive' : 'no_action',
+            action: investment || bankImpersonation ? 'archive' : 'no_action',
+            strong: bankImpersonation,
             confidence: 0.9,
-            reason: investment ? 'mock_investment' : 'mock_benign',
+            reason: bankImpersonation ? 'mock_bank_impersonation' : investment ? 'mock_investment' : 'mock_benign',
           })
         : JSON.stringify({
             label: investment ? 'scam' : 'not_scam',
@@ -240,6 +242,7 @@ async function executeScenario({
 
   const { JevlikeClient } = require('../lib/jevlike-client');
   const { processIncomingMessage } = require('../lib/handle-incoming');
+  const { createRecentContext } = require('../lib/context-llm');
   const { blockAndRename } = require('../lib/wa-actions');
   const { createLlmReviewCooldownStore } = require(
     '../lib/llm-review-cooldown',
@@ -258,6 +261,7 @@ async function executeScenario({
     env,
   });
 
+  const recentContext = contextOn ? createRecentContext() : null;
   let result = null;
   for (const [index, messageBody] of messageBodies.entries()) {
     fake.msg.body = messageBody;
@@ -295,6 +299,7 @@ async function executeScenario({
             refreshUnsavedContact: () => fake.msg.getContact(),
           }),
         llmCooldownStore: cooldownStore,
+        recentContext,
         operatorMode: 'auto',
       },
     );
@@ -488,8 +493,26 @@ async function main() {
     );
     results.push(
       await run({
-        id: 'investment-context-scam-masked-phone',
+        id: 'investment-context-first-contact-held',
         body: '高回報投資，加我 98765432',
+        contextOn: true,
+        sensitiveDigits: '98765432',
+        expected: {
+          ignored: false,
+          action: 'ignore',
+          archiveReason: null,
+          archived: false,
+          blocked: false,
+          llmCalls: 1,
+          redactedContainsXXX: true,
+          rawDigitsPresent: false,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'bank-impersonation-context-first-contact',
+        body: '我係銀行職員，請回覆驗證碼，加我 98765432',
         contextOn: true,
         sensitiveDigits: '98765432',
         expected: {

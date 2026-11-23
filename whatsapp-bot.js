@@ -10,6 +10,7 @@ const log = require('./lib/log');
 const { createMaskClient } = require('./lib/jevlike-client');
 const {
   processIncomingMessage,
+  recordOutgoingMessage,
 } = require('./lib/handle-incoming');
 const { resolveRealNumber, phoneLookupId } = require('./lib/lid');
 const {
@@ -22,7 +23,7 @@ const {
   contextLlmMessageLimit,
   createRecentContext,
 } = require('./lib/context-llm');
-const { blockAndRename, labelUnsavedContact, unblockContact } = require('./lib/wa-actions');
+const { blockAndRename, clearUnsavedContactLabel, labelUnsavedContact, unblockContact } = require('./lib/wa-actions');
 const { isOperatorSavedContact } = require('./lib/block-policy');
 const { createBotContactNames, defaultBotContactNamesPath } = require('./lib/bot-contact-names');
 const { createActionPacer } = require('./lib/action-pacer');
@@ -490,6 +491,30 @@ function incomingMessageId(msg) {
   return msg?.id?._serialized || msg?.id?.id || null;
 }
 
+async function recordOwnMessage(msg, { client, recentContext, editedFrom = null }) {
+  if (!recentContext) return;
+  let chat;
+  try {
+    chat = await msg.getChat();
+  } catch (err) {
+    log.warn('own message chat lookup failed', { error: err.message });
+    return;
+  }
+  const chatId = serializedId(chat && chat.id);
+  if (!chatId || chatId === selfWid(client)) return;
+  recordOutgoingMessage(
+    {
+      type: msg.type,
+      isGroup: Boolean(chat.isGroup),
+      chatId,
+      body: msg.body || '',
+      messageId: incomingMessageId(msg),
+      editedFrom,
+    },
+    { recentContext },
+  );
+}
+
 async function handleWaMessage(msg, {
   client,
   pacer,
@@ -567,6 +592,18 @@ async function handleWaMessage(msg, {
           pause: () => pacer.pause(),
           refreshUnsavedContact: () => msg.getContact(),
           botContactNames,
+        }),
+      hasContactLabel: (info) =>
+        Boolean(botContactNames && info && botContactNames.wroteForNumber(info.digits, info.contactName)),
+      clearContactLabel: (info) =>
+        clearUnsavedContactLabel({
+          client,
+          digits: info && info.digits,
+          contactName: info && info.contactName,
+          pause: () => pacer.pause(),
+          refreshUnsavedContact: () => msg.getContact(),
+          botContactNames,
+          isCurrent,
         }),
       labelContact: (info) =>
         labelUnsavedContact({
@@ -668,6 +705,14 @@ function attachHandlers(client, deps) {
         if (newBody === prevBody) return;
         if (msg) msg.body = newBody;
       }
+      if (msg && msg.fromMe) {
+        await recordOwnMessage(msg, {
+          ...deps,
+          client,
+          editedFrom: typeof prevBody === 'string' ? prevBody : null,
+        });
+        return;
+      }
       const id = incomingMessageId(msg);
       const invalidated = deps.reviewQueue
         ? invalidatePendingGuidedReview(deps.reviewQueue, id)
@@ -686,8 +731,9 @@ function attachHandlers(client, deps) {
 
   client.on('message_create', async (msg) => {
     try {
-      if (!msg.fromMe || !deps.operator) return;
-      await handleSelfMessage(msg, { client, ...deps });
+      if (!msg.fromMe) return;
+      await recordOwnMessage(msg, { ...deps, client });
+      if (deps.operator) await handleSelfMessage(msg, { client, ...deps });
     } catch (err) {
       log.error('self chat handler failed', { error: err.message });
     }
