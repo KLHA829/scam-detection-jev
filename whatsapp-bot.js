@@ -23,7 +23,7 @@ const {
   contextLlmMessageLimit,
   createRecentContext,
 } = require('./lib/context-llm');
-const { blockAndRename, labelUnsavedContact, unblockContact } = require('./lib/wa-actions');
+const { blockAndRename, clearUnsavedContactLabel, labelUnsavedContact, unblockContact } = require('./lib/wa-actions');
 const { isOperatorSavedContact } = require('./lib/block-policy');
 const { createBotContactNames, defaultBotContactNamesPath } = require('./lib/bot-contact-names');
 const { createActionPacer } = require('./lib/action-pacer');
@@ -592,6 +592,16 @@ async function handleWaMessage(msg, {
           pause: () => pacer.pause(),
           refreshUnsavedContact: () => msg.getContact(),
           botContactNames,
+        }),
+      clearContactLabel: (info) =>
+        clearUnsavedContactLabel({
+          client,
+          digits: info && info.digits,
+          contactName: info && info.contactName,
+          pause: () => pacer.pause(),
+          refreshUnsavedContact: () => msg.getContact(),
+          botContactNames,
+          isCurrent,
         }),
       labelContact: (info) =>
         labelUnsavedContact({
