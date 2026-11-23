@@ -11,6 +11,9 @@
  *   node scripts/context-review-live.js [checkout] [--set legit|threads|scam|all] [--out file.json]
  *
  * Rows always come from this script's checkout, so a `git worktree` of main runs the same rows.
+ *
+ * The mask is the offline regex stub, not the live `/v1/mask` worker the bot requires. Only run
+ * this on the synthetic fixture rows, never on real chats.
  */
 
 const fs = require('fs');
