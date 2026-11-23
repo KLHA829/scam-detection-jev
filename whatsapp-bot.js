@@ -593,7 +593,8 @@ async function handleWaMessage(msg, {
           refreshUnsavedContact: () => msg.getContact(),
           botContactNames,
         }),
-      hasContactLabel: (info) => Boolean(botContactNames && botContactNames.hasNumber(info && info.digits)),
+      hasContactLabel: (info) =>
+        Boolean(botContactNames && info && botContactNames.wroteForNumber(info.digits, info.contactName)),
       clearContactLabel: (info) =>
         clearUnsavedContactLabel({
           client,
