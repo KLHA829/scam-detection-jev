@@ -7,7 +7,7 @@
   "scripts": {
     "lint": "eslint whatsapp-bot.js lib lab scripts test stub-jevlike.js .cursor/skills/verify-scam-bot/bin/*.js",
     "start": "node whatsapp-bot.js",
-    "test": "LLM_REVIEW_COOLDOWN_MS=0 node --require ./scripts/block-log-test-setup.js --test && node scripts/run-py-tests.js",
+    "test": "node scripts/run-tests.js",
     "test:e2e": "node scripts/e2e-mock-http.js",
     "test:e2e:boot": "node scripts/e2e-boot-qr.js",
     "stub": "node stub-jevlike.js",

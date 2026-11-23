@@ -1,0 +1,35 @@
+name: Bot Task (Auto-PR Ready)
+description: Define a scoped bug fix or small feature with clear acceptance criteria
+title: "[Task]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep each task single-purpose so the resulting PR is small and fast to review.
+        Add the `auto-pr` label when ready for an agent to implement and open a draft PR.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should change and why?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria & verification
+      description: Specific behaviors, edge cases, and commands that must pass (e.g., `npm test`, `node scripts/legit-fpr.js`, `bin/drive-mask-before-llm`).
+      placeholder: |
+        - [ ] Unit test covering ...
+        - [ ] `npm test` passes
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Guardrails / do not change
+      description: Any invariants from AGENTS.md or specific files that must stay untouched.
