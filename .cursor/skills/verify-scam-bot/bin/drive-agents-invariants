@@ -16,6 +16,8 @@ const root = path.resolve(skillDir, '../../..');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'holds a weak archive verdict on the first message from an unsaved number',
+  'archives the first message at once on strong evidence',
   'invariant: malicious_email_host fast path skips primary and context LLM',
   'invariant: malicious_host fast path skips primary and context LLM',
   'prefers exact unblock numbers over suffix collisions across full history and polls',
@@ -77,7 +79,7 @@ const TEST_NAMES = [
   'invariant: unsaved lookalike does not score, archive or block when AI is disabled',
 ];
 
-const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/audit-review-queue.test.js', 'lib/guided-block-name.test.js', 'lib/wa-actions.test.js', 'lib/unblock-history.test.js', 'lib/sibling-unblock-polls.test.js', 'lib/wa-handlers.test.js', 'lib/operator-commands.test.js'];
+const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/context-llm.test.js', 'lib/audit-review-queue.test.js', 'lib/guided-block-name.test.js', 'lib/wa-actions.test.js', 'lib/unblock-history.test.js', 'lib/sibling-unblock-polls.test.js', 'lib/wa-handlers.test.js', 'lib/operator-commands.test.js'];
 
 const UNSET_ENV = [
   'ARCHIVE_THRESHOLD',

@@ -62,6 +62,7 @@ const TEST_NAMES = [
   'rejects a mask payload that would leave the text raw',
   'archives llm_review_scam when the model flags scam',
   'does not archive when mask fails for local unsaved',
+  "sends the user's question and the reply as masked turns marked by speaker",
 ];
 
 const TEST_FILES = [

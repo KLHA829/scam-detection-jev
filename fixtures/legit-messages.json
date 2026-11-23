@@ -1,5 +1,5 @@
 {
- "_about": "Realistic legitimate messages an elderly WhatsApp user receives (family, friends, banks, delivery, clinics, government, utilities, forwarded anti-scam warnings) in Cantonese, Traditional and Simplified Chinese, English and mixed text. Every row is legitimate: any archive or block is a false positive. Phone numbers, OTPs and order numbers are made up. Run: node scripts/legit-fpr.js",
+ "_about": "Realistic legitimate messages an elderly WhatsApp user receives (family, friends, banks, delivery, clinics, government, utilities, forwarded anti-scam warnings, and merchant or service payment requests, after the user's own question or as the first message from a shop or clinic that has the user's number) in Cantonese, Traditional and Simplified Chinese, English and mixed text. Every row is legitimate: any archive or block is a false positive. Phone numbers, OTPs and order numbers are made up. Run: node scripts/legit-fpr.js. Optional `context` lists the earlier turns of the chat, oldest first; `fromMe: true` marks the user's own messages.",
  "messages": [
   {
    "id": "family-001",
@@ -1872,6 +1872,180 @@
    "category": "family",
    "lang": "mixed",
    "body": "Mum，你嘅藥我喺 Watsons 幫你 refill 咗，聽日拎俾你"
+  },
+  {
+   "id": "merchant-001",
+   "category": "merchant",
+   "lang": "yue",
+   "context": [
+    {
+     "fromMe": true,
+     "body": "你好，Carousell 見到你賣二手嬰兒車，仲有冇貨？點俾錢？"
+    }
+   ],
+   "body": "收到你訂單，二手嬰兒車 $800，請轉數快到 91234567，收到款就寄出"
+  },
+  {
+   "id": "merchant-002",
+   "category": "merchant",
+   "lang": "yue",
+   "context": [
+    {
+     "fromMe": true,
+     "body": "我想要你個電飯煲，$350 得唔得？可唔可以 PayMe？"
+    }
+   ],
+   "body": "得，$350 成交。PayMe 連結：https://payme.hsbc/abcd1234 ，俾咗錢影張單俾我，聽日順豐寄出"
+  },
+  {
+   "id": "merchant-003",
+   "category": "merchant",
+   "lang": "yue",
+   "context": [
+    {
+     "fromMe": true,
+     "body": "你好，我想約下個禮拜三洗牙，仲有冇位？"
+    }
+   ],
+   "body": "陳太你好，已幫你預留下星期三上午10:30，需要先付訂金 $200，可以轉數快到診所號碼 23456789，備註你個名，多謝"
+  },
+  {
+   "id": "merchant-004",
+   "category": "merchant",
+   "lang": "yue",
+   "context": [
+    {
+     "fromMe": true,
+     "body": "師傅，廚房水喉漏水，今日可唔可以上嚟睇下？"
+    }
+   ],
+   "body": "下晝三點到，換喉連人工 $680，做完可以俾現金或者轉數快"
+  },
+  {
+   "id": "merchant-005",
+   "category": "merchant",
+   "lang": "yue",
+   "context": [
+    {
+     "fromMe": true,
+     "body": "Miss Wong，我個孫想報你嘅數學補習，點收費？"
+    }
+   ],
+   "body": "一個月四堂 $1,600，第一堂前轉賬到 012-345678-001 就得，我星期六下晝上門"
+  },
+  {
+   "id": "merchant-006",
+   "category": "merchant",
+   "lang": "yue",
+   "context": [
+    {
+     "fromMe": true,
+     "body": "房東，今個月租幾時交？入邊個戶口？"
+    }
+   ],
+   "body": "同之前一樣，$9,500 入中銀 012-888-12345678，月尾前就得，多謝"
+  },
+  {
+   "id": "merchant-007",
+   "category": "merchant",
+   "lang": "yue",
+   "context": [
+    {
+     "fromMe": true,
+     "body": "請問教會聖誕聚餐仲報唔報到名？要唔要俾錢？"
+    }
+   ],
+   "body": "仲有位，每位 $120 餐費，可以聚會當日現金俾我，或者 PayMe 俾教會戶口都得"
+  },
+  {
+   "id": "merchant-008",
+   "category": "merchant",
+   "lang": "yue",
+   "context": [
+    {
+     "fromMe": true,
+     "body": "我份醫療保單下個月到期，續保要俾幾多？"
+    }
+   ],
+   "body": "李生，續保保費 $4,280，可以用信用卡自動轉賬，或者經保險公司 App 繳費，有問題隨時搵我"
+  },
+  {
+   "id": "merchant-009",
+   "category": "merchant",
+   "lang": "yue",
+   "context": [
+    {
+     "fromMe": true,
+     "body": "我想將定期存款到期之後再做三個月，點做？"
+    }
+   ],
+   "body": "張太你好，到期日我幫你預約咗分行星期五上午，帶身份證同存摺就得，唔使喺 WhatsApp 提供任何密碼"
+  },
+  {
+   "id": "merchant-010",
+   "category": "merchant",
+   "lang": "yue",
+   "context": [
+    {
+     "fromMe": true,
+     "body": "你好，iPad 仲有冇？"
+    },
+    {
+     "fromMe": false,
+     "body": "有呀，九成新，$2,200"
+    },
+    {
+     "fromMe": true,
+     "body": "可唔可以平少少？$2,000 得唔得？"
+    },
+    {
+     "fromMe": false,
+     "body": "$2,100 啦，包順豐"
+    }
+   ],
+   "body": "OK，咁 $2,100，轉數快到 61234567 ，收到款今晚寄，寄出後send單號俾你"
+  },
+  {
+   "id": "merchant-011",
+   "category": "merchant",
+   "lang": "en",
+   "context": [
+    {
+     "fromMe": true,
+     "body": "Hi, is the rice cooker still available? How do I pay?"
+    }
+   ],
+   "body": "Yes still available! $300, you can FPS to 98765432 and I'll ship it tomorrow by SF Express"
+  },
+  {
+   "id": "merchant-012",
+   "category": "merchant",
+   "lang": "zh-Hant",
+   "context": [
+    {
+     "fromMe": true,
+     "body": "您好，想預約明天下午的物理治療，請問需要訂金嗎？"
+    }
+   ],
+   "body": "已為您預約明天下午三時，訂金 $150，請轉數快至本中心 28765432，並回覆轉賬截圖，謝謝"
+  },
+  {
+   "id": "merchant-013",
+   "category": "merchant",
+   "lang": "yue",
+   "body": "陳太你好，呢度係康健牙科，你上星期喺診所留低電話預約洗牙，已幫你安排下星期三上午10:30，請先轉數快訂金 $200 到 23456789，多謝"
+  },
+  {
+   "id": "merchant-014",
+   "category": "merchant",
+   "lang": "yue",
+   "body": "你好，我係順昌傢俬，你喺門市訂嘅梳化已經到貨，尾數 $3,200 可以轉數快到 61234567 或者送貨時俾現金，聽日下晝送到"
+  },
+  {
+   "id": "merchant-015",
+   "category": "merchant",
+   "lang": "zh-Hant",
+   "body": "李先生您好，這裡是仁心物理治療中心，您在櫃檯登記的療程已安排在星期五下午三時，如需保留時段請先付訂金 $150，可轉數快至 28765432"
   }
  ]
 }

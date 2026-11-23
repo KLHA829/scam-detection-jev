@@ -1,0 +1,91 @@
+{
+ "_about": "Scam chats where the user already replied before the scam ask. Any no_action is a missed scam. Used by scripts/context-review-live.js.",
+ "messages": [
+  {
+   "id": "thread-scam-001",
+   "note": "new-number child asks for money after the user replied",
+   "context": [
+    {
+     "fromMe": false,
+     "body": "阿媽，我換咗新號碼，舊號碼唔用喇"
+    },
+    {
+     "fromMe": true,
+     "body": "你係邊個？"
+    }
+   ],
+   "body": "我係你個仔呀，手機跌咗，急住要交錢，你先轉 $8,000 去呢個轉數快 91234567，夜啲還返俾你，唔好話俾爸爸知"
+  },
+  {
+   "id": "thread-scam-002",
+   "note": "fake buyer sends a deceptive Carousell payment link to the user who is selling",
+   "context": [
+    {
+     "fromMe": true,
+     "body": "仲有貨，$300 包郵"
+    }
+   ],
+   "body": "好，我已經用 Carousell 保障付款，請撳呢個連結輸入你張卡資料收款 https://carousell-hk.payment-secure.top/receive"
+  },
+  {
+   "id": "thread-scam-003",
+   "note": "loan ad asks for OTP after the user asked how to apply",
+   "context": [
+    {
+     "fromMe": false,
+     "body": "低息貸款，即日批核，無需入息證明"
+    },
+    {
+     "fromMe": true,
+     "body": "點樣申請？"
+    }
+   ],
+   "body": "好簡單，我哋而家send咗個驗證碼去你手機，你覆返個6位數字俾我就即刻批"
+  },
+  {
+   "id": "thread-scam-004",
+   "note": "fake courier asks for a re-delivery fee via link after the user asked about a parcel",
+   "context": [
+    {
+     "fromMe": false,
+     "body": "你好，你有一件包裹因地址不全未能派送"
+    },
+    {
+     "fromMe": true,
+     "body": "咩包裹？我冇買嘢"
+    }
+   ],
+   "body": "請喺 24 小時內撳 https://sf-express-hk.delivery-fee.top 補交 $18 重新派送費，逾期退回"
+  },
+  {
+   "id": "thread-scam-005",
+   "note": "impersonated official demands a safe-account transfer after the user replied",
+   "context": [
+    {
+     "fromMe": false,
+     "body": "我係入境處職員，你嘅身份證涉及洗黑錢案件"
+    },
+    {
+     "fromMe": true,
+     "body": "我冇做過呀"
+    }
+   ],
+   "body": "為咗證明你清白，你要將戶口存款轉去安全賬戶 012-345-678901，唔好同任何人講，包括家人"
+  },
+  {
+   "id": "thread-scam-006",
+   "note": "investment group asks for a deposit after the user showed interest",
+   "context": [
+    {
+     "fromMe": false,
+     "body": "王老師帶你炒股，每日穩賺5%"
+    },
+    {
+     "fromMe": true,
+     "body": "真係咁好賺？點加入？"
+    }
+   ],
+   "body": "首期入金 $10,000 到助理轉數快 61234567，聽日開始跟老師買，保證回本"
+  }
+ ]
+}
