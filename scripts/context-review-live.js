@@ -82,7 +82,7 @@ async function runRow(row) {
   }
   for (let attempt = 0; ; attempt += 1) {
     const out = await handler.processIncomingMessage(
-      { type: 'chat', body: row.body, chatId, savedContact: false },
+      { type: 'chat', body: row.body, chatId, savedContact: false, messageId: `${row.id}-msg` },
       deps,
     );
     const review = out.llmReview || {};

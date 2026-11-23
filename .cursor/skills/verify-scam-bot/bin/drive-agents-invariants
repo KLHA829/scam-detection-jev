@@ -19,6 +19,7 @@ const TEST_NAMES = [
   'holds a weak archive verdict on the first message from an unsaved number',
   'archives the first message at once on strong evidence',
   'lifts the label once a later review finds the chat ordinary',
+  'does not queue a label lift for a sender the bot never labelled',
   'invariant: malicious_email_host fast path skips primary and context LLM',
   'invariant: malicious_host fast path skips primary and context LLM',
   'prefers exact unblock numbers over suffix collisions across full history and polls',
