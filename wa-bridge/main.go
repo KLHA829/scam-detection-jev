@@ -27,9 +27,12 @@ func main() {
 	if !isLoopbackHost(host) {
 		log.Fatalf("wa-bridge refuses non-loopback host %q (must be 127.0.0.1, localhost, or ::1)", host)
 	}
+	token := strings.TrimSpace(os.Getenv("WA_BRIDGE_TOKEN"))
+	if token == "" {
+		log.Fatalf("WA_BRIDGE_TOKEN is required so local processes cannot access the paired WhatsApp session")
+	}
 	port := envOr("WA_BRIDGE_PORT", "8767")
 	dbPath := envOr("WA_BRIDGE_DB_PATH", "wa-bridge.db")
-	token := strings.TrimSpace(os.Getenv("WA_BRIDGE_TOKEN"))
 	logLevel := strings.ToUpper(envOr("WA_BRIDGE_LOG_LEVEL", "WARN"))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -41,25 +44,32 @@ func main() {
 	}
 	defer func() { _ = bridge.Close() }()
 
-	if err := bridge.Start(ctx); err != nil {
-		log.Fatalf("start wa-bridge: %v", err)
+	addr := net.JoinHostPort(normalizeBindHost(host), port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("listen %s: %v", addr, err)
 	}
 
-	addr := net.JoinHostPort(host, port)
 	srv := &http.Server{
-		Addr:              addr,
 		Handler:           NewBridgeHandler(bridge, token),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
 	go func() {
-		fmt.Printf("[INFO] wa-bridge listening on http://%s\n", addr)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		fmt.Printf("[INFO] wa-bridge listening on http://%s\n", ln.Addr().String())
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 		close(errCh)
 	}()
+
+	if err := bridge.Start(ctx); err != nil {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = srv.Shutdown(shutCtx)
+		cancel()
+		log.Fatalf("start wa-bridge: %v", err)
+	}
 
 	select {
 	case <-ctx.Done():

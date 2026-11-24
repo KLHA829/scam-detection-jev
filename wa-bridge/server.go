@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -54,9 +55,13 @@ type BridgeBackend interface {
 	SetContactLabel(ctx context.Context, phone, name string) error
 }
 
+func normalizeBindHost(host string) string {
+	h := strings.TrimSpace(host)
+	return strings.TrimPrefix(strings.TrimSuffix(h, "]"), "[")
+}
+
 func isLoopbackHost(host string) bool {
-	h := strings.TrimSpace(strings.ToLower(host))
-	h = strings.TrimPrefix(strings.TrimSuffix(h, "]"), "[")
+	h := strings.ToLower(normalizeBindHost(host))
 	if h == "localhost" {
 		return true
 	}
@@ -72,12 +77,14 @@ func NewBridgeHandler(backend BridgeBackend, token string) http.Handler {
 
 	authed := func(h http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			if token != "" {
-				got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-				if got == r.Header.Get("Authorization") || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
-					writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-					return
-				}
+			if token == "" {
+				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "bridge token not configured"})
+				return
+			}
+			got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if got == r.Header.Get("Authorization") || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+				return
 			}
 			h(w, r)
 		}
@@ -89,13 +96,20 @@ func NewBridgeHandler(backend BridgeBackend, token string) http.Handler {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "streaming unsupported"})
 			return
 		}
+		var lastSeq uint64
+		if rawLastID := strings.TrimSpace(r.Header.Get("Last-Event-ID")); rawLastID != "" {
+			if parsed, err := strconv.ParseUint(rawLastID, 10, 64); err == nil {
+				lastSeq = parsed
+			}
+		}
+
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 		w.WriteHeader(http.StatusOK)
 		flusher.Flush()
 
-		ch, cancel := backend.Events().Subscribe(128)
+		ch, cancel := backend.Events().SubscribeSince(maxReplayEvents+64, lastSeq)
 		defer cancel()
 
 		keepalive := time.NewTicker(20 * time.Second)
@@ -118,7 +132,13 @@ func NewBridgeHandler(backend BridgeBackend, token string) http.Handler {
 				if err != nil {
 					continue
 				}
-				if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", evt.Type, payload); err != nil {
+				var writeErr error
+				if evt.Seq > 0 {
+					_, writeErr = fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", evt.Seq, evt.Type, payload)
+				} else {
+					_, writeErr = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", evt.Type, payload)
+				}
+				if writeErr != nil {
 					return
 				}
 				flusher.Flush()
@@ -312,9 +332,10 @@ func NewBridgeHandler(backend BridgeBackend, token string) http.Handler {
 }
 
 var (
-	errNotReady   = errors.New("whatsapp client not ready")
-	errBadRequest = errors.New("bad request")
-	errNotFound   = errors.New("not found")
+	errNotReady         = errors.New("whatsapp client not ready")
+	errBadRequest       = errors.New("bad request")
+	errNotFound         = errors.New("not found")
+	errUnsupportedMedia = errors.New("unsupported media forward")
 )
 
 func statusForError(err error) int {
@@ -323,6 +344,8 @@ func statusForError(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, errNotFound):
 		return http.StatusNotFound
+	case errors.Is(err, errUnsupportedMedia):
+		return http.StatusUnprocessableEntity
 	case errors.Is(err, errNotReady):
 		return http.StatusServiceUnavailable
 	default:

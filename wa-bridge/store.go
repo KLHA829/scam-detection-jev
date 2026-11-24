@@ -21,6 +21,7 @@ type StoredMessage struct {
 	ChatJID   string
 	SenderJID string
 	FromMe    bool
+	MsgType   string
 	Body      string
 	Timestamp time.Time
 }
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS bridge_messages (
 	chat_jid TEXT NOT NULL,
 	sender_jid TEXT NOT NULL,
 	from_me INTEGER NOT NULL,
+	msg_type TEXT NOT NULL DEFAULT 'chat',
 	body TEXT NOT NULL,
 	ts_unix INTEGER NOT NULL
 );
@@ -133,16 +135,20 @@ func (s *BridgeStore) SaveMessage(ctx context.Context, msg StoredMessage) error 
 	if msg.FromMe {
 		fromMe = 1
 	}
+	msgType := msg.MsgType
+	if msgType == "" {
+		msgType = "chat"
+	}
 	ts := msg.Timestamp
 	if ts.IsZero() {
 		ts = time.Now()
 	}
 	_, err := s.db.ExecContext(
 		ctx,
-		`INSERT INTO bridge_messages(msg_id, chat_jid, sender_jid, from_me, body, ts_unix)
-		 VALUES (?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(msg_id) DO UPDATE SET chat_jid = excluded.chat_jid, sender_jid = excluded.sender_jid, from_me = excluded.from_me, body = excluded.body, ts_unix = excluded.ts_unix`,
-		msg.ID, msg.ChatJID, msg.SenderJID, fromMe, msg.Body, ts.Unix(),
+		`INSERT INTO bridge_messages(msg_id, chat_jid, sender_jid, from_me, msg_type, body, ts_unix)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(msg_id) DO UPDATE SET chat_jid = excluded.chat_jid, sender_jid = excluded.sender_jid, from_me = excluded.from_me, msg_type = excluded.msg_type, body = excluded.body, ts_unix = excluded.ts_unix`,
+		msg.ID, msg.ChatJID, msg.SenderJID, fromMe, msgType, msg.Body, ts.Unix(),
 	)
 	if err != nil {
 		return fmt.Errorf("save message: %w", err)
@@ -166,9 +172,9 @@ func (s *BridgeStore) GetMessage(ctx context.Context, msgID string) (StoredMessa
 	var tsUnix int64
 	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT msg_id, chat_jid, sender_jid, from_me, body, ts_unix FROM bridge_messages WHERE msg_id = ?`,
+		`SELECT msg_id, chat_jid, sender_jid, from_me, msg_type, body, ts_unix FROM bridge_messages WHERE msg_id = ?`,
 		msgID,
-	).Scan(&out.ID, &out.ChatJID, &out.SenderJID, &fromMe, &out.Body, &tsUnix)
+	).Scan(&out.ID, &out.ChatJID, &out.SenderJID, &fromMe, &out.MsgType, &out.Body, &tsUnix)
 	if errors.Is(err, sql.ErrNoRows) {
 		return StoredMessage{}, false, nil
 	}
@@ -189,10 +195,10 @@ func (s *BridgeStore) GetLastChatMessage(ctx context.Context, chatJID string) (S
 	var tsUnix int64
 	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT msg_id, chat_jid, sender_jid, from_me, body, ts_unix
+		`SELECT msg_id, chat_jid, sender_jid, from_me, msg_type, body, ts_unix
 		 FROM bridge_messages WHERE chat_jid = ? ORDER BY ts_unix DESC LIMIT 1`,
 		chatJID,
-	).Scan(&out.ID, &out.ChatJID, &out.SenderJID, &fromMe, &out.Body, &tsUnix)
+	).Scan(&out.ID, &out.ChatJID, &out.SenderJID, &fromMe, &out.MsgType, &out.Body, &tsUnix)
 	if errors.Is(err, sql.ErrNoRows) {
 		return StoredMessage{}, false, nil
 	}

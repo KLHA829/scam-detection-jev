@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -33,9 +35,43 @@ type WhatsmeowBridge struct {
 	loggedIn       bool
 	readyEmitted   bool
 	contactsSynced bool
+	connGen        uint64
+}
+
+func ensurePrivateSQLiteFile(dbPath string) error {
+	if dbPath == "" || dbPath == ":memory:" || strings.HasPrefix(dbPath, "file:") {
+		return nil
+	}
+	dir := filepath.Dir(dbPath)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("create sqlite dir %q: %w", dir, err)
+		}
+	}
+	f, err := os.OpenFile(dbPath, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return fmt.Errorf("create private sqlite file %q: %w", dbPath, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close sqlite file %q: %w", dbPath, err)
+	}
+	_ = os.Chmod(dbPath, 0o600)
+	return nil
+}
+
+func chmodSQLiteSidecars(dbPath string) {
+	if dbPath == "" || dbPath == ":memory:" || strings.HasPrefix(dbPath, "file:") {
+		return
+	}
+	_ = os.Chmod(dbPath, 0o600)
+	_ = os.Chmod(dbPath+"-wal", 0o600)
+	_ = os.Chmod(dbPath+"-shm", 0o600)
 }
 
 func openBridgeSQLite(ctx context.Context, dbPath string) (*sql.DB, error) {
+	if err := ensurePrivateSQLiteFile(dbPath); err != nil {
+		return nil, err
+	}
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite %q: %w", dbPath, err)
@@ -45,6 +81,7 @@ func openBridgeSQLite(ctx context.Context, dbPath string) (*sql.DB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("configure sqlite pragmas: %w", err)
 	}
+	chmodSQLiteSidecars(dbPath)
 	return db, nil
 }
 
@@ -69,6 +106,7 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 		_ = db.Close()
 		return nil, fmt.Errorf("load whatsmeow device: %w", err)
 	}
+	chmodSQLiteSidecars(dbPath)
 
 	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
 	bridge := &WhatsmeowBridge{
@@ -127,18 +165,22 @@ func (b *WhatsmeowBridge) Close() error {
 	return nil
 }
 
-func (b *WhatsmeowBridge) syncContacts(ctx context.Context) {
+func (b *WhatsmeowBridge) markContactsSyncedForGen(gen uint64) {
+	b.mu.Lock()
+	if b.connected && b.loggedIn && b.connGen == gen {
+		b.contactsSynced = true
+	}
+	b.mu.Unlock()
+}
+
+func (b *WhatsmeowBridge) syncContacts(ctx context.Context, gen uint64) {
 	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := b.client.FetchAppState(syncCtx, appstate.WAPatchCriticalUnblockLow, false, false); err != nil {
 		b.log.Warnf("contact app state sync failed (staying fail-closed): %v", err)
 		return
 	}
-	b.mu.Lock()
-	if b.connected && b.loggedIn {
-		b.contactsSynced = true
-	}
-	b.mu.Unlock()
+	b.markContactsSyncedForGen(gen)
 }
 
 func (b *WhatsmeowBridge) Events() *EventHub {
@@ -181,8 +223,11 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	switch evt := rawEvt.(type) {
 	case *events.Connected:
 		b.mu.Lock()
+		b.connGen++
+		gen := b.connGen
 		b.connected = true
 		b.loggedIn = b.client.Store != nil && b.client.Store.ID != nil
+		b.contactsSynced = false
 		shouldEmitReady := b.loggedIn && !b.readyEmitted
 		if shouldEmitReady {
 			b.readyEmitted = true
@@ -191,7 +236,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		b.mu.Unlock()
 
 		if isLoggedIn {
-			go b.syncContacts(context.Background())
+			go b.syncContacts(context.Background(), gen)
 		}
 
 		if shouldEmitReady {
@@ -211,14 +256,18 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	case *events.AppStateSyncComplete:
 		if evt.Name == appstate.WAPatchCriticalUnblockLow {
 			b.mu.Lock()
-			b.contactsSynced = true
+			if b.connected && b.loggedIn {
+				b.contactsSynced = true
+			}
 			b.mu.Unlock()
 		}
 
 	case *events.Disconnected:
 		b.mu.Lock()
+		b.connGen++
 		b.connected = false
 		b.readyEmitted = false
+		b.contactsSynced = false
 		b.mu.Unlock()
 		b.hub.Publish(BridgeEvent{
 			Type: "disconnected",
@@ -227,6 +276,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 
 	case *events.LoggedOut:
 		b.mu.Lock()
+		b.connGen++
 		b.connected = false
 		b.loggedIn = false
 		b.readyEmitted = false
@@ -370,6 +420,7 @@ func (b *WhatsmeowBridge) handleIncomingMessage(evt *events.Message) {
 			ChatJID:   chatID,
 			SenderJID: senderID,
 			FromMe:    evt.Info.IsFromMe,
+			MsgType:   extracted.msgType,
 			Body:      extracted.body,
 			Timestamp: evt.Info.Timestamp,
 		})
@@ -402,6 +453,7 @@ func (b *WhatsmeowBridge) handleIncomingMessage(evt *events.Message) {
 		ChatJID:   chatID,
 		SenderJID: senderID,
 		FromMe:    evt.Info.IsFromMe,
+		MsgType:   extracted.msgType,
 		Body:      extracted.body,
 		Timestamp: evt.Info.Timestamp,
 	})
@@ -488,6 +540,14 @@ func buildContactResponse(
 	}
 }
 
+func (b *WhatsmeowBridge) sampleSyncState() (synced bool, gen uint64) {
+	b.mu.RLock()
+	synced = b.contactsSynced
+	gen = b.connGen
+	b.mu.RUnlock()
+	return synced, gen
+}
+
 func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*ContactResponse, error) {
 	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
 		return nil, errNotReady
@@ -496,15 +556,47 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errBadRequest, err)
 	}
+
+	syncedBefore, genBefore := b.sampleSyncState()
 	info, err := b.client.Store.Contacts.GetContact(ctx, jid)
 	if err != nil {
 		return nil, fmt.Errorf("read contact %s: %w", rawID, err)
 	}
-	b.mu.RLock()
-	synced := b.contactsSynced
-	b.mu.RUnlock()
+
+	resolvedNumber := phoneDigitsFromJID(jid)
+	lidPhoneVerified := jid.Server != types.HiddenUserServer
+	savedName := strings.TrimSpace(info.FullName)
+	if savedName == "" {
+		savedName = strings.TrimSpace(info.FirstName)
+	}
+	if jid.Server == types.HiddenUserServer && savedName == "" && b.client.Store.LIDs != nil {
+		if pn, err := b.client.Store.LIDs.GetPNForLID(ctx, jid); err == nil && !pn.IsEmpty() {
+			if pnInfo, err := b.client.Store.Contacts.GetContact(ctx, pn); err == nil {
+				lidPhoneVerified = true
+				resolvedNumber = phoneDigitsFromJID(pn)
+				pnSaved := strings.TrimSpace(pnInfo.FullName)
+				if pnSaved == "" {
+					pnSaved = strings.TrimSpace(pnInfo.FirstName)
+				}
+				if pnSaved != "" {
+					info.FullName = pnInfo.FullName
+					info.FirstName = pnInfo.FirstName
+				}
+				if strings.TrimSpace(info.PushName) == "" {
+					info.PushName = pnInfo.PushName
+				}
+			}
+		}
+	}
+
+	syncedAfter, genAfter := b.sampleSyncState()
+	authoritative := syncedBefore && syncedAfter && genBefore == genAfter && lidPhoneVerified
 	selfWid, selfLid := b.selfJIDs()
-	return buildContactResponse(jid, info, synced, selfWid, selfLid), nil
+	resp := buildContactResponse(jid, info, authoritative, selfWid, selfLid)
+	if resolvedNumber != "" {
+		resp.Number = resolvedNumber
+	}
+	return resp, nil
 }
 
 func (b *WhatsmeowBridge) ResolveLidMappings(ctx context.Context, ids []string) ([]LidMapping, error) {
@@ -605,6 +697,9 @@ func (b *WhatsmeowBridge) ForwardMessage(ctx context.Context, messageID, targetC
 	}
 	if !found {
 		return "", fmt.Errorf("%w: message %s not cached", errNotFound, messageID)
+	}
+	if stored.MsgType != "" && stored.MsgType != "chat" {
+		return "", fmt.Errorf("%w: cannot forward %s attachment as text", errUnsupportedMedia, stored.MsgType)
 	}
 	resp, err := b.client.SendMessage(ctx, target, &waE2E.Message{
 		ExtendedTextMessage: &waE2E.ExtendedTextMessage{

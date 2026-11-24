@@ -7,10 +7,14 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -65,6 +69,15 @@ func TestBridgeStorePersistenceAndPollDecoding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	if runtime.GOOS != "windows" {
+		st, err := os.Stat(dbPath)
+		if err != nil {
+			t.Fatalf("stat db: %v", err)
+		}
+		if perm := st.Mode().Perm(); perm != 0o600 {
+			t.Fatalf("db permissions = %o, want 0600", perm)
+		}
+	}
 	store, err := NewBridgeStore(ctx, db)
 	if err != nil {
 		t.Fatalf("new store: %v", err)
@@ -79,7 +92,8 @@ func TestBridgeStorePersistenceAndPollDecoding(t *testing.T) {
 		ChatJID:   "85261112222@c.us",
 		SenderJID: "85261112222@c.us",
 		FromMe:    false,
-		Body:      "first body",
+		MsgType:   "image",
+		Body:      "See attached screenshot",
 		Timestamp: now.Add(-10 * time.Second),
 	}); err != nil {
 		t.Fatalf("SaveMessage m-1: %v", err)
@@ -89,6 +103,7 @@ func TestBridgeStorePersistenceAndPollDecoding(t *testing.T) {
 		ChatJID:   "85261112222@c.us",
 		SenderJID: "85261112222@c.us",
 		FromMe:    true,
+		MsgType:   "chat",
 		Body:      "second body",
 		Timestamp: now,
 	}); err != nil {
@@ -118,8 +133,13 @@ func TestBridgeStorePersistenceAndPollDecoding(t *testing.T) {
 		t.Fatalf("ResolvePollVoteOptions = %v", resolved)
 	}
 
+	imgMsg, found, err := store2.GetMessage(ctx, "m-1")
+	if err != nil || !found || imgMsg.MsgType != "image" {
+		t.Fatalf("GetMessage(m-1) = (%+v, %v, %v)", imgMsg, found, err)
+	}
+
 	last, found, err := store2.GetLastChatMessage(ctx, "85261112222@c.us")
-	if err != nil || !found || last.ID != "m-2" || !last.FromMe {
+	if err != nil || !found || last.ID != "m-2" || !last.FromMe || last.MsgType != "chat" {
 		t.Fatalf("GetLastChatMessage = (%+v, %v, %v)", last, found, err)
 	}
 }
@@ -222,7 +242,7 @@ func TestExtractMessageContent(t *testing.T) {
 	}
 }
 
-func TestLoopbackHostValidation(t *testing.T) {
+func TestLoopbackHostValidationAndIPv6Bind(t *testing.T) {
 	for _, allowed := range []string{"127.0.0.1", "localhost", "::1", "[::1]"} {
 		if !isLoopbackHost(allowed) {
 			t.Fatalf("expected loopback allowed for %q", allowed)
@@ -233,14 +253,16 @@ func TestLoopbackHostValidation(t *testing.T) {
 			t.Fatalf("expected non-loopback denied for %q", denied)
 		}
 	}
+	if got := net.JoinHostPort(normalizeBindHost("[::1]"), "8767"); got != "[::1]:8767" {
+		t.Fatalf("JoinHostPort for bracketed IPv6 = %q, want [::1]:8767", got)
+	}
 }
 
-func TestEventHubQRReplayLifecycle(t *testing.T) {
+func TestEventHubQRReplayAndHistory(t *testing.T) {
 	hub := NewEventHub()
 	hub.Publish(BridgeEvent{Type: "qr", Data: map[string]any{"qr": "qr-code-1"}})
 
 	ch, cancel := hub.Subscribe(8)
-	defer cancel()
 	select {
 	case evt := <-ch:
 		if evt.Type != "qr" {
@@ -249,22 +271,111 @@ func TestEventHubQRReplayLifecycle(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for replayed qr")
 	}
+	cancel()
+
+	hub.Publish(BridgeEvent{Type: "auth_failure", Data: map[string]any{"reason": "timeout"}})
+	chAfterFail, cancelAfterFail := hub.Subscribe(8)
+	for {
+		select {
+		case evt := <-chAfterFail:
+			if evt.Type == "qr" {
+				t.Fatalf("expired qr must not replay after auth_failure, got %+v", evt)
+			}
+		default:
+			goto doneFail
+		}
+	}
+doneFail:
+	cancelAfterFail()
+
+	hub.Publish(BridgeEvent{Type: "qr", Data: map[string]any{"qr": "qr-code-2"}})
+	hub.Publish(BridgeEvent{Type: "disconnected", Data: map[string]any{"reason": "net"}})
+	chAfterDisc, cancelAfterDisc := hub.Subscribe(8)
+	for {
+		select {
+		case evt := <-chAfterDisc:
+			if evt.Type == "qr" {
+				t.Fatalf("expired qr must not replay after disconnect, got %+v", evt)
+			}
+		default:
+			goto doneDisc
+		}
+	}
+doneDisc:
+	cancelAfterDisc()
 
 	hub.Publish(BridgeEvent{Type: "ready", Data: map[string]any{"selfWid": "85299990000@c.us"}})
-	ch2, cancel2 := hub.Subscribe(8)
-	defer cancel2()
+	hub.Publish(BridgeEvent{Type: "message", Data: map[string]any{"id": "early-msg"}})
+
+	var lastSeq uint64
+	chReplay, cancelReplay := hub.Subscribe(16)
+	var seenTypes []string
+	for {
+		select {
+		case evt := <-chReplay:
+			seenTypes = append(seenTypes, evt.Type)
+			lastSeq = evt.Seq
+		default:
+			goto checkReplay
+		}
+	}
+checkReplay:
+	cancelReplay()
+	if !strings.Contains(strings.Join(seenTypes, ","), "ready,message") {
+		t.Fatalf("expected startup ready + early message replay, got %v", seenTypes)
+	}
+
+	hub.Publish(BridgeEvent{Type: "message", Data: map[string]any{"id": "newer-msg"}})
+	chSince, cancelSince := hub.SubscribeSince(8, lastSeq)
+	defer cancelSince()
 	select {
-	case evt := <-ch2:
-		t.Fatalf("did not expect replayed qr after ready, got %+v", evt)
-	default:
+	case evt := <-chSince:
+		if evt.Type != "message" || evt.Seq <= lastSeq {
+			t.Fatalf("expected only newer event after lastSeq=%d, got %+v", lastSeq, evt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected newer event from SubscribeSince")
 	}
 }
 
+func TestEventHubConcurrentPublishAndCancel(t *testing.T) {
+	hub := NewEventHub()
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					hub.Publish(BridgeEvent{Type: "qr", Data: map[string]any{"qr": "rotating"}})
+				}
+			}
+		}()
+	}
+
+	for i := 0; i < 100; i++ {
+		ch, cancel := hub.Subscribe(2)
+		select {
+		case <-ch:
+		default:
+		}
+		cancel()
+	}
+	close(stop)
+	wg.Wait()
+}
+
 type fakeBackend struct {
-	hub       *EventHub
-	health    HealthStatus
-	lastCall  string
-	notReady  bool
+	hub              *EventHub
+	health           HealthStatus
+	lastCall         string
+	notReady         bool
+	unsupportedMedia bool
 }
 
 func (f *fakeBackend) Health() HealthStatus { return f.health }
@@ -290,6 +401,9 @@ func (f *fakeBackend) SendPoll(_ context.Context, chatID, name string, options [
 	return "msg-poll-1", nil
 }
 func (f *fakeBackend) ForwardMessage(_ context.Context, messageID, targetChatID string) (string, error) {
+	if f.unsupportedMedia {
+		return "", errUnsupportedMedia
+	}
 	f.lastCall = "forward:" + messageID + ":" + targetChatID
 	return "msg-fwd-1", nil
 }
@@ -331,6 +445,15 @@ func TestHTTPAndSSEServer(t *testing.T) {
 			SelfWid:        "85299990000@c.us",
 		},
 	}
+
+	emptyTokenSrv := httptest.NewServer(NewBridgeHandler(backend, ""))
+	defer emptyTokenSrv.Close()
+	failClosedResp, err := http.Get(emptyTokenSrv.URL + "/v1/contact?id=85261230001@c.us")
+	if err != nil || failClosedResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("empty token must fail closed with 401, got (%v, %v)", failClosedResp, err)
+	}
+	_ = failClosedResp.Body.Close()
+
 	backend.hub.Publish(BridgeEvent{Type: "qr", Data: map[string]any{"qr": "hello-qr"}})
 
 	srv := httptest.NewServer(NewBridgeHandler(backend, "secret-token"))
@@ -403,6 +526,13 @@ func TestHTTPAndSSEServer(t *testing.T) {
 	}
 	_ = notReadyResp.Body.Close()
 
+	backend.unsupportedMedia = true
+	mediaResp := doReq("POST", "/v1/message/forward", map[string]any{"messageId": "img-1", "targetChatId": "me@c.us"})
+	if mediaResp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for unsupported media forward, got %d", mediaResp.StatusCode)
+	}
+	_ = mediaResp.Body.Close()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	sseReq, _ := http.NewRequestWithContext(ctx, "GET", srv.URL+"/v1/events", nil)
@@ -430,7 +560,7 @@ func TestHTTPAndSSEServer(t *testing.T) {
 	}
 }
 
-func TestNewWhatsmeowBridgeSQLiteInitAndSyncGate(t *testing.T) {
+func TestNewWhatsmeowBridgeSQLiteInitSyncReconnectAndLID(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "whatsmeow.db")
 
@@ -463,13 +593,22 @@ func TestNewWhatsmeowBridgeSQLiteInitAndSyncGate(t *testing.T) {
 	if err := bridge.client.Store.Contacts.PutContactName(ctx, savedJID, "Mum", "Mum"); err != nil {
 		t.Fatalf("put saved contact: %v", err)
 	}
+	savedLID := types.NewJID("555000111", types.HiddenUserServer)
+	if err := bridge.client.Store.LIDs.PutLIDMapping(ctx, savedLID, savedJID); err != nil {
+		t.Fatalf("put lid mapping: %v", err)
+	}
+	unsavedPN := types.NewJID("85261234567", types.DefaultUserServer)
+	unsavedLID := types.NewJID("555000222", types.HiddenUserServer)
+	if err := bridge.client.Store.LIDs.PutLIDMapping(ctx, unsavedLID, unsavedPN); err != nil {
+		t.Fatalf("put unsaved lid mapping: %v", err)
+	}
 
 	unknownBeforeSync, err := bridge.GetContact(ctx, "85261234567@c.us")
 	if err != nil {
 		t.Fatalf("GetContact before sync: %v", err)
 	}
 	if unknownBeforeSync.IsMyContact != nil {
-		t.Fatalf("expected unknown IsMyContact before AppStateSyncComplete, got %v", *unknownBeforeSync.IsMyContact)
+		t.Fatalf("expected unknown IsMyContact before sync, got %v", *unknownBeforeSync.IsMyContact)
 	}
 
 	savedBeforeSync, err := bridge.GetContact(ctx, "85261110001@c.us")
@@ -480,9 +619,15 @@ func TestNewWhatsmeowBridgeSQLiteInitAndSyncGate(t *testing.T) {
 		t.Fatalf("expected saved contact to stay true before sync, got %+v", savedBeforeSync)
 	}
 
-	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow})
+	bridge.mu.Lock()
+	bridge.connected = true
+	bridge.loggedIn = true
+	bridge.connGen = 1
+	bridge.mu.Unlock()
+	bridge.markContactsSyncedForGen(1)
+
 	if !bridge.Health().ContactsSynced {
-		t.Fatal("expected ContactsSynced=true after critical_unblock_low sync")
+		t.Fatal("expected ContactsSynced=true for current connection gen 1")
 	}
 
 	unsavedAfterSync, err := bridge.GetContact(ctx, "85261234567@c.us")
@@ -490,6 +635,74 @@ func TestNewWhatsmeowBridgeSQLiteInitAndSyncGate(t *testing.T) {
 		t.Fatalf("GetContact after sync: %v", err)
 	}
 	if unsavedAfterSync.IsMyContact == nil || *unsavedAfterSync.IsMyContact {
-		t.Fatalf("expected IsMyContact=false after sync for unsaved contact, got %+v", unsavedAfterSync)
+		t.Fatalf("expected IsMyContact=false after sync, got %+v", unsavedAfterSync)
+	}
+
+	lidSavedContact, err := bridge.GetContact(ctx, "555000111@lid")
+	if err != nil {
+		t.Fatalf("GetContact(savedLID): %v", err)
+	}
+	if lidSavedContact.IsMyContact == nil || !*lidSavedContact.IsMyContact || lidSavedContact.Name != "Mum" {
+		t.Fatalf("expected LID saved via phone contact to be true/Mum, got %+v", lidSavedContact)
+	}
+
+	lidUnsavedContact, err := bridge.GetContact(ctx, "555000222@lid")
+	if err != nil {
+		t.Fatalf("GetContact(unsavedLID): %v", err)
+	}
+	if lidUnsavedContact.IsMyContact == nil || *lidUnsavedContact.IsMyContact {
+		t.Fatalf("expected phone-verified unsaved LID to be false, got %+v", lidUnsavedContact)
+	}
+
+	unmappedLID, err := bridge.GetContact(ctx, "999888777@lid")
+	if err != nil {
+		t.Fatalf("GetContact(unmappedLID): %v", err)
+	}
+	if unmappedLID.IsMyContact != nil {
+		t.Fatalf("unmapped LID must fail closed as unknown (nil), got %v", *unmappedLID.IsMyContact)
+	}
+
+	bridge.handleEvent(&events.Disconnected{})
+	if bridge.Health().ContactsSynced {
+		t.Fatal("Disconnected must invalidate ContactsSynced")
+	}
+	bridge.mu.Lock()
+	bridge.connected = true
+	bridge.loggedIn = true
+	bridge.connGen = 3
+	bridge.mu.Unlock()
+
+	bridge.markContactsSyncedForGen(1)
+	if bridge.Health().ContactsSynced {
+		t.Fatal("stale connection gen 1 must not reopen contact gate on gen 3")
+	}
+	unknownOnReconnect, err := bridge.GetContact(ctx, "85261234567@c.us")
+	if err != nil {
+		t.Fatalf("GetContact on reconnect before catch-up: %v", err)
+	}
+	if unknownOnReconnect.IsMyContact != nil {
+		t.Fatalf("expected unknown IsMyContact on reconnect before catch-up, got %v", *unknownOnReconnect.IsMyContact)
+	}
+
+	bridge.markContactsSyncedForGen(3)
+	unsavedAfterCatchup, err := bridge.GetContact(ctx, "85261234567@c.us")
+	if err != nil {
+		t.Fatalf("GetContact after reconnect catch-up: %v", err)
+	}
+	if unsavedAfterCatchup.IsMyContact == nil || *unsavedAfterCatchup.IsMyContact {
+		t.Fatalf("expected IsMyContact=false after reconnect catch-up, got %+v", unsavedAfterCatchup)
+	}
+
+	if err := bridge.store.SaveMessage(ctx, StoredMessage{
+		ID:        "img-msg-1",
+		ChatJID:   "85261234567@c.us",
+		SenderJID: "85261234567@c.us",
+		MsgType:   "image",
+		Body:      "See screenshot",
+	}); err != nil {
+		t.Fatalf("SaveMessage image: %v", err)
+	}
+	if _, err := bridge.ForwardMessage(ctx, "img-msg-1", "85299990000@c.us"); !errors.Is(err, errUnsupportedMedia) {
+		t.Fatalf("expected errUnsupportedMedia when forwarding image, got %v", err)
 	}
 }

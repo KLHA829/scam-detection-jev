@@ -4,16 +4,21 @@ import (
 	"sync"
 )
 
+const maxReplayEvents = 256
+
 type BridgeEvent struct {
+	Seq  uint64 `json:"seq,omitempty"`
 	Type string `json:"type"`
 	Data any    `json:"data,omitempty"`
 }
 
 type EventHub struct {
-	mu      sync.RWMutex
+	mu      sync.Mutex
 	subs    map[chan BridgeEvent]struct{}
+	nextSeq uint64
+	history []BridgeEvent
 	lastQR  string
-	isReady bool
+	ready   *BridgeEvent
 }
 
 func NewEventHub() *EventHub {
@@ -24,6 +29,11 @@ func NewEventHub() *EventHub {
 
 func (h *EventHub) Publish(evt BridgeEvent) {
 	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.nextSeq++
+	evt.Seq = h.nextSeq
+
 	switch evt.Type {
 	case "qr":
 		if m, ok := evt.Data.(map[string]any); ok {
@@ -31,22 +41,26 @@ func (h *EventHub) Publish(evt BridgeEvent) {
 				h.lastQR = code
 			}
 		}
-		h.isReady = false
-	case "authenticated":
+		h.ready = nil
+	case "authenticated", "auth_failure":
 		h.lastQR = ""
 	case "ready":
 		h.lastQR = ""
-		h.isReady = true
+		copied := evt
+		h.ready = &copied
 	case "disconnected":
-		h.isReady = false
+		h.lastQR = ""
+		h.ready = nil
 	}
-	targets := make([]chan BridgeEvent, 0, len(h.subs))
-	for ch := range h.subs {
-		targets = append(targets, ch)
-	}
-	h.mu.Unlock()
 
-	for _, ch := range targets {
+	if evt.Type != "qr" {
+		h.history = append(h.history, evt)
+		if len(h.history) > maxReplayEvents {
+			h.history = h.history[len(h.history)-maxReplayEvents:]
+		}
+	}
+
+	for ch := range h.subs {
 		select {
 		case ch <- evt:
 		default:
@@ -55,22 +69,44 @@ func (h *EventHub) Publish(evt BridgeEvent) {
 }
 
 func (h *EventHub) Subscribe(buffer int) (<-chan BridgeEvent, func()) {
+	return h.SubscribeSince(buffer, 0)
+}
+
+func (h *EventHub) SubscribeSince(buffer int, lastSeq uint64) (<-chan BridgeEvent, func()) {
 	if buffer <= 0 {
 		buffer = 64
 	}
 	ch := make(chan BridgeEvent, buffer)
 
 	h.mu.Lock()
-	h.subs[ch] = struct{}{}
-	replayQR := h.lastQR
-	h.mu.Unlock()
-
-	if replayQR != "" {
+	var replay []BridgeEvent
+	if lastSeq > 0 {
+		for _, evt := range h.history {
+			if evt.Seq > lastSeq {
+				replay = append(replay, evt)
+			}
+		}
+	} else {
+		if len(h.history) > 0 {
+			replay = append(replay, h.history...)
+		} else if h.ready != nil {
+			replay = append(replay, *h.ready)
+		}
+	}
+	if h.lastQR != "" {
+		replay = append(replay, BridgeEvent{
+			Type: "qr",
+			Data: map[string]any{"qr": h.lastQR},
+		})
+	}
+	for _, evt := range replay {
 		select {
-		case ch <- BridgeEvent{Type: "qr", Data: map[string]any{"qr": replayQR}}:
+		case ch <- evt:
 		default:
 		}
 	}
+	h.subs[ch] = struct{}{}
+	h.mu.Unlock()
 
 	cancel := func() {
 		h.mu.Lock()
