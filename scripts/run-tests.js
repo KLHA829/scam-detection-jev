@@ -22,6 +22,10 @@ const UNSET_ENV = [
   'SCORER',
   'MALICIOUS_HOSTS_PATH',
   'WA_TRANSPORT',
+  'WA_BRIDGE_URL',
+  'WA_BRIDGE_TOKEN',
+  'WA_BRIDGE_AUTO_START',
+  'WA_BRIDGE_BIN',
 ];
 
 const env = { ...process.env, LLM_REVIEW_COOLDOWN_MS: '0' };
