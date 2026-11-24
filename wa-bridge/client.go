@@ -1,0 +1,707 @@
+package main
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/appstate"
+	"go.mau.fi/whatsmeow/proto/waCommon"
+	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waSyncAction"
+	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
+	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
+	_ "modernc.org/sqlite"
+)
+
+type WhatsmeowBridge struct {
+	db     *sql.DB
+	store  *BridgeStore
+	client *whatsmeow.Client
+	hub    *EventHub
+	log    waLog.Logger
+
+	mu             sync.RWMutex
+	connected      bool
+	loggedIn       bool
+	readyEmitted   bool
+	contactsSynced bool
+}
+
+func openBridgeSQLite(ctx context.Context, dbPath string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite %q: %w", dbPath, err)
+	}
+	db.SetMaxOpenConns(1)
+	if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("configure sqlite pragmas: %w", err)
+	}
+	return db, nil
+}
+
+func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*WhatsmeowBridge, error) {
+	logger := waLog.Stdout("wa-bridge", logLevel, false)
+	db, err := openBridgeSQLite(ctx, dbPath)
+	if err != nil {
+		return nil, err
+	}
+	container := sqlstore.NewWithDB(db, "sqlite3", logger.Sub("db"))
+	if err := container.Upgrade(ctx); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("upgrade whatsmeow sqlite schema: %w", err)
+	}
+	bridgeStore, err := NewBridgeStore(ctx, db)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	deviceStore, err := container.GetFirstDevice(ctx)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("load whatsmeow device: %w", err)
+	}
+
+	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
+	bridge := &WhatsmeowBridge{
+		db:     db,
+		store:  bridgeStore,
+		client: cli,
+		hub:    NewEventHub(),
+		log:    logger,
+	}
+	cli.AddEventHandler(bridge.handleEvent)
+	return bridge, nil
+}
+
+func (b *WhatsmeowBridge) Start(ctx context.Context) error {
+	if b.client.Store.ID == nil {
+		qrChan, err := b.client.GetQRChannel(ctx)
+		if err != nil {
+			return fmt.Errorf("get qr channel: %w", err)
+		}
+		if err := b.client.Connect(); err != nil {
+			return fmt.Errorf("connect whatsmeow: %w", err)
+		}
+		go func() {
+			for item := range qrChan {
+				switch item.Event {
+				case "code":
+					b.hub.Publish(BridgeEvent{
+						Type: "qr",
+						Data: map[string]any{"qr": item.Code},
+					})
+				case "success":
+					b.hub.Publish(BridgeEvent{Type: "authenticated"})
+				case "timeout", "err-client-outdated", "err-scanned-without-multidevice":
+					b.hub.Publish(BridgeEvent{
+						Type: "auth_failure",
+						Data: map[string]any{"reason": item.Event},
+					})
+				}
+			}
+		}()
+		return nil
+	}
+	if err := b.client.Connect(); err != nil {
+		return fmt.Errorf("connect whatsmeow: %w", err)
+	}
+	return nil
+}
+
+func (b *WhatsmeowBridge) Close() error {
+	if b.client != nil {
+		b.client.Disconnect()
+	}
+	if b.db != nil {
+		return b.db.Close()
+	}
+	return nil
+}
+
+func (b *WhatsmeowBridge) syncContacts(ctx context.Context) {
+	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := b.client.FetchAppState(syncCtx, appstate.WAPatchCriticalUnblockLow, false, false); err != nil {
+		b.log.Warnf("contact app state sync failed (staying fail-closed): %v", err)
+		return
+	}
+	b.mu.Lock()
+	if b.connected && b.loggedIn {
+		b.contactsSynced = true
+	}
+	b.mu.Unlock()
+}
+
+func (b *WhatsmeowBridge) Events() *EventHub {
+	return b.hub
+}
+
+func (b *WhatsmeowBridge) selfJIDs() (string, string) {
+	if b.client == nil || b.client.Store == nil {
+		return "", ""
+	}
+	return canonicalJID(b.client.Store.GetJID()), canonicalJID(b.client.Store.GetLID())
+}
+
+func (b *WhatsmeowBridge) Health() HealthStatus {
+	b.mu.RLock()
+	connected := b.connected
+	loggedIn := b.loggedIn
+	contactsSynced := b.contactsSynced
+	b.mu.RUnlock()
+
+	selfWid, selfLid := b.selfJIDs()
+	state := "connecting"
+	if connected && loggedIn {
+		state = "ready"
+	} else if connected {
+		state = "awaiting_qr"
+	}
+	return HealthStatus{
+		OK:             true,
+		State:          state,
+		Connected:      connected,
+		LoggedIn:       loggedIn,
+		ContactsSynced: contactsSynced,
+		SelfWid:        selfWid,
+		SelfLid:        selfLid,
+	}
+}
+
+func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
+	switch evt := rawEvt.(type) {
+	case *events.Connected:
+		b.mu.Lock()
+		b.connected = true
+		b.loggedIn = b.client.Store != nil && b.client.Store.ID != nil
+		shouldEmitReady := b.loggedIn && !b.readyEmitted
+		if shouldEmitReady {
+			b.readyEmitted = true
+		}
+		isLoggedIn := b.loggedIn
+		b.mu.Unlock()
+
+		if isLoggedIn {
+			go b.syncContacts(context.Background())
+		}
+
+		if shouldEmitReady {
+			selfWid, selfLid := b.selfJIDs()
+			b.hub.Publish(BridgeEvent{
+				Type: "ready",
+				Data: map[string]any{
+					"selfWid": selfWid,
+					"selfLid": selfLid,
+				},
+			})
+		}
+
+	case *events.PairSuccess:
+		b.hub.Publish(BridgeEvent{Type: "authenticated"})
+
+	case *events.AppStateSyncComplete:
+		if evt.Name == appstate.WAPatchCriticalUnblockLow {
+			b.mu.Lock()
+			b.contactsSynced = true
+			b.mu.Unlock()
+		}
+
+	case *events.Disconnected:
+		b.mu.Lock()
+		b.connected = false
+		b.readyEmitted = false
+		b.mu.Unlock()
+		b.hub.Publish(BridgeEvent{
+			Type: "disconnected",
+			Data: map[string]any{"reason": "disconnected"},
+		})
+
+	case *events.LoggedOut:
+		b.mu.Lock()
+		b.connected = false
+		b.loggedIn = false
+		b.readyEmitted = false
+		b.contactsSynced = false
+		b.mu.Unlock()
+		b.hub.Publish(BridgeEvent{
+			Type: "disconnected",
+			Data: map[string]any{"reason": evt.Reason.String()},
+		})
+
+	case *events.Message:
+		b.handleIncomingMessage(evt)
+	}
+}
+
+type extractedMessage struct {
+	msgType        string
+	body           string
+	quotedID       string
+	isForwarded    bool
+	isEdit         bool
+	editedTargetID string
+	isPollVote     bool
+}
+
+func unwrapE2EMessage(msg *waE2E.Message) *waE2E.Message {
+	cur := msg
+	for cur != nil {
+		switch {
+		case cur.GetDeviceSentMessage().GetMessage() != nil:
+			cur = cur.GetDeviceSentMessage().GetMessage()
+		case cur.GetEphemeralMessage().GetMessage() != nil:
+			cur = cur.GetEphemeralMessage().GetMessage()
+		case cur.GetViewOnceMessage().GetMessage() != nil:
+			cur = cur.GetViewOnceMessage().GetMessage()
+		case cur.GetViewOnceMessageV2().GetMessage() != nil:
+			cur = cur.GetViewOnceMessageV2().GetMessage()
+		case cur.GetEditedMessage().GetMessage() != nil:
+			cur = cur.GetEditedMessage().GetMessage()
+		default:
+			return cur
+		}
+	}
+	return nil
+}
+
+func extractContextMeta(ci *waE2E.ContextInfo) (quotedID string, isForwarded bool) {
+	if ci == nil {
+		return "", false
+	}
+	return ci.GetStanzaID(), ci.GetIsForwarded() || ci.GetForwardingScore() > 0
+}
+
+func extractMessageContent(raw *waE2E.Message) extractedMessage {
+	msg := unwrapE2EMessage(raw)
+	if msg == nil {
+		return extractedMessage{msgType: "unknown"}
+	}
+	if msg.GetPollUpdateMessage() != nil {
+		return extractedMessage{msgType: "poll_vote", isPollVote: true}
+	}
+	if pm := msg.GetProtocolMessage(); pm != nil {
+		if pm.GetType() == waE2E.ProtocolMessage_MESSAGE_EDIT && pm.GetEditedMessage() != nil {
+			inner := extractMessageContent(pm.GetEditedMessage())
+			return extractedMessage{
+				msgType:        inner.msgType,
+				body:           inner.body,
+				quotedID:       inner.quotedID,
+				isForwarded:    inner.isForwarded,
+				isEdit:         true,
+				editedTargetID: pm.GetKey().GetID(),
+			}
+		}
+		return extractedMessage{msgType: "protocol"}
+	}
+	if text := msg.GetConversation(); text != "" {
+		return extractedMessage{msgType: "chat", body: text}
+	}
+	if ext := msg.GetExtendedTextMessage(); ext != nil {
+		quotedID, isForwarded := extractContextMeta(ext.GetContextInfo())
+		return extractedMessage{
+			msgType:     "chat",
+			body:        ext.GetText(),
+			quotedID:    quotedID,
+			isForwarded: isForwarded,
+		}
+	}
+	if img := msg.GetImageMessage(); img != nil {
+		quotedID, isForwarded := extractContextMeta(img.GetContextInfo())
+		return extractedMessage{msgType: "image", body: img.GetCaption(), quotedID: quotedID, isForwarded: isForwarded}
+	}
+	if vid := msg.GetVideoMessage(); vid != nil {
+		quotedID, isForwarded := extractContextMeta(vid.GetContextInfo())
+		return extractedMessage{msgType: "video", body: vid.GetCaption(), quotedID: quotedID, isForwarded: isForwarded}
+	}
+	if doc := msg.GetDocumentMessage(); doc != nil {
+		quotedID, isForwarded := extractContextMeta(doc.GetContextInfo())
+		return extractedMessage{msgType: "document", body: doc.GetCaption(), quotedID: quotedID, isForwarded: isForwarded}
+	}
+	if msg.GetAudioMessage() != nil {
+		return extractedMessage{msgType: "audio"}
+	}
+	if msg.GetStickerMessage() != nil {
+		return extractedMessage{msgType: "sticker"}
+	}
+	return extractedMessage{msgType: "unknown"}
+}
+
+func (b *WhatsmeowBridge) handleIncomingMessage(evt *events.Message) {
+	if evt == nil || evt.Message == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	extracted := extractMessageContent(evt.Message)
+	if extracted.isPollVote {
+		b.handlePollVote(ctx, evt)
+		return
+	}
+	if extracted.msgType == "protocol" {
+		return
+	}
+
+	chatID := canonicalJID(evt.Info.Chat)
+	senderID := canonicalJID(evt.Info.Sender)
+	isGroup := evt.Info.IsGroup
+	isChannel := evt.Info.Chat.Server == types.NewsletterServer
+
+	if extracted.isEdit {
+		targetID := extracted.editedTargetID
+		if targetID == "" {
+			targetID = string(evt.Info.ID)
+		}
+		prevBody := ""
+		if prev, found, err := b.store.GetMessage(ctx, targetID); err == nil && found {
+			prevBody = prev.Body
+		}
+		_ = b.store.SaveMessage(ctx, StoredMessage{
+			ID:        targetID,
+			ChatJID:   chatID,
+			SenderJID: senderID,
+			FromMe:    evt.Info.IsFromMe,
+			Body:      extracted.body,
+			Timestamp: evt.Info.Timestamp,
+		})
+		b.hub.Publish(BridgeEvent{
+			Type: "message_edit",
+			Data: map[string]any{
+				"id":           targetID,
+				"chatId":       chatID,
+				"from":         chatID,
+				"author":       senderID,
+				"fromMe":       evt.Info.IsFromMe,
+				"type":         extracted.msgType,
+				"body":         extracted.body,
+				"newBody":      extracted.body,
+				"prevBody":     prevBody,
+				"isGroup":      isGroup,
+				"isChannel":    isChannel,
+				"isForwarded":  extracted.isForwarded,
+				"notifyName":   evt.Info.PushName,
+				"hasQuotedMsg": extracted.quotedID != "",
+				"quotedId":     extracted.quotedID,
+			},
+		})
+		return
+	}
+
+	msgID := string(evt.Info.ID)
+	_ = b.store.SaveMessage(ctx, StoredMessage{
+		ID:        msgID,
+		ChatJID:   chatID,
+		SenderJID: senderID,
+		FromMe:    evt.Info.IsFromMe,
+		Body:      extracted.body,
+		Timestamp: evt.Info.Timestamp,
+	})
+
+	payload := map[string]any{
+		"id":           msgID,
+		"chatId":       chatID,
+		"from":         chatID,
+		"author":       senderID,
+		"fromMe":       evt.Info.IsFromMe,
+		"type":         extracted.msgType,
+		"body":         extracted.body,
+		"isGroup":      isGroup,
+		"isChannel":    isChannel,
+		"isForwarded":  extracted.isForwarded,
+		"notifyName":   evt.Info.PushName,
+		"hasQuotedMsg": extracted.quotedID != "",
+		"quotedId":     extracted.quotedID,
+	}
+	if evt.Info.IsFromMe {
+		b.hub.Publish(BridgeEvent{Type: "message_create", Data: payload})
+		return
+	}
+	b.hub.Publish(BridgeEvent{Type: "message", Data: payload})
+}
+
+func (b *WhatsmeowBridge) handlePollVote(ctx context.Context, evt *events.Message) {
+	pollUpdate := unwrapE2EMessage(evt.Message).GetPollUpdateMessage()
+	if pollUpdate == nil {
+		return
+	}
+	parentID := pollUpdate.GetPollCreationMessageKey().GetID()
+	if parentID == "" {
+		return
+	}
+	voteMsg, err := b.client.DecryptPollVote(ctx, evt)
+	if err != nil {
+		b.log.Warnf("failed to decrypt poll vote for %s: %v", parentID, err)
+		return
+	}
+	options, found, err := b.store.GetPollOptions(ctx, parentID)
+	if err != nil || !found {
+		return
+	}
+	selected := ResolvePollVoteOptions(options, voteMsg.GetSelectedOptions())
+	b.hub.Publish(BridgeEvent{
+		Type: "vote_update",
+		Data: map[string]any{
+			"parentMessageId": parentID,
+			"selectedOptions": selected,
+		},
+	})
+}
+
+func buildContactResponse(
+	jid types.JID,
+	info types.ContactInfo,
+	contactsSynced bool,
+	selfWid string,
+	selfLid string,
+) *ContactResponse {
+	id := canonicalJID(jid)
+	savedName := strings.TrimSpace(info.FullName)
+	if savedName == "" {
+		savedName = strings.TrimSpace(info.FirstName)
+	}
+	var isMyContact *bool
+	if savedName != "" {
+		t := true
+		isMyContact = &t
+	} else if contactsSynced {
+		f := false
+		isMyContact = &f
+	}
+	isMe := id != "" && (id == selfWid || id == selfLid)
+	return &ContactResponse{
+		ID:             id,
+		Number:         phoneDigitsFromJID(jid),
+		Name:           savedName,
+		Pushname:       strings.TrimSpace(info.PushName),
+		IsMyContact:    isMyContact,
+		IsMe:           isMe,
+		ContactsSynced: contactsSynced,
+	}
+}
+
+func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*ContactResponse, error) {
+	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
+		return nil, errNotReady
+	}
+	jid, err := parseInputJID(rawID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	info, err := b.client.Store.Contacts.GetContact(ctx, jid)
+	if err != nil {
+		return nil, fmt.Errorf("read contact %s: %w", rawID, err)
+	}
+	b.mu.RLock()
+	synced := b.contactsSynced
+	b.mu.RUnlock()
+	selfWid, selfLid := b.selfJIDs()
+	return buildContactResponse(jid, info, synced, selfWid, selfLid), nil
+}
+
+func (b *WhatsmeowBridge) ResolveLidMappings(ctx context.Context, ids []string) ([]LidMapping, error) {
+	if b.client == nil || b.client.Store == nil || b.client.Store.LIDs == nil {
+		return nil, errNotReady
+	}
+	out := make([]LidMapping, 0, len(ids))
+	for _, raw := range ids {
+		jid, err := parseInputJID(raw)
+		if err != nil {
+			continue
+		}
+		if jid.Server == types.HiddenUserServer {
+			pn, err := b.client.Store.LIDs.GetPNForLID(ctx, jid)
+			if err != nil || pn.IsEmpty() {
+				continue
+			}
+			out = append(out, LidMapping{
+				Lid: canonicalJID(jid),
+				Pn:  canonicalJID(pn),
+			})
+		} else if jid.Server == types.DefaultUserServer {
+			lid, err := b.client.Store.LIDs.GetLIDForPN(ctx, jid)
+			if err != nil || lid.IsEmpty() {
+				continue
+			}
+			out = append(out, LidMapping{
+				Lid: canonicalJID(lid),
+				Pn:  canonicalJID(jid),
+			})
+		}
+	}
+	return out, nil
+}
+
+func (b *WhatsmeowBridge) ensureLoggedIn() error {
+	b.mu.RLock()
+	ready := b.connected && b.loggedIn
+	b.mu.RUnlock()
+	if !ready {
+		return errNotReady
+	}
+	return nil
+}
+
+func (b *WhatsmeowBridge) SendText(ctx context.Context, chatID, text string) (string, error) {
+	if err := b.ensureLoggedIn(); err != nil {
+		return "", err
+	}
+	target, err := parseInputJID(chatID)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	resp, err := b.client.SendMessage(ctx, target, &waE2E.Message{
+		Conversation: proto.String(text),
+	})
+	if err != nil {
+		return "", fmt.Errorf("send text: %w", err)
+	}
+	return string(resp.ID), nil
+}
+
+func (b *WhatsmeowBridge) SendPoll(ctx context.Context, chatID, name string, options []string, allowMultiple bool) (string, error) {
+	if err := b.ensureLoggedIn(); err != nil {
+		return "", err
+	}
+	target, err := parseInputJID(chatID)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	selectable := 1
+	if allowMultiple {
+		selectable = 0
+	}
+	msg := b.client.BuildPollCreation(name, options, selectable)
+	resp, err := b.client.SendMessage(ctx, target, msg)
+	if err != nil {
+		return "", fmt.Errorf("send poll: %w", err)
+	}
+	pollID := string(resp.ID)
+	if err := b.store.SavePollOptions(ctx, pollID, canonicalJID(target), options); err != nil {
+		b.log.Warnf("failed to persist poll options for %s: %v", pollID, err)
+	}
+	return pollID, nil
+}
+
+func (b *WhatsmeowBridge) ForwardMessage(ctx context.Context, messageID, targetChatID string) (string, error) {
+	if err := b.ensureLoggedIn(); err != nil {
+		return "", err
+	}
+	target, err := parseInputJID(targetChatID)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	stored, found, err := b.store.GetMessage(ctx, messageID)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", fmt.Errorf("%w: message %s not cached", errNotFound, messageID)
+	}
+	resp, err := b.client.SendMessage(ctx, target, &waE2E.Message{
+		ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+			Text: proto.String(stored.Body),
+			ContextInfo: &waE2E.ContextInfo{
+				IsForwarded:     proto.Bool(true),
+				ForwardingScore: proto.Uint32(1),
+			},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("forward message: %w", err)
+	}
+	return string(resp.ID), nil
+}
+
+func (b *WhatsmeowBridge) ArchiveChat(ctx context.Context, chatID string, archived bool) error {
+	if err := b.ensureLoggedIn(); err != nil {
+		return err
+	}
+	target, err := parseInputJID(chatID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	var lastTS time.Time
+	var lastKey *waCommon.MessageKey
+	if last, found, err := b.store.GetLastChatMessage(ctx, canonicalJID(target)); err == nil && found {
+		lastTS = last.Timestamp
+		lastKey = &waCommon.MessageKey{
+			RemoteJID: proto.String(target.String()),
+			FromMe:    proto.Bool(last.FromMe),
+			ID:        proto.String(last.ID),
+		}
+	}
+	return b.client.SendAppState(ctx, appstate.BuildArchive(target, archived, lastTS, lastKey))
+}
+
+func (b *WhatsmeowBridge) MuteChat(ctx context.Context, chatID string, muted bool) error {
+	if err := b.ensureLoggedIn(); err != nil {
+		return err
+	}
+	target, err := parseInputJID(chatID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	return b.client.SendAppState(ctx, appstate.BuildMute(target, muted, 0))
+}
+
+func (b *WhatsmeowBridge) BlockContact(ctx context.Context, id string, blocked bool) error {
+	if err := b.ensureLoggedIn(); err != nil {
+		return err
+	}
+	target, err := parseInputJID(id)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errBadRequest, err)
+	}
+	action := events.BlocklistChangeActionUnblock
+	if blocked {
+		action = events.BlocklistChangeActionBlock
+	}
+	_, err = b.client.UpdateBlocklist(ctx, target, action, "")
+	return err
+}
+
+func buildContactLabelPatch(target types.JID, name string) appstate.PatchInfo {
+	clean := strings.TrimSpace(name)
+	return appstate.PatchInfo{
+		Type: appstate.WAPatchCriticalUnblockLow,
+		Mutations: []appstate.MutationInfo{{
+			Index:   []string{appstate.IndexContact, target.String()},
+			Version: 2,
+			Value: &waSyncAction.SyncActionValue{
+				ContactAction: &waSyncAction.ContactAction{
+					FullName:                 proto.String(clean),
+					FirstName:                proto.String(clean),
+					SaveOnPrimaryAddressbook: proto.Bool(false),
+				},
+			},
+		}},
+	}
+}
+
+func (b *WhatsmeowBridge) SetContactLabel(ctx context.Context, phone, name string) error {
+	if err := b.ensureLoggedIn(); err != nil {
+		return err
+	}
+	digits := digitsOnly(phone)
+	if digits == "" {
+		return fmt.Errorf("%w: invalid phone %q", errBadRequest, phone)
+	}
+	target := types.NewJID(digits, types.DefaultUserServer)
+	if err := b.client.SendAppState(ctx, buildContactLabelPatch(target, name)); err != nil {
+		return fmt.Errorf("send contact label app state: %w", err)
+	}
+	if b.client.Store != nil && b.client.Store.Contacts != nil {
+		clean := strings.TrimSpace(name)
+		_ = b.client.Store.Contacts.PutContactName(ctx, target, clean, clean)
+	}
+	return nil
+}

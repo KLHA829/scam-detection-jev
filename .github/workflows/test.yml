@@ -127,6 +127,20 @@ jobs:
       - run: npm ci
       - run: npm run test:e2e
 
+  wa-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: wa-bridge/go.mod
+          cache-dependency-path: wa-bridge/go.sum
+      - name: vet and test wa-bridge
+        working-directory: wa-bridge
+        run: |
+          go vet ./...
+          go test -race ./...
+
   e2e-whatsapp-boot:
     runs-on: ubuntu-latest
     # WhatsApp Web may be unreachable from the runner; this boot smoke is best-effort.
