@@ -30,19 +30,56 @@ LURE_WORDS = (
 )
 
 
+_LURE_STOP_BEFORE = set(",，。:：;；!！?？()（）\"'「」『』")
+_NAME_PREFIX_CHARS = set(
+    "陳李黃張劉周吳鄭王何梁馬羅蔡楊許謝郭洪曾邱廖賴徐朱葉沈韓馮鄧曹彭鍾蔣蕭潘譚汪陸蘇盧唐孫魏方石余姚戴宋范杜丁傅江夏高林胡袁于董程呂阮莊簡連康雷畢翁游伍古屈甄聶湯岑霍龍莫嚴龔區丘韋麥尹駱黎尤陽馬官葛狐甫容徒轅阿abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+-"
+)
+
+
+def _enclosing_flagged_span(flags: list[bool], idx: int, end: int) -> tuple[int, int]:
+    run_start = idx
+    while run_start > 0 and flags[run_start - 1]:
+        run_start -= 1
+    run_end = end
+    while run_end < len(flags) and flags[run_end]:
+        run_end += 1
+    return run_start, run_end
+
+
 def clear_lure_chars(text: str, flags: list[bool]) -> list[bool]:
-    """A mask head must not hide the words the later model uses as evidence."""
+    """A mask head must not hide the words the later model uses as evidence,
+    nor unmask lure substrings embedded inside a flagged PII entity (name/email/URL).
+    """
     for word in LURE_WORDS:
         start = 0
         while True:
             idx = text.find(word, start)
             if idx < 0:
                 break
-            for offset in range(len(word)):
-                pos = idx + offset
-                if pos < len(flags) and not text[pos].isdigit():
-                    flags[pos] = False
-            start = idx + len(word)
+            end = idx + len(word)
+            run_start, run_end = _enclosing_flagged_span(flags, idx, end)
+            span_slice = text[run_start:run_end]
+            inside_url_or_email = "@" in span_slice or "/" in span_slice
+            preceded_by_name_char = (
+                idx > 0
+                and flags[idx - 1]
+                and (
+                    text[idx - 1] in _NAME_PREFIX_CHARS
+                    or (
+                        idx >= 2
+                        and flags[idx - 2]
+                        and text[idx - 2] in _NAME_PREFIX_CHARS
+                        and not text[idx - 1].isspace()
+                        and not text[idx - 1].isdigit()
+                        and text[idx - 1] not in _LURE_STOP_BEFORE
+                    )
+                )
+            )
+            if not inside_url_or_email and not preceded_by_name_char:
+                for pos in range(idx, end):
+                    if pos < len(flags) and not text[pos].isdigit():
+                        flags[pos] = False
+            start = end
     return flags
 
 
@@ -76,6 +113,48 @@ def flags_from_offsets(text: str, offsets, probs, threshold: float) -> list[bool
             continue
         for pos in range(max(0, start), min(len(text), end)):
             flags[pos] = True
+    clear_lure_chars(text, flags)
+    return flags
+
+
+def flags_from_window_offsets(
+    text: str,
+    window_offsets,
+    window_probs,
+    threshold: float,
+) -> list[bool]:
+    """Combine overlapping window token probabilities preferring interior tokens over cut edges."""
+    n_windows = len(window_offsets)
+    if n_windows <= 1:
+        flat_offsets = [span for win in window_offsets for span in win]
+        flat_probs = [prob for win in window_probs for prob in win]
+        return flags_from_offsets(text, flat_offsets, flat_probs, threshold)
+
+    length = len(text)
+    best_margin = [-1] * length
+    best_prob = [0.0] * length
+    for w_idx, (offsets, probs) in enumerate(zip(window_offsets, window_probs)):
+        content = [
+            i for i, span in enumerate(offsets)
+            if int(span[1]) > int(span[0])
+        ]
+        if not content:
+            continue
+        first_tok, last_tok = content[0], content[-1]
+        for t_idx in content:
+            start, end = int(offsets[t_idx][0]), int(offsets[t_idx][1])
+            prob = float(probs[t_idx])
+            left_margin = 10**6 if w_idx == 0 else (t_idx - first_tok)
+            right_margin = 10**6 if w_idx == n_windows - 1 else (last_tok - t_idx)
+            margin = min(left_margin, right_margin)
+            for pos in range(max(0, start), min(length, end)):
+                if margin > best_margin[pos]:
+                    best_margin[pos] = margin
+                    best_prob[pos] = prob
+                elif margin == best_margin[pos] and prob > best_prob[pos]:
+                    best_prob[pos] = prob
+
+    flags = [best_margin[i] >= 0 and best_prob[i] >= threshold for i in range(length)]
     clear_lure_chars(text, flags)
     return flags
 

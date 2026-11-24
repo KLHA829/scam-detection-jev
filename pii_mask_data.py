@@ -25,8 +25,8 @@ _CN_PHONE = re.compile(
 )
 _FW_PHONE = re.compile(r"(?<![0-9０-９])[４５６７９][０-９]{7}(?![0-9０-９])")
 
-_TRAIN_SURNAMES = list("陳李黃張劉周吳鄭王何梁馬羅")
-_TEST_SURNAMES = list("蔡楊許謝郭洪曾邱廖")
+_TRAIN_SURNAMES = list("陳李黃張劉周吳鄭王何梁馬羅歐")
+_TEST_SURNAMES = list("蔡楊許謝郭洪曾邱廖司")
 _TRAIN_GIVEN = ("大文", "小明", "嘉怡", "志強", "美玲", "家輝")
 _TEST_GIVEN = ("子軒", "曉彤", "詠詩", "凱晴")
 _CN_MAP = str.maketrans("0123456789", "零一二三四五六七八九")
@@ -109,25 +109,43 @@ def _name(rng: random.Random, surnames: list[str], givens: tuple[str, ...]) -> s
     surname = rng.choice(surnames)
     if surname == "歐":
         surname = "歐陽"
+    elif surname == "司":
+        surname = "司馬"
     return surname + rng.choice(givens)
 
 
 def _fill(rng: random.Random, frame: str, surnames: list[str], givens: tuple[str, ...]) -> str:
     phone = _intl_phone(rng)
     name = _name(rng, surnames, givens)
+    nick = f"阿{rng.choice(('明', '強', '珍', '輝', '玲', '文'))}"
     otp = "".join(rng.choice("0123456789") for _ in range(6))
     email = f"user{rng.randrange(1000, 9999)}@example.com"
     hkid = f"{rng.choice('ABCDEFGHZ')}{rng.randrange(100000, 999999)}({rng.choice('0123456789A')})"
+    id18 = f"44030119{rng.randrange(70, 99)}{rng.randrange(10, 12)}{rng.randrange(10, 28)}{rng.randrange(1000, 9999)}"
     account = f"{rng.randrange(100, 999)}-{rng.randrange(100000, 999999)}"
+    long_acct = "".join(rng.choice("0123456789") for _ in range(16))
+    payme_handle = f"payme.hsbc/u{rng.randrange(1000, 9999)}abc"
+    fps_handle = f"FPS ID: HK{rng.randrange(100000, 999999)}"
+    url_path = f"https://example{rng.randrange(10, 99)}.test/login?token=secret{rng.randrange(1000, 9999)}"
+    url_user = f"https://user{rng.randrange(100, 999)}@example{rng.randrange(10, 99)}.test/home"
+    short_url = f"https://bit.ly/ref{rng.randrange(1000, 9999)}"
     cn_phone = _local_phone(rng).translate(_CN_MAP)
     fw_phone = _local_phone(rng).translate(_FW_MAP)
     return frame.format(
         name=name,
+        nick=nick,
         phone=phone,
         otp=otp,
         email=email,
         hkid=hkid,
+        id18=id18,
         account=account,
+        long_acct=long_acct,
+        payme_handle=payme_handle,
+        fps_handle=fps_handle,
+        url_path=url_path,
+        url_user=url_user,
+        short_url=short_url,
         cn_phone=cn_phone,
         fw_phone=fw_phone,
     )
@@ -136,10 +154,18 @@ def _fill(rng: random.Random, frame: str, surnames: list[str], givens: tuple[str
 _TRAIN_FRAMES = (
     "你好，我係{name}，電話{phone}",
     "我叫{name}，方便打俾我嗎",
+    "叫我{nick}，電話{phone}",
     "驗證碼 {otp} 請你收好",
     "電郵 {email} 回覆我",
     "身份證 {hkid} 影一張",
+    "證件 {id18} 核對清楚",
     "轉數快 {account} 今日過數",
+    "銀行卡 {long_acct} 收到未",
+    "PayMe ID: u{otp}ab 過數俾我",
+    "{fps_handle} 麻煩入數",
+    "請開 {url_path} 睇詳情",
+    "登入 {url_user} 確認",
+    "按 {short_url} 領取",
     "我號碼係{cn_phone}，儘快打",
     "全形電話{fw_phone}係我",
     "我係{name}，驗證碼{otp}，電話{phone}",
@@ -147,10 +173,18 @@ _TRAIN_FRAMES = (
 _TEST_FRAMES = (
     "本人{name}，請打{phone}找我",
     "我名叫{name}，之後聯絡",
+    "我係{nick}，今晚聯絡",
     "你的驗證碼是{otp}，勿外傳",
     "回信到 {email} 就得",
     "證件號 {hkid} 核對一下",
+    "回鄉證 {id18} 請查收",
     "戶口 {account} 係收款",
+    "帳號 {long_acct} 請轉帳",
+    "用 PayMe: pm{otp}xy 付款",
+    "{fps_handle} 係我收款號",
+    "點擊 {url_path} 處理",
+    "前往 {url_user} 下載",
+    "查看 {short_url} 通知",
     "打去{cn_phone}就可以",
     "備用號碼{fw_phone}留低",
     "叫我{name}，代碼 {otp}",

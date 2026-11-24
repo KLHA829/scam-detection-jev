@@ -798,6 +798,7 @@ class TorchHelperTests(unittest.TestCase):
             "head": serve._MASK_HEAD,
             "cfg": serve._MASK_CFG,
             "config": serve._CONFIG,
+            "mask_option_cache": serve._MASK_OPTION_CACHE,
         }
 
         class Collator:
@@ -908,6 +909,7 @@ class TorchHelperTests(unittest.TestCase):
             serve._MASK_HEAD = saved["head"]
             serve._MASK_CFG = saved["cfg"]
             serve._CONFIG = saved["config"]
+            serve._MASK_OPTION_CACHE = saved["mask_option_cache"]
 
     def test_load_runtime_rejects_a_checkpoint_that_is_not_a_head(self):
         torch = self.torch
@@ -1065,6 +1067,116 @@ class MaskHeadLoadTests(unittest.TestCase):
         serve._DEVICE = saved["device"]
         serve._MODEL = saved["model"]
         serve._COLLATOR = saved["collator"]
+
+
+class RegressionFixTests(unittest.TestCase):
+    def test_clear_lure_chars_clears_advice_but_keeps_names_emails_and_urls(self):
+        try:
+            import pii_mask_head as mh
+        except ImportError as exc:
+            self.skipTest(f"pii_mask_head unavailable: {exc}")
+
+        cases = [
+            ("驗證碼 123456 請小心", [True] * 14, ("小心", False), ("123456", True)),
+            ("我叫陳小心，電話 91234567", [False, False, True, True, True] + [False] * 12, ("小心", True), None),
+            ("電郵 小心88@example.com", [False, False, False] + [True] * 17, ("小心", True), None),
+            ("https://evil.example/密碼重設", [False] * 20 + [True] * 5, ("密碼", True), None),
+        ]
+        for text, flags, (needle, want), digit_expect in cases:
+            out = mh.clear_lure_chars(text, list(flags))
+            pos = text.index(needle)
+            self.assertEqual(any(out[pos : pos + len(needle)]), want, text)
+            if digit_expect is not None:
+                d_needle, d_want = digit_expect
+                d_pos = text.index(d_needle)
+                self.assertEqual(all(out[d_pos : d_pos + len(d_needle)]), d_want, text)
+
+    def test_flags_from_window_offsets_prefers_interior_margin(self):
+        try:
+            import pii_mask_head as mh
+        except ImportError as exc:
+            self.skipTest(f"pii_mask_head unavailable: {exc}")
+
+        text = "abcd"
+        # Window 0 covers whole token [0..4] where 'd' sits on right boundary (margin 0) and fails high threshold,
+        # while Window 1 puts 'd' cleanly in the interior as False.
+        flags = mh.flags_from_window_offsets(
+            text,
+            window_offsets=[[(0, 1), (1, 2), (2, 3), (3, 4)], [(2, 3), (3, 4), (0, 0), (0, 0)]],
+            window_probs=[[0.9, 0.9, 0.1, 0.7], [0.1, 0.1, 0.0, 0.0]],
+            threshold=0.5,
+        )
+        self.assertEqual(flags, [True, True, False, False])
+
+    def test_mask_coverage_truncated_catches_interior_gaps_and_allows_trailing_space(self):
+        tok = lambda s, **_kw: {"input_ids": SimpleNamespace(numel=lambda: len(s.strip()))}
+        self.assertTrue(serve.mask_coverage_truncated("a" * 30, [(0, 5), (25, 30)], tokenizer=tok))
+        self.assertFalse(serve.mask_coverage_truncated("hello   ", [(0, 5)], tokenizer=tok))
+
+    def test_lone_surrogate_and_url_email_heuristics(self):
+        surrogate_text = "a\ud83d91234567"
+        spans = serve.find_mask_spans(surrogate_text)
+        self.assertTrue(all(isinstance(s["start"], int) and s["start"] >= 0 for s in spans))
+        utf16 = serve._to_utf16_spans(surrogate_text, [{"start": 2, "end": 10, "label": "phone"}])
+        self.assertEqual(utf16, [{"start": 2, "end": 10, "label": "phone"}])
+
+        userinfo = "https://alice:evil.com@evil.com/path"
+        self.assertEqual(_covered(userinfo, serve._url_spans(userinfo)), "alice:evil.com/path")
+
+        dotted_i = "https://İ.example/secret"
+        dotted_covered = _covered(dotted_i, serve.find_mask_spans(dotted_i))
+        self.assertIn("secret", dotted_covered)
+
+        glued_short = "bit.ly/abc立即轉帳"
+        self.assertEqual(_covered(glued_short, serve.find_mask_spans(glued_short)), "abc")
+
+        fps_url = "fps: https://evil.example/pay"
+        fps_spans = serve.find_mask_spans(fps_url)
+        self.assertTrue(any(s["label"] == "url" for s in fps_spans))
+        self.assertFalse(any(s["label"] == "payment_handle" and "https" in fps_url[s["start"]:s["end"]] for s in fps_spans))
+
+        spaced_fps = "轉數快 1234 5678"
+        self.assertEqual(_covered(spaced_fps, serve.find_mask_spans(spaced_fps)), "1234 5678")
+
+    def test_pii_mask_data_includes_rare_surnames_and_urls(self):
+        import pii_mask_data as data
+
+        self.assertIn("歐", data._TRAIN_SURNAMES)
+        self.assertIn("司", data._TEST_SURNAMES)
+        samples = data.generate_split("train", 200, seed=7)
+        joined = "\n".join(row["text"] for row in samples)
+        self.assertIn("http", joined)
+
+    def test_http_rejects_invalid_utf8_and_chunked_encoding(self):
+        import http.client
+        from http.server import ThreadingHTTPServer
+        import threading
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), serve.Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        port = server.server_address[1]
+        try:
+            with patch.object(serve, "API_KEY", ""):
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                bad_utf8 = b'{"messages":["\xff\xfe"]}'
+                conn.request("POST", "/v1/mask", body=bad_utf8, headers={"Content-Type": "application/json"})
+                res1 = conn.getresponse()
+                res1.read()
+                self.assertEqual(res1.status, 422)
+                conn.close()
+
+                conn2 = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                conn2.putrequest("POST", "/v1/mask")
+                conn2.putheader("Transfer-Encoding", "chunked")
+                conn2.endheaders(b"0\r\n\r\n")
+                res2 = conn2.getresponse()
+                res2.read()
+                self.assertEqual(res2.status, 411)
+                conn2.close()
+        finally:
+            server.shutdown()
+            server.server_close()
 
 
 if __name__ == "__main__":

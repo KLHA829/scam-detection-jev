@@ -43,6 +43,7 @@ const {
   optionLabels,
 } = require('./lib/review-prompt');
 const { serializedId, messageIdOf, routeSelfText, routeVote } = require('./lib/self-chat');
+const { shouldIgnoreMessage } = require('./lib/filters');
 const {
   OPERATOR_HELP_TEXT,
   parseOperatorCommand,
@@ -50,6 +51,7 @@ const {
   resolveUnblockCommand,
   formatRecentBlocksList,
   formatAmbiguousUnblock,
+  formatAmbiguousKeepBlocked,
   loadRecentBlocksForCommands,
 } = require('./lib/operator-commands');
 const {
@@ -59,6 +61,7 @@ const {
 const {
   createLlmReviewCooldownStore,
   defaultLlmReviewCooldownPath,
+  recordChatLlmReviewSuccess,
 } = require('./lib/llm-review-cooldown');
 
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
@@ -255,6 +258,8 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId, { botCo
       const contact = await chat.getContact();
       return (await loadSenderContact(client, { senderId: record.chatId, contact, botContactNames })) || contact;
     },
+    refreshContact: async (chat) =>
+      loadSenderContact(client, { senderId: record.chatId, contact: await chat.getContact(), botContactNames }),
     botContactNames,
     archiveChat: async (chat) => {
       await chat.archive();
@@ -269,9 +274,16 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId, { botCo
         canRenameContact,
         pause: () => pacer.pause(),
         botContactNames,
+        extraIds: [record.chatId],
       }),
   });
-  if (!result.ok) queue.release(pollId);
+  if (!result.ok) {
+    try {
+      queue.release(pollId);
+    } catch (err) {
+      log.error('review choice release failed', { pollId, error: err && err.message ? err.message : String(err) });
+    }
+  }
   await pacer.exclusive(async () => {
     await client.sendMessage(wid, result.text);
     if (result.blocked) {
@@ -288,7 +300,7 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId, { botCo
   });
 }
 
-async function confirmUnblockChoice(client, queue, pacer, choice, pollId) {
+async function confirmUnblockChoice(client, queue, pacer, choice, pollId, { botContactNames } = {}) {
   const wid = selfWid(client);
   const existing = queue.get(pollId);
   if (!existing || !wid) return;
@@ -308,11 +320,17 @@ async function confirmUnblockChoice(client, queue, pacer, choice, pollId) {
     await client.sendMessage(wid, '已經處理咗。');
     return;
   }
+  const resolveContact = async (chat) => {
+    const raw = await chat.getContact();
+    return (await loadSenderContact(client, { senderId: record.chatId, contact: raw, botContactNames })) || raw;
+  };
+  const refreshVerifiedContact = async (chat) =>
+    loadSenderContact(client, { senderId: record.chatId, contact: await chat.getContact(), botContactNames });
   const result = await applyUnblockChoice(record, choice, {
     exclusive: (fn) => pacer.exclusive(fn),
     pause: () => pacer.pause(),
     getChat: (id) => client.getChatById(id),
-    getContact: (chat) => chat.getContact(),
+    getContact: resolveContact,
     unblockContact: ({ chat, contact, digits, blockContactName, renamed, savedContact }) =>
       unblockContact({
         client,
@@ -323,20 +341,32 @@ async function confirmUnblockChoice(client, queue, pacer, choice, pollId) {
         renamed,
         savedContact,
         pause: () => pacer.pause(),
+        refreshContact: refreshVerifiedContact,
+        botContactNames,
+        extraIds: [record.chatId],
       }),
   });
-  if (!result.ok) queue.release(pollId);
+  if (!result.ok) {
+    try {
+      queue.release(pollId);
+    } catch (err) {
+      log.error('unblock choice release failed', { pollId, error: err && err.message ? err.message : String(err) });
+    }
+  }
   await pacer.exclusive(() => client.sendMessage(wid, result.text));
 }
 
 async function handleOperatorCommand(cmd, deps, wid) {
-  const { client, reviewQueue, pacer } = deps;
+  const { client, reviewQueue, pacer, botContactNames } = deps;
   const unblockDeps = {
     exclusive: (fn) => pacer.exclusive(fn),
     pause: () => pacer.pause(),
     getChat: (id) => client.getChatById(id),
-    getContact: (chat) => chat.getContact(),
-    unblockContact: ({ chat, contact, digits, blockContactName, renamed, savedContact }) =>
+    getContact: async (chat, row) => {
+      const raw = await chat.getContact();
+      return (await loadSenderContact(client, { senderId: row && row.chatId, contact: raw, botContactNames })) || raw;
+    },
+    unblockContact: ({ chat, contact, record: row, digits, blockContactName, renamed, savedContact }) =>
       unblockContact({
         client,
         contact,
@@ -346,6 +376,10 @@ async function handleOperatorCommand(cmd, deps, wid) {
         renamed,
         savedContact,
         pause: () => pacer.pause(),
+        refreshContact: async (c) =>
+          loadSenderContact(client, { senderId: row && row.chatId, contact: await c.getContact(), botContactNames }),
+        botContactNames,
+        extraIds: row && row.chatId ? [row.chatId] : [],
       }),
   };
 
@@ -372,11 +406,13 @@ async function handleOperatorCommand(cmd, deps, wid) {
     }
     if (openUnblock.length > 1) {
       await pacer.exclusive(() =>
-        client.sendMessage(wid, formatAmbiguousUnblock(openUnblock.map((row) => ({ ...row, displayName: row.listName || row.contactName })))),
+        client.sendMessage(wid, formatAmbiguousKeepBlocked(openUnblock.map((row) => ({ ...row, displayName: row.listName || row.contactName })))),
       );
       return;
     }
-    await confirmUnblockChoice(client, reviewQueue, pacer, 'keep', openUnblock[0].pollId);
+    await confirmUnblockChoice(client, reviewQueue, pacer, 'keep', openUnblock[0].pollId, {
+      botContactNames,
+    });
     return;
   }
 
@@ -391,7 +427,9 @@ async function handleOperatorCommand(cmd, deps, wid) {
       return;
     }
     if (target.kind === 'poll') {
-      await confirmUnblockChoice(client, reviewQueue, pacer, 'unblock', target.pollId);
+      await confirmUnblockChoice(client, reviewQueue, pacer, 'unblock', target.pollId, {
+        botContactNames,
+      });
       return;
     }
     const result = await applyUnblockChoice(target.record, 'unblock', unblockDeps);
@@ -406,6 +444,17 @@ async function handleOperatorCommand(cmd, deps, wid) {
   }
 }
 
+async function isSelfChatId(client, chatId) {
+  const wid = selfWid(client);
+  if (!wid || !chatId) return false;
+  if (chatId === wid) return true;
+  if (typeof client.getContactLidAndPhone !== 'function') return false;
+  const mappings = await client.getContactLidAndPhone([wid]);
+  return Array.isArray(mappings) && mappings.some(({ lid, pn }) =>
+    (pn === wid && lid === chatId) || (lid === wid && pn === chatId),
+  );
+}
+
 async function handleSelfMessage(msg, deps) {
   const body = String(msg.body || '').trim();
   if (!shouldProcessSelfMessageBody(body, Boolean(msg.hasQuotedMsg))) return;
@@ -415,13 +464,7 @@ async function handleSelfMessage(msg, deps) {
   try {
     const chat = await msg.getChat();
     const chatId = serializedId(chat && chat.id);
-    isSelf = chatId === wid;
-    if (!isSelf && chatId && typeof deps.client.getContactLidAndPhone === 'function') {
-      const mappings = await deps.client.getContactLidAndPhone([wid]);
-      isSelf = Array.isArray(mappings) && mappings.some(({ lid, pn }) =>
-        (pn === wid && lid === chatId) || (lid === wid && pn === chatId),
-      );
-    }
+    isSelf = await isSelfChatId(deps.client, chatId);
   } catch (err) {
     log.warn('self chat check failed', { error: err.message });
     return;
@@ -481,6 +524,7 @@ async function handleSelfMessage(msg, deps) {
       deps.pacer,
       route.choice,
       route.pollId,
+      { botContactNames: deps.botContactNames },
     );
     return;
   }
@@ -506,10 +550,16 @@ async function recordOwnMessage(msg, { client, recentContext, editedFrom = null 
   }
   const chatId = serializedId(chat && chat.id);
   if (!chatId || chatId === selfWid(client)) return;
+  if (/@lid$/i.test(chatId)) {
+    try {
+      if (await isSelfChatId(client, chatId)) return;
+    } catch {}
+  }
   recordOutgoingMessage(
     {
       type: msg.type,
       isGroup: Boolean(chat.isGroup),
+      isChannel: Boolean(chat.isChannel),
       chatId,
       body: msg.body || '',
       messageId: incomingMessageId(msg),
@@ -536,6 +586,17 @@ async function handleWaMessage(msg, {
   editedFrom = null,
   isCurrent = () => true,
 }) {
+  const preIgnore = shouldIgnoreMessage({
+    fromMe: Boolean(msg.fromMe),
+    type: msg.type,
+    chatId: msg.from,
+    from: msg.from,
+  });
+  if (preIgnore.ignore) {
+    log.info(`skip message (${preIgnore.reason})`, { chatId: msg.from || null });
+    return { ignored: true, reason: preIgnore.reason };
+  }
+
   let chat;
   let contact;
   try {
@@ -548,9 +609,10 @@ async function handleWaMessage(msg, {
 
   const chatId = (chat.id && chat.id._serialized) || msg.from;
   const contactId = contact.id && contact.id._serialized;
-  const listName = chatListName(contact, msg);
   const senderId = msg.author || msg.from || chatId;
+  const extraIds = [senderId, chatId].filter(Boolean);
   const sender = await loadSenderContact(client, { senderId, contact, botContactNames });
+  const listName = chatListName(sender || contact, msg);
   const refreshSender = async () =>
     loadSenderContact(client, { senderId, contact: await msg.getContact(), botContactNames });
 
@@ -558,10 +620,11 @@ async function handleWaMessage(msg, {
     {
       fromMe: Boolean(msg.fromMe),
       isGroup: Boolean(chat.isGroup),
+      isChannel: Boolean(chat.isChannel),
       type: msg.type,
       isMe: Boolean(contact.isMe),
       pushName: msg._data?.notifyName || contact.pushname || contact.name,
-      contactName: contact.name || contact.pushname,
+      contactName: (sender && sender.name) || contact.name || contact.pushname,
       body: msg.body || '',
       isForwarded: msg.isForwarded === true,
       chatId,
@@ -588,6 +651,7 @@ async function handleWaMessage(msg, {
       llmCooldownStore,
       botContactNames,
       bypassLlmCooldown,
+      deferCooldownRecord: Boolean(reviewQueue),
       editedFrom,
       isCurrent,
       blockContact: (info) =>
@@ -600,10 +664,19 @@ async function handleWaMessage(msg, {
           pause: () => pacer.pause(),
           refreshUnsavedContact: refreshSender,
           botContactNames,
+          extraIds,
           isCurrent,
         }),
       hasContactLabel: (info) =>
-        Boolean(botContactNames && info && botContactNames.wroteForNumber(info.digits, info.contactName)),
+        Boolean(
+          botContactNames &&
+            info &&
+            (botContactNames.wroteForNumber(info.digits, info.contactName) ||
+              (sender &&
+                botContactNames.wrote(sender) &&
+                sender.name &&
+                sender.name.trim() === info.contactName)),
+        ),
       clearContactLabel: (info) =>
         clearUnsavedContactLabel({
           client,
@@ -612,6 +685,7 @@ async function handleWaMessage(msg, {
           pause: () => pacer.pause(),
           refreshUnsavedContact: refreshSender,
           botContactNames,
+          extraIds,
           isCurrent,
         }),
       labelContact: (info) =>
@@ -622,11 +696,12 @@ async function handleWaMessage(msg, {
           pause: () => pacer.pause(),
           refreshUnsavedContact: refreshSender,
           botContactNames,
+          extraIds,
           isCurrent,
         }),
     },
   );
-  if (result && !result.deferred) {
+  if (result && !result.deferred && !result.stale && (isCurrent() || result.blocked || result.archived)) {
     await sendActionNotice(client, result, {
       maskClient, llmReview, listName, pacer, reviewQueue,
     });
@@ -653,6 +728,9 @@ async function handleWaMessage(msg, {
           new Poll(name, options, { allowMultipleAnswers: false }),
         ),
     });
+    if (delivered && delivered.pollId && result.cooldownEligible && isCurrent()) {
+      recordChatLlmReviewSuccess(chatId, { store: llmCooldownStore });
+    }
     if (delivered && delivered.forwardError) {
       log.warn('guided forward or poll failed', {
         chatId,
@@ -667,6 +745,7 @@ async function handleWaMessage(msg, {
 
 function attachHandlers(client, deps) {
   const inFlight = new Map();
+  let setupInFlight = false;
   async function handleCurrent(msg, options) {
     const id = incomingMessageId(msg);
     const revision = {};
@@ -694,10 +773,15 @@ function attachHandlers(client, deps) {
 
   client.on('ready', () => {
     log.ok('WhatsApp client ready');
-    if (!deps.operator || !deps.operator.needsSetup()) return;
-    sendSetupPoll(client, deps.operator).catch((err) => {
-      log.error('operator setup failed', { error: err.message });
-    });
+    if (setupInFlight || !deps.operator || !deps.operator.needsSetup()) return;
+    setupInFlight = true;
+    sendSetupPoll(client, deps.operator)
+      .catch((err) => {
+        log.error('operator setup failed', { error: err.message });
+      })
+      .finally(() => {
+        setupInFlight = false;
+      });
   });
 
   client.on('message', async (msg) => {
@@ -779,6 +863,7 @@ function attachHandlers(client, deps) {
           deps.pacer,
           route.choice,
           route.pollId,
+          { botContactNames: deps.botContactNames },
         );
       }
     } catch (err) {

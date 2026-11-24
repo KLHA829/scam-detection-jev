@@ -34,6 +34,11 @@ async function main() {
     const fwd = m.forwarded ? ' forwarded' : '';
     console.log(`- ${fp.id} ${fp.contact}${fwd} -> ${fp.action} (${fp.rule}): ${m.body.replace(/\s+/g, ' ')}`);
   }
+  const ruleHits = results.filter((r) => r.rule);
+  console.log(`heuristic rule hits (${ruleHits.length}):`);
+  for (const hit of ruleHits) {
+    console.log(`- ${hit.message.id} ${hit.savedContact ? 'saved' : 'unsaved'} -> ${hit.rule}`);
+  }
 
   if (process.argv.includes('--update-baseline')) {
     const lines = found.map((fp) => `  ${JSON.stringify(fp)}`).join(',\n');
