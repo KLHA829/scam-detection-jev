@@ -24,7 +24,8 @@ const {
   createRecentContext,
 } = require('./lib/context-llm');
 const { blockAndRename, clearUnsavedContactLabel, labelUnsavedContact, unblockContact } = require('./lib/wa-actions');
-const { isOperatorSavedContact } = require('./lib/block-policy');
+const { savedContactStatus } = require('./lib/block-policy');
+const { loadSenderContact } = require('./lib/sender-contact');
 const { createBotContactNames, defaultBotContactNamesPath } = require('./lib/bot-contact-names');
 const { createActionPacer } = require('./lib/action-pacer');
 const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-context');
@@ -545,6 +546,10 @@ async function handleWaMessage(msg, {
   const chatId = (chat.id && chat.id._serialized) || msg.from;
   const contactId = contact.id && contact.id._serialized;
   const listName = chatListName(contact, msg);
+  const senderId = msg.author || msg.from || chatId;
+  const sender = await loadSenderContact(client, { senderId, contact, botContactNames });
+  const refreshSender = async () =>
+    loadSenderContact(client, { senderId, contact: await msg.getContact(), botContactNames });
 
   const result = await processIncomingMessage(
     {
@@ -557,7 +562,7 @@ async function handleWaMessage(msg, {
       body: msg.body || '',
       isForwarded: msg.isForwarded === true,
       chatId,
-      savedContact: isOperatorSavedContact(contact, botContactNames),
+      savedContact: savedContactStatus(sender, botContactNames),
       messageId: incomingMessageId(msg),
     },
     {
@@ -572,7 +577,7 @@ async function handleWaMessage(msg, {
       archiveChat: async () => {
         await chat.archive();
       },
-      refreshContact: async () => msg.getContact(),
+      refreshContact: refreshSender,
       exclusive: (fn) => pacer.exclusive(fn),
       operatorMode: operator ? operator.mode() : 'auto',
       holdBlock: operator ? operator.awaitingChoice() : false,
@@ -590,7 +595,7 @@ async function handleWaMessage(msg, {
           digits: info && info.digits,
           contactName: info && info.contactName,
           pause: () => pacer.pause(),
-          refreshUnsavedContact: () => msg.getContact(),
+          refreshUnsavedContact: refreshSender,
           botContactNames,
         }),
       hasContactLabel: (info) =>
@@ -601,7 +606,7 @@ async function handleWaMessage(msg, {
           digits: info && info.digits,
           contactName: info && info.contactName,
           pause: () => pacer.pause(),
-          refreshUnsavedContact: () => msg.getContact(),
+          refreshUnsavedContact: refreshSender,
           botContactNames,
           isCurrent,
         }),
@@ -611,7 +616,7 @@ async function handleWaMessage(msg, {
           digits: info && info.digits,
           contactName: info && info.contactName,
           pause: () => pacer.pause(),
-          refreshUnsavedContact: () => msg.getContact(),
+          refreshUnsavedContact: refreshSender,
           botContactNames,
           isCurrent,
         }),
