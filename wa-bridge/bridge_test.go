@@ -657,6 +657,73 @@ func TestHTTPAndSSEServer(t *testing.T) {
 	if !strings.Contains(joined, "event: qr") || !strings.Contains(joined, "hello-qr") {
 		t.Fatalf("unexpected SSE output: %q", joined)
 	}
+
+	readSSEEvents := func(url, lastEventID string, count int) []string {
+		t.Helper()
+		rctx, rcancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer rcancel()
+		req, _ := http.NewRequestWithContext(rctx, "GET", url+"/v1/events", nil)
+		req.Header.Set("Authorization", "Bearer secret-token")
+		if lastEventID != "" {
+			req.Header.Set("Last-Event-ID", lastEventID)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("SSE %s = (%v, %v)", url, resp, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		sc := bufio.NewScanner(resp.Body)
+		var blocks []string
+		var cur []string
+		for sc.Scan() {
+			line := sc.Text()
+			if line == "" {
+				if len(cur) > 0 {
+					blocks = append(blocks, strings.Join(cur, "\n"))
+					cur = nil
+					if len(blocks) >= count {
+						break
+					}
+				}
+				continue
+			}
+			cur = append(cur, line)
+		}
+		return blocks
+	}
+
+	backend.hub.Publish(BridgeEvent{Type: "ready", Data: map[string]any{"selfWid": "85299990000@c.us"}})
+	backend.hub.Publish(BridgeEvent{Type: "message", Data: map[string]any{"id": "wire-1"}})
+	initialBlocks := readSSEEvents(srv.URL, "", 2)
+	if len(initialBlocks) != 2 || !strings.Contains(initialBlocks[1], "wire-1") {
+		t.Fatalf("unexpected initial wire SSE blocks: %v", initialBlocks)
+	}
+	var wireID string
+	for _, l := range strings.Split(initialBlocks[1], "\n") {
+		if strings.HasPrefix(l, "id: ") {
+			wireID = strings.TrimPrefix(l, "id: ")
+		}
+	}
+	if wireID == "" {
+		t.Fatalf("missing SSE id line in %q", initialBlocks[1])
+	}
+
+	backend.hub.Publish(BridgeEvent{Type: "message", Data: map[string]any{"id": "wire-2"}})
+	resumedBlocks := readSSEEvents(srv.URL, wireID, 1)
+	if len(resumedBlocks) != 1 || !strings.Contains(resumedBlocks[0], "wire-2") {
+		t.Fatalf("Last-Event-ID=%q should resume at wire-2, got %v", wireID, resumedBlocks)
+	}
+
+	restartedBackend := &fakeBackend{hub: NewEventHub(), health: backend.health}
+	restartedBackend.hub.Publish(BridgeEvent{Type: "ready", Data: map[string]any{"selfWid": "85299990000@c.us"}})
+	restartedBackend.hub.Publish(BridgeEvent{Type: "message", Data: map[string]any{"id": "wire-post-restart"}})
+	restartedSrv := httptest.NewServer(NewBridgeHandler(restartedBackend, "secret-token"))
+	defer restartedSrv.Close()
+
+	restartedBlocks := readSSEEvents(restartedSrv.URL, wireID, 2)
+	if len(restartedBlocks) != 2 || !strings.Contains(restartedBlocks[0], "event: ready") || !strings.Contains(restartedBlocks[1], "wire-post-restart") {
+		t.Fatalf("stale Last-Event-ID=%q after restart must replay ready + wire-post-restart, got %v", wireID, restartedBlocks)
+	}
 }
 
 func TestNewWhatsmeowBridgeSQLiteInitSyncReconnectAndLID(t *testing.T) {
@@ -765,37 +832,67 @@ func TestNewWhatsmeowBridgeSQLiteInitSyncReconnectAndLID(t *testing.T) {
 	if bridge.Health().ContactsSynced {
 		t.Fatal("Disconnected must invalidate ContactsSynced")
 	}
-	bridge.mu.Lock()
-	bridge.connected = true
-	bridge.loggedIn = true
-	bridge.connGen = 3
-	bridge.pendingSyncGen = 3
-	bridge.mu.Unlock()
+
+	var fetchMu sync.Mutex
+	fetchFail := true
+	fetchDone := make(chan struct{}, 4)
+	bridge.fetchContactsFn = func(context.Context) error {
+		fetchMu.Lock()
+		fail := fetchFail
+		fetchMu.Unlock()
+		defer func() { fetchDone <- struct{}{} }()
+		if fail {
+			return errors.New("app state key not found")
+		}
+		return nil
+	}
+
+	bridge.handleEvent(&events.Connected{})
+	select {
+	case <-fetchDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for initial failing syncContacts")
+	}
+	if bridge.Health().ContactsSynced {
+		t.Fatal("failed syncContacts (missing key) must leave ContactsSynced=false")
+	}
+
+	bridge.mu.RLock()
+	curGen := bridge.connGen
+	bridge.mu.RUnlock()
+
+	bridge.markContactsSyncedForGen(curGen - 1)
+	if bridge.Health().ContactsSynced {
+		t.Fatal("stale connection generation must not reopen contact gate")
+	}
+
+	unknownBeforeKey, err := bridge.GetContact(ctx, "85261234567@c.us")
+	if err != nil {
+		t.Fatalf("GetContact before key recovery: %v", err)
+	}
+	if unknownBeforeKey.IsMyContact != nil {
+		t.Fatalf("expected unknown IsMyContact before key recovery, got %v", *unknownBeforeKey.IsMyContact)
+	}
+
+	fetchMu.Lock()
+	fetchFail = false
+	fetchMu.Unlock()
 
 	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow})
-	if bridge.Health().ContactsSynced {
-		t.Fatal("unattributed AppStateSyncComplete must not bypass pending reconnect sync gen 3")
+	select {
+	case <-fetchDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for generation-scoped retry after key arrival")
 	}
-
-	bridge.markContactsSyncedForGen(1)
-	if bridge.Health().ContactsSynced {
-		t.Fatal("stale connection gen 1 must not reopen contact gate on gen 3")
+	if !bridge.Health().ContactsSynced {
+		t.Fatal("expected ContactsSynced=true after key-recovery retry succeeded")
 	}
-	unknownOnReconnect, err := bridge.GetContact(ctx, "85261234567@c.us")
-	if err != nil {
-		t.Fatalf("GetContact on reconnect before catch-up: %v", err)
-	}
-	if unknownOnReconnect.IsMyContact != nil {
-		t.Fatalf("expected unknown IsMyContact on reconnect before catch-up, got %v", *unknownOnReconnect.IsMyContact)
-	}
-
-	bridge.markContactsSyncedForGen(3)
 	unsavedAfterCatchup, err := bridge.GetContact(ctx, "85261234567@c.us")
 	if err != nil {
-		t.Fatalf("GetContact after reconnect catch-up: %v", err)
+		t.Fatalf("GetContact after key recovery: %v", err)
 	}
 	if unsavedAfterCatchup.IsMyContact == nil || *unsavedAfterCatchup.IsMyContact {
-		t.Fatalf("expected IsMyContact=false after reconnect catch-up, got %+v", unsavedAfterCatchup)
+		t.Fatalf("expected IsMyContact=false after key recovery, got %+v", unsavedAfterCatchup)
 	}
 
 	if err := bridge.store.SaveMessage(ctx, StoredMessage{

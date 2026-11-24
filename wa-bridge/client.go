@@ -24,19 +24,21 @@ import (
 )
 
 type WhatsmeowBridge struct {
-	db     *sql.DB
-	store  *BridgeStore
-	client *whatsmeow.Client
-	hub    *EventHub
-	log    waLog.Logger
+	db              *sql.DB
+	store           *BridgeStore
+	client          *whatsmeow.Client
+	hub             *EventHub
+	log             waLog.Logger
+	fetchContactsFn func(context.Context) error
 
-	mu             sync.RWMutex
-	connected      bool
-	loggedIn       bool
-	readyEmitted   bool
-	contactsSynced bool
-	connGen        uint64
-	pendingSyncGen uint64
+	mu                sync.RWMutex
+	connected         bool
+	loggedIn          bool
+	readyEmitted      bool
+	contactsSynced    bool
+	connGen           uint64
+	syncAttemptActive bool
+	syncNeedsRetry    bool
 }
 
 func ensurePrivateSQLiteFile(dbPath string) error {
@@ -116,6 +118,9 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 		client: cli,
 		hub:    NewEventHub(),
 		log:    logger,
+		fetchContactsFn: func(fetchCtx context.Context) error {
+			return cli.FetchAppState(fetchCtx, appstate.WAPatchCriticalUnblockLow, false, false)
+		},
 	}
 	cli.AddEventHandler(bridge.handleEvent)
 	return bridge, nil
@@ -170,9 +175,8 @@ func (b *WhatsmeowBridge) markContactsSyncedForGen(gen uint64) {
 	b.mu.Lock()
 	if b.connected && b.loggedIn && b.connGen == gen {
 		b.contactsSynced = true
-		if b.pendingSyncGen == gen {
-			b.pendingSyncGen = 0
-		}
+		b.syncAttemptActive = false
+		b.syncNeedsRetry = false
 	}
 	b.mu.Unlock()
 }
@@ -180,8 +184,14 @@ func (b *WhatsmeowBridge) markContactsSyncedForGen(gen uint64) {
 func (b *WhatsmeowBridge) syncContacts(ctx context.Context, gen uint64) {
 	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	if err := b.client.FetchAppState(syncCtx, appstate.WAPatchCriticalUnblockLow, false, false); err != nil {
+	if err := b.fetchContactsFn(syncCtx); err != nil {
 		b.log.Warnf("contact app state sync failed (staying fail-closed): %v", err)
+		b.mu.Lock()
+		if b.connGen == gen {
+			b.syncAttemptActive = false
+			b.syncNeedsRetry = true
+		}
+		b.mu.Unlock()
 		return
 	}
 	b.markContactsSyncedForGen(gen)
@@ -232,11 +242,8 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		b.connected = true
 		b.loggedIn = b.client.Store != nil && b.client.Store.ID != nil
 		b.contactsSynced = false
-		if b.loggedIn {
-			b.pendingSyncGen = gen
-		} else {
-			b.pendingSyncGen = 0
-		}
+		b.syncAttemptActive = b.loggedIn
+		b.syncNeedsRetry = false
 		shouldEmitReady := b.loggedIn && !b.readyEmitted
 		if shouldEmitReady {
 			b.readyEmitted = true
@@ -264,11 +271,17 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 
 	case *events.AppStateSyncComplete:
 		if evt.Name == appstate.WAPatchCriticalUnblockLow {
+			var retryGen uint64
 			b.mu.Lock()
-			if b.connected && b.loggedIn && b.pendingSyncGen == 0 {
-				b.contactsSynced = true
+			if b.connected && b.loggedIn && !b.contactsSynced && b.syncNeedsRetry && !b.syncAttemptActive {
+				b.syncAttemptActive = true
+				b.syncNeedsRetry = false
+				retryGen = b.connGen
 			}
 			b.mu.Unlock()
+			if retryGen != 0 {
+				go b.syncContacts(context.Background(), retryGen)
+			}
 		}
 
 	case *events.Disconnected:
@@ -277,7 +290,8 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		b.connected = false
 		b.readyEmitted = false
 		b.contactsSynced = false
-		b.pendingSyncGen = 0
+		b.syncAttemptActive = false
+		b.syncNeedsRetry = false
 		b.mu.Unlock()
 		b.hub.Publish(BridgeEvent{
 			Type: "disconnected",
@@ -291,7 +305,8 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		b.loggedIn = false
 		b.readyEmitted = false
 		b.contactsSynced = false
-		b.pendingSyncGen = 0
+		b.syncAttemptActive = false
+		b.syncNeedsRetry = false
 		b.mu.Unlock()
 		b.hub.Publish(BridgeEvent{
 			Type: "disconnected",
