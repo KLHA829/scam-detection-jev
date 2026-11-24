@@ -1073,9 +1073,9 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 		t.Fatalf("duplicate un-archive must preserve wasArchived=false, got %+v", dup)
 	}
 
-	// Delayed older snapshot event cannot overwrite a newer live archive before a subsequent manual un-archive.
+	// Recovery updates ChatSettings directly via PutArchived (no events.Archive emitted) and updates baseline state.
 	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, chatJID, true); err != nil {
-		t.Fatalf("PutArchived live archive: %v", err)
+		t.Fatalf("PutArchived live archive before recovery: %v", err)
 	}
 	bridge.handleEvent(&events.Archive{
 		JID:          chatJID,
@@ -1085,19 +1085,22 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 	})
 	_ = readNext()
 
-	bridge.handleEvent(&events.Archive{
-		JID:          chatJID,
-		Timestamp:    t1,
-		FromFullSync: true,
-		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(false)},
-	})
-	archivedAfterStale, knownAfterStale, _, err := bridge.store.GetChatArchivedState(ctx, "85261112222@c.us")
-	if err != nil || !knownAfterStale || !archivedAfterStale {
-		t.Fatalf("delayed stale snapshot must not clobber live archive=true, got (%v, %v, %v)", archivedAfterStale, knownAfterStale, err)
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, chatJID, false); err != nil {
+		t.Fatalf("PutArchived recovery un-archive: %v", err)
+	}
+	select {
+	case unexpected := <-ch:
+		t.Fatalf("recovery ChatSettings write must not emit SSE event, got %+v", unexpected)
+	case <-time.After(30 * time.Millisecond):
+	}
+	settingsAfterRecovery, err := bridge.rawChatSettingsStore().GetChatSettings(ctx, chatJID)
+	if err != nil || !settingsAfterRecovery.Found || settingsAfterRecovery.Archived {
+		t.Fatalf("expected recovery ChatSettings Archived=false, got (%+v, %v)", settingsAfterRecovery, err)
 	}
 
+	// Redundant live un-archive after recovery reads recovered prev=false so wasArchived=false.
 	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, chatJID, false); err != nil {
-		t.Fatalf("PutArchived manual un-archive after stale snapshot: %v", err)
+		t.Fatalf("PutArchived duplicate un-archive after recovery: %v", err)
 	}
 	bridge.handleEvent(&events.Archive{
 		JID:          chatJID,
@@ -1105,14 +1108,102 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 		FromFullSync: false,
 		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(false)},
 	})
-	afterStale := readNext()
-	afterStaleData, _ := afterStale.Data.(map[string]any)
-	if afterStaleData["archived"] != false || afterStaleData["wasArchived"] != true {
-		t.Fatalf("manual un-archive after stale snapshot must keep wasArchived=true, got %+v", afterStale)
+	afterRecoveryDup := readNext()
+	afterRecoveryDupData, _ := afterRecoveryDup.Data.(map[string]any)
+	if afterRecoveryDupData["archived"] != false || afterRecoveryDupData["wasArchived"] != false {
+		t.Fatalf("redundant un-archive after recovery must report wasArchived=false, got %+v", afterRecoveryDup)
 	}
 
-	// Un-archiving an unseen chat defaults wasArchived to true, and group chats set isGroup=true.
+	// Valid live restore whose event timestamp precedes a prior archive (e.g. phone clock skew) still emits wasArchived=true.
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, chatJID, true); err != nil {
+		t.Fatalf("PutArchived live archive before clock-skewed restore: %v", err)
+	}
+	bridge.handleEvent(&events.Archive{
+		JID:          chatJID,
+		Timestamp:    t3,
+		FromFullSync: false,
+		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(true)},
+	})
+	_ = readNext()
+
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, chatJID, false); err != nil {
+		t.Fatalf("PutArchived clock-skewed restore: %v", err)
+	}
+	bridge.handleEvent(&events.Archive{
+		JID:          chatJID,
+		Timestamp:    t1,
+		FromFullSync: false,
+		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(false)},
+	})
+	skewedEvt := readNext()
+	skewedData, _ := skewedEvt.Data.(map[string]any)
+	if skewedData["archived"] != false || skewedData["wasArchived"] != true {
+		t.Fatalf("clock-skewed valid restore must not be dropped and must keep wasArchived=true, got %+v", skewedEvt)
+	}
+
+	// Out-of-order concurrent live dispatch preserves each transition's recorded prior state.
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, chatJID, true); err != nil {
+		t.Fatalf("PutArchived out-of-order archive: %v", err)
+	}
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, chatJID, false); err != nil {
+		t.Fatalf("PutArchived out-of-order restore: %v", err)
+	}
+	bridge.handleEvent(&events.Archive{
+		JID:          chatJID,
+		Timestamp:    t4,
+		FromFullSync: false,
+		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(false)},
+	})
+	oooRestore := readNext()
+	oooRestoreData, _ := oooRestore.Data.(map[string]any)
+	if oooRestoreData["archived"] != false || oooRestoreData["wasArchived"] != true {
+		t.Fatalf("out-of-order restore must keep wasArchived=true, got %+v", oooRestore)
+	}
+	bridge.handleEvent(&events.Archive{
+		JID:          chatJID,
+		Timestamp:    t3,
+		FromFullSync: false,
+		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(true)},
+	})
+	oooArchive := readNext()
+	oooArchiveData, _ := oooArchive.Data.(map[string]any)
+	if oooArchiveData["archived"] != true || oooArchiveData["wasArchived"] != false {
+		t.Fatalf("out-of-order archive must keep wasArchived=false, got %+v", oooArchive)
+	}
+
+	// First restore of an unseen chat after PutArchived(false) still defaults wasArchived to true.
+	unseenJID := types.NewJID("85263334444", types.DefaultUserServer)
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, unseenJID, false); err != nil {
+		t.Fatalf("PutArchived unseen chat restore: %v", err)
+	}
+	bridge.handleEvent(&events.Archive{
+		JID:          unseenJID,
+		Timestamp:    t4,
+		FromFullSync: false,
+		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(false)},
+	})
+	unseenEvt := readNext()
+	unseenData, _ := unseenEvt.Data.(map[string]any)
+	if unseenData["chatId"] != "85263334444@c.us" || unseenData["archived"] != false || unseenData["wasArchived"] != true {
+		t.Fatalf("first restore of unseen chat must emit wasArchived=true, got %+v", unseenEvt)
+	}
+
+	// Defensive guard: FromFullSync=true events are ignored, and group chats set isGroup=true.
+	bridge.handleEvent(&events.Archive{
+		JID:          chatJID,
+		Timestamp:    t1,
+		FromFullSync: true,
+		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(true)},
+	})
+	select {
+	case unexpected := <-ch:
+		t.Fatalf("FromFullSync=true event must not emit SSE event, got %+v", unexpected)
+	case <-time.After(30 * time.Millisecond):
+	}
 	groupJID := types.NewJID("1203630000", types.GroupServer)
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, groupJID, false); err != nil {
+		t.Fatalf("PutArchived unseen group restore: %v", err)
+	}
 	bridge.handleEvent(&events.Archive{
 		JID:          groupJID,
 		Timestamp:    t4,
