@@ -144,6 +144,59 @@ func TestBridgeStorePersistenceAndPollDecoding(t *testing.T) {
 	}
 }
 
+func TestBridgeStoreMigratesLegacyMessagesTable(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+
+	db, err := openBridgeSQLite(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	_, err = db.ExecContext(ctx, `
+CREATE TABLE bridge_messages (
+	msg_id TEXT PRIMARY KEY,
+	chat_jid TEXT NOT NULL,
+	sender_jid TEXT NOT NULL,
+	from_me INTEGER NOT NULL,
+	body TEXT NOT NULL,
+	ts_unix INTEGER NOT NULL
+);
+INSERT INTO bridge_messages(msg_id, chat_jid, sender_jid, from_me, body, ts_unix)
+VALUES ('legacy-1', '85261112222@c.us', '85261112222@c.us', 0, 'old caption or text', 1700000000);
+`)
+	if err != nil {
+		t.Fatalf("seed legacy table: %v", err)
+	}
+
+	store, err := NewBridgeStore(ctx, db)
+	if err != nil {
+		t.Fatalf("NewBridgeStore migration: %v", err)
+	}
+
+	legacy, found, err := store.GetMessage(ctx, "legacy-1")
+	if err != nil || !found || legacy.MsgType != "unknown" || legacy.Body != "old caption or text" {
+		t.Fatalf("legacy row after migration = (%+v, %v, %v)", legacy, found, err)
+	}
+
+	if err := store.SaveMessage(ctx, StoredMessage{
+		ID:        "new-1",
+		ChatJID:   "85261112222@c.us",
+		SenderJID: "85261112222@c.us",
+		FromMe:    false,
+		MsgType:   "chat",
+		Body:      "fresh text",
+		Timestamp: time.Unix(1700000010, 0),
+	}); err != nil {
+		t.Fatalf("SaveMessage after migration: %v", err)
+	}
+	newest, found, err := store.GetLastChatMessage(ctx, "85261112222@c.us")
+	if err != nil || !found || newest.ID != "new-1" || newest.MsgType != "chat" {
+		t.Fatalf("GetLastChatMessage after migration = (%+v, %v, %v)", newest, found, err)
+	}
+}
+
 func TestContactSyncFailClosedGate(t *testing.T) {
 	jid := types.NewJID("85261234567", types.DefaultUserServer)
 
@@ -307,14 +360,14 @@ doneDisc:
 	hub.Publish(BridgeEvent{Type: "ready", Data: map[string]any{"selfWid": "85299990000@c.us"}})
 	hub.Publish(BridgeEvent{Type: "message", Data: map[string]any{"id": "early-msg"}})
 
-	var lastSeq uint64
+	var lastCursor string
 	chReplay, cancelReplay := hub.Subscribe(16)
 	var seenTypes []string
 	for {
 		select {
 		case evt := <-chReplay:
 			seenTypes = append(seenTypes, evt.Type)
-			lastSeq = evt.Seq
+			lastCursor = evt.ID
 		default:
 			goto checkReplay
 		}
@@ -326,15 +379,61 @@ checkReplay:
 	}
 
 	hub.Publish(BridgeEvent{Type: "message", Data: map[string]any{"id": "newer-msg"}})
-	chSince, cancelSince := hub.SubscribeSince(8, lastSeq)
-	defer cancelSince()
+	chSince, cancelSince := hub.SubscribeWithCursor(8, lastCursor)
 	select {
 	case evt := <-chSince:
-		if evt.Type != "message" || evt.Seq <= lastSeq {
-			t.Fatalf("expected only newer event after lastSeq=%d, got %+v", lastSeq, evt)
+		if evt.Type != "message" || evt.ID == lastCursor {
+			t.Fatalf("expected only newer event after cursor=%q, got %+v", lastCursor, evt)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("expected newer event from SubscribeSince")
+		t.Fatal("expected newer event from SubscribeWithCursor")
+	}
+	cancelSince()
+
+	restartedHub := NewEventHub()
+	restartedHub.Publish(BridgeEvent{Type: "ready", Data: map[string]any{"selfWid": "85299990000@c.us"}})
+	restartedHub.Publish(BridgeEvent{Type: "message", Data: map[string]any{"id": "post-restart"}})
+	chAfterRestart, cancelAfterRestart := restartedHub.SubscribeWithCursor(16, lastCursor)
+	var afterRestartTypes []string
+	for {
+		select {
+		case evt := <-chAfterRestart:
+			afterRestartTypes = append(afterRestartTypes, evt.Type)
+		default:
+			goto checkRestart
+		}
+	}
+checkRestart:
+	cancelAfterRestart()
+	if strings.Join(afterRestartTypes, ",") != "ready,message" {
+		t.Fatalf("stale cursor from prior hub epoch must replay startup ready+message, got %v", afterRestartTypes)
+	}
+
+	evictHub := NewEventHub()
+	evictHub.Publish(BridgeEvent{Type: "ready", Data: map[string]any{"selfWid": "85299990000@c.us"}})
+	for i := 0; i < maxReplayEvents+5; i++ {
+		evictHub.Publish(BridgeEvent{Type: "message", Data: map[string]any{"n": i}})
+	}
+	chEvicted, cancelEvicted := evictHub.Subscribe(maxReplayEvents + 16)
+	defer cancelEvicted()
+	var evictedEvents []BridgeEvent
+	for {
+		select {
+		case evt := <-chEvicted:
+			evictedEvents = append(evictedEvents, evt)
+		default:
+			goto checkEvicted
+		}
+	}
+checkEvicted:
+	if len(evictedEvents) != maxReplayEvents+1 {
+		t.Fatalf("expected prepended ready + %d retained messages, got %d", maxReplayEvents, len(evictedEvents))
+	}
+	if evictedEvents[0].Type != "ready" {
+		t.Fatalf("expected first replayed event to be retained ready, got %+v", evictedEvents[0])
+	}
+	if evictedEvents[1].Type != "message" || evictedEvents[1].Seq <= evictedEvents[0].Seq {
+		t.Fatalf("expected messages in sequence order after ready, got %+v", evictedEvents[1])
 	}
 }
 
@@ -670,7 +769,13 @@ func TestNewWhatsmeowBridgeSQLiteInitSyncReconnectAndLID(t *testing.T) {
 	bridge.connected = true
 	bridge.loggedIn = true
 	bridge.connGen = 3
+	bridge.pendingSyncGen = 3
 	bridge.mu.Unlock()
+
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow})
+	if bridge.Health().ContactsSynced {
+		t.Fatal("unattributed AppStateSyncComplete must not bypass pending reconnect sync gen 3")
+	}
 
 	bridge.markContactsSyncedForGen(1)
 	if bridge.Health().ContactsSynced {

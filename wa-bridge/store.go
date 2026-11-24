@@ -58,7 +58,45 @@ CREATE INDEX IF NOT EXISTS idx_bridge_messages_ts ON bridge_messages(ts_unix);
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		return nil, fmt.Errorf("init bridge schema: %w", err)
 	}
+	if err := ensureBridgeMessagesColumns(ctx, db); err != nil {
+		return nil, err
+	}
 	return &BridgeStore{db: db}, nil
+}
+
+func ensureBridgeMessagesColumns(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(bridge_messages)`)
+	if err != nil {
+		return fmt.Errorf("inspect bridge_messages schema: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	hasMsgType := false
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			colType    string
+			notNull    int
+			defaultVal sql.NullString
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultVal, &pk); err != nil {
+			return fmt.Errorf("scan bridge_messages column: %w", err)
+		}
+		if name == "msg_type" {
+			hasMsgType = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate bridge_messages columns: %w", err)
+	}
+	if !hasMsgType {
+		if _, err := db.ExecContext(ctx, `ALTER TABLE bridge_messages ADD COLUMN msg_type TEXT NOT NULL DEFAULT 'unknown'`); err != nil {
+			return fmt.Errorf("migrate bridge_messages.msg_type: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *BridgeStore) SavePollOptions(ctx context.Context, pollID, chatJID string, options []string) error {

@@ -1,12 +1,19 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 )
 
 const maxReplayEvents = 256
 
 type BridgeEvent struct {
+	ID   string `json:"id,omitempty"`
 	Seq  uint64 `json:"seq,omitempty"`
 	Type string `json:"type"`
 	Data any    `json:"data,omitempty"`
@@ -14,6 +21,7 @@ type BridgeEvent struct {
 
 type EventHub struct {
 	mu      sync.Mutex
+	epoch   string
 	subs    map[chan BridgeEvent]struct{}
 	nextSeq uint64
 	history []BridgeEvent
@@ -21,10 +29,39 @@ type EventHub struct {
 	ready   *BridgeEvent
 }
 
+func newHubEpoch() string {
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err == nil {
+		return hex.EncodeToString(buf[:])
+	}
+	return strconv.FormatInt(time.Now().UnixNano(), 16)
+}
+
 func NewEventHub() *EventHub {
 	return &EventHub{
-		subs: make(map[chan BridgeEvent]struct{}),
+		epoch: newHubEpoch(),
+		subs:  make(map[chan BridgeEvent]struct{}),
 	}
+}
+
+func (h *EventHub) Epoch() string {
+	return h.epoch
+}
+
+func parseEventCursor(cursor, expectedEpoch string) (uint64, bool) {
+	c := strings.TrimSpace(cursor)
+	if c == "" {
+		return 0, false
+	}
+	parts := strings.SplitN(c, ":", 2)
+	if len(parts) != 2 || parts[0] != expectedEpoch {
+		return 0, false
+	}
+	seq, err := strconv.ParseUint(parts[1], 10, 64)
+	if err != nil || seq == 0 {
+		return 0, false
+	}
+	return seq, true
 }
 
 func (h *EventHub) Publish(evt BridgeEvent) {
@@ -33,6 +70,7 @@ func (h *EventHub) Publish(evt BridgeEvent) {
 
 	h.nextSeq++
 	evt.Seq = h.nextSeq
+	evt.ID = fmt.Sprintf("%s:%d", h.epoch, evt.Seq)
 
 	switch evt.Type {
 	case "qr":
@@ -69,10 +107,10 @@ func (h *EventHub) Publish(evt BridgeEvent) {
 }
 
 func (h *EventHub) Subscribe(buffer int) (<-chan BridgeEvent, func()) {
-	return h.SubscribeSince(buffer, 0)
+	return h.SubscribeWithCursor(buffer, "")
 }
 
-func (h *EventHub) SubscribeSince(buffer int, lastSeq uint64) (<-chan BridgeEvent, func()) {
+func (h *EventHub) SubscribeWithCursor(buffer int, cursor string) (<-chan BridgeEvent, func()) {
 	if buffer <= 0 {
 		buffer = 64
 	}
@@ -80,18 +118,26 @@ func (h *EventHub) SubscribeSince(buffer int, lastSeq uint64) (<-chan BridgeEven
 
 	h.mu.Lock()
 	var replay []BridgeEvent
-	if lastSeq > 0 {
+	if lastSeq, ok := parseEventCursor(cursor, h.epoch); ok {
 		for _, evt := range h.history {
 			if evt.Seq > lastSeq {
 				replay = append(replay, evt)
 			}
 		}
 	} else {
-		if len(h.history) > 0 {
-			replay = append(replay, h.history...)
-		} else if h.ready != nil {
-			replay = append(replay, *h.ready)
+		readyInHistory := false
+		if h.ready != nil {
+			for _, evt := range h.history {
+				if evt.Seq == h.ready.Seq {
+					readyInHistory = true
+					break
+				}
+			}
+			if !readyInHistory {
+				replay = append(replay, *h.ready)
+			}
 		}
+		replay = append(replay, h.history...)
 	}
 	if h.lastQR != "" {
 		replay = append(replay, BridgeEvent{

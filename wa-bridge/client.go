@@ -36,6 +36,7 @@ type WhatsmeowBridge struct {
 	readyEmitted   bool
 	contactsSynced bool
 	connGen        uint64
+	pendingSyncGen uint64
 }
 
 func ensurePrivateSQLiteFile(dbPath string) error {
@@ -169,6 +170,9 @@ func (b *WhatsmeowBridge) markContactsSyncedForGen(gen uint64) {
 	b.mu.Lock()
 	if b.connected && b.loggedIn && b.connGen == gen {
 		b.contactsSynced = true
+		if b.pendingSyncGen == gen {
+			b.pendingSyncGen = 0
+		}
 	}
 	b.mu.Unlock()
 }
@@ -228,6 +232,11 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		b.connected = true
 		b.loggedIn = b.client.Store != nil && b.client.Store.ID != nil
 		b.contactsSynced = false
+		if b.loggedIn {
+			b.pendingSyncGen = gen
+		} else {
+			b.pendingSyncGen = 0
+		}
 		shouldEmitReady := b.loggedIn && !b.readyEmitted
 		if shouldEmitReady {
 			b.readyEmitted = true
@@ -256,7 +265,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	case *events.AppStateSyncComplete:
 		if evt.Name == appstate.WAPatchCriticalUnblockLow {
 			b.mu.Lock()
-			if b.connected && b.loggedIn {
+			if b.connected && b.loggedIn && b.pendingSyncGen == 0 {
 				b.contactsSynced = true
 			}
 			b.mu.Unlock()
@@ -268,6 +277,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		b.connected = false
 		b.readyEmitted = false
 		b.contactsSynced = false
+		b.pendingSyncGen = 0
 		b.mu.Unlock()
 		b.hub.Publish(BridgeEvent{
 			Type: "disconnected",
@@ -281,6 +291,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		b.loggedIn = false
 		b.readyEmitted = false
 		b.contactsSynced = false
+		b.pendingSyncGen = 0
 		b.mu.Unlock()
 		b.hub.Publish(BridgeEvent{
 			Type: "disconnected",

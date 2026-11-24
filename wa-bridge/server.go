@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -96,12 +95,7 @@ func NewBridgeHandler(backend BridgeBackend, token string) http.Handler {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "streaming unsupported"})
 			return
 		}
-		var lastSeq uint64
-		if rawLastID := strings.TrimSpace(r.Header.Get("Last-Event-ID")); rawLastID != "" {
-			if parsed, err := strconv.ParseUint(rawLastID, 10, 64); err == nil {
-				lastSeq = parsed
-			}
-		}
+		lastEventID := strings.TrimSpace(r.Header.Get("Last-Event-ID"))
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -109,7 +103,7 @@ func NewBridgeHandler(backend BridgeBackend, token string) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		flusher.Flush()
 
-		ch, cancel := backend.Events().SubscribeSince(maxReplayEvents+64, lastSeq)
+		ch, cancel := backend.Events().SubscribeWithCursor(maxReplayEvents+64, lastEventID)
 		defer cancel()
 
 		keepalive := time.NewTicker(20 * time.Second)
@@ -133,8 +127,8 @@ func NewBridgeHandler(backend BridgeBackend, token string) http.Handler {
 					continue
 				}
 				var writeErr error
-				if evt.Seq > 0 {
-					_, writeErr = fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", evt.Seq, evt.Type, payload)
+				if evt.ID != "" {
+					_, writeErr = fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", evt.ID, evt.Type, payload)
 				} else {
 					_, writeErr = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", evt.Type, payload)
 				}
