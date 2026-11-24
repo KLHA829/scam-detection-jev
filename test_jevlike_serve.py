@@ -131,14 +131,15 @@ class LongMessageMaskTests(unittest.TestCase):
         self.runtime = tiny_mask_runtime(torch)
 
     def test_message_longer_than_context_is_masked_to_the_end(self):
-        tail = "電話91234567"
+        phone = "電話91234567"
         filler = "你" * 200
         with patch.multiple(serve, **self.runtime):
-            expected = serve.model_mask_spans(tail)
-            spans = serve.model_mask_spans(filler + tail)
+            expected = serve.model_mask_spans(phone)
+            spans = serve.model_mask_spans(phone + filler + phone)
         self.assertTrue(expected)
-        shifted = [{**span, "start": span["start"] + 200, "end": span["end"] + 200} for span in expected]
-        self.assertEqual(spans, shifted)
+        offset = len(phone) + len(filler)
+        shifted = [{**span, "start": span["start"] + offset, "end": span["end"] + offset} for span in expected]
+        self.assertEqual(spans, expected + shifted)
         self.assertEqual(self.runtime["_MODEL"].encoder.calls, 3)
 
     def test_trailing_characters_without_tokens_are_not_truncation(self):
