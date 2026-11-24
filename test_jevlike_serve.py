@@ -1091,25 +1091,27 @@ class RegressionFixTests(unittest.TestCase):
                 d_pos = text.index(d_needle)
                 self.assertEqual(all(out[d_pos : d_pos + len(d_needle)]), d_want, text)
 
-    def test_flags_from_window_offsets_prefers_interior_margin(self):
+    def test_flags_from_window_offsets_unions_overlapping_windows(self):
         try:
             import pii_mask_head as mh
         except ImportError as exc:
             self.skipTest(f"pii_mask_head unavailable: {exc}")
 
         text = "abcd"
-        # Window 0 covers whole token [0..4] where 'd' sits on right boundary (margin 0) and fails high threshold,
-        # while Window 1 puts 'd' cleanly in the interior as False.
+        # Window 0 flags 'd' (0.7 >= 0.5) while Window 1 scores 'd' below threshold (0.1 < 0.5);
+        # unioning overlapping windows preserves the positive redaction.
         flags = mh.flags_from_window_offsets(
             text,
             window_offsets=[[(0, 1), (1, 2), (2, 3), (3, 4)], [(2, 3), (3, 4), (0, 0), (0, 0)]],
             window_probs=[[0.9, 0.9, 0.1, 0.7], [0.1, 0.1, 0.0, 0.0]],
             threshold=0.5,
         )
-        self.assertEqual(flags, [True, True, False, False])
+        self.assertEqual(flags, [True, True, False, True])
 
     def test_mask_coverage_truncated_catches_interior_gaps_and_allows_trailing_space(self):
-        tok = lambda s, **_kw: {"input_ids": SimpleNamespace(numel=lambda: len(s.strip()))}
+        def tok(s, **_kw):
+            return {"input_ids": SimpleNamespace(numel=lambda: len(s.strip()))}
+
         self.assertTrue(serve.mask_coverage_truncated("a" * 30, [(0, 5), (25, 30)], tokenizer=tok))
         self.assertFalse(serve.mask_coverage_truncated("hello   ", [(0, 5)], tokenizer=tok))
 

@@ -123,40 +123,10 @@ def flags_from_window_offsets(
     window_probs,
     threshold: float,
 ) -> list[bool]:
-    """Combine overlapping window token probabilities preferring interior tokens over cut edges."""
-    n_windows = len(window_offsets)
-    if n_windows <= 1:
-        flat_offsets = [span for win in window_offsets for span in win]
-        flat_probs = [prob for win in window_probs for prob in win]
-        return flags_from_offsets(text, flat_offsets, flat_probs, threshold)
-
-    length = len(text)
-    best_margin = [-1] * length
-    best_prob = [0.0] * length
-    for w_idx, (offsets, probs) in enumerate(zip(window_offsets, window_probs)):
-        content = [
-            i for i, span in enumerate(offsets)
-            if int(span[1]) > int(span[0])
-        ]
-        if not content:
-            continue
-        first_tok, last_tok = content[0], content[-1]
-        for t_idx in content:
-            start, end = int(offsets[t_idx][0]), int(offsets[t_idx][1])
-            prob = float(probs[t_idx])
-            left_margin = 10**6 if w_idx == 0 else (t_idx - first_tok)
-            right_margin = 10**6 if w_idx == n_windows - 1 else (last_tok - t_idx)
-            margin = min(left_margin, right_margin)
-            for pos in range(max(0, start), min(length, end)):
-                if margin > best_margin[pos]:
-                    best_margin[pos] = margin
-                    best_prob[pos] = prob
-                elif margin == best_margin[pos] and prob > best_prob[pos]:
-                    best_prob[pos] = prob
-
-    flags = [best_margin[i] >= 0 and best_prob[i] >= threshold for i in range(length)]
-    clear_lure_chars(text, flags)
-    return flags
+    """Combine overlapping window token probabilities by union (any window flagging masks the character)."""
+    flat_offsets = [span for win in window_offsets for span in win]
+    flat_probs = [prob for win in window_probs for prob in win]
+    return flags_from_offsets(text, flat_offsets, flat_probs, threshold)
 
 
 def mask_option_logits(head, context_hidden, option_hidden, mask_index: int = 0):
