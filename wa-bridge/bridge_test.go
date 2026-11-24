@@ -984,6 +984,10 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 	}
 	defer func() { _ = bridge.Close() }()
 
+	if !bridge.client.EmitAppStateEventsOnFullSync {
+		t.Fatal("expected EmitAppStateEventsOnFullSync=true so full sync seeds bridge archive state")
+	}
+
 	ch, cancel := bridge.Events().Subscribe(16)
 	defer cancel()
 

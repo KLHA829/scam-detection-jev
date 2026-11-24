@@ -123,6 +123,7 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 	chmodSQLiteSidecars(dbPath)
 
 	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
+	cli.EmitAppStateEventsOnFullSync = true
 	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
 	bridge := &WhatsmeowBridge{
 		db:             db,
