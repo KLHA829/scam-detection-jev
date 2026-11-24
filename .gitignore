@@ -11,6 +11,7 @@ bot-contact-names.json
 wa-bridge.db
 wa-bridge.db-shm
 wa-bridge.db-wal
+wa-bridge-cursor.json
 wa-bridge/wa-bridge
 wa-bridge/wa-bridge.exe
 .DS_Store

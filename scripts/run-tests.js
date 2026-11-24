@@ -26,6 +26,9 @@ const UNSET_ENV = [
   'WA_BRIDGE_TOKEN',
   'WA_BRIDGE_AUTO_START',
   'WA_BRIDGE_BIN',
+  'WA_BRIDGE_TIMEOUT_MS',
+  'WA_BRIDGE_DB_PATH',
+  'WA_BRIDGE_CURSOR_PATH',
 ];
 
 const env = { ...process.env, LLM_REVIEW_COOLDOWN_MS: '0' };
