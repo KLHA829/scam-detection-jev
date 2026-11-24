@@ -68,7 +68,11 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - run: npm ci
+      - run: npm test
       - name: verify-scam-bot smoke drives (Git Bash + Win32 doctor spawn)
         shell: bash
         run: bash scripts/ci-verify-smoke.sh

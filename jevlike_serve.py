@@ -292,7 +292,7 @@ _MASK_RULES: tuple[tuple[str, re.Pattern[str], int], ...] = (
         "account",
         re.compile(
             rf"(?:{_W_BEFORE}payme{_W_AFTER}|轉數快|转数快|{_W_BEFORE}fps{_W_AFTER})"
-            r"(?:\s*(?:id|號碼|号码|戶口|户口|帳號|账号))?\s*[:：#]?\s*([A-Z0-9._+-]{4,32})",
+            r"(?:\s*(?:id|號碼|号码|戶口|户口|帳號|账号))?\s*[:：#]?\s*(?!https?://)([A-Z0-9._+-]{4,32}|[0-9]{4}\s+[0-9]{4})",
             re.I,
         ),
         1,
@@ -307,10 +307,12 @@ _OTP_BARE = re.compile(r"(?<![0-9])[0-9]{6,8}(?![0-9])")
 _URL_RE = re.compile(r"https?://[^\s<>\"'）)】]+", re.I)
 _WWW_RE = re.compile(_W_BEFORE + r"www\.[^\s<>\"'）)】]+", re.I)
 _SHORT_RE = re.compile(
-    _W_BEFORE + r"((?:wa\.me|t\.me|bit\.ly|tinyurl\.com)/)(\S+)",
+    _W_BEFORE + r"((?:wa\.me|t\.me|bit\.ly|tinyurl\.com)/)([A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]+)",
     re.I,
 )
 _MASK_MESSAGE_CAP = 10
+_MASK_WINDOW_BATCH = 16
+_MAX_MASK_WINDOWS = 128
 
 
 def _spans_from_regex(
@@ -338,13 +340,23 @@ def _otp_spans(text: str) -> list[dict]:
     )
 
 
-def _url_host_needle(parsed) -> str:
-    host = (parsed.hostname or "").lower()
-    if not host:
-        return ""
-    if parsed.port:
-        return f"{host}:{parsed.port}"
-    return host
+def _url_authority_bounds(raw: str) -> tuple[int, int, int, int] | None:
+    scheme_at = raw.find("://")
+    user_at = scheme_at + 3 if scheme_at >= 0 else 0
+    path_at = len(raw)
+    for delim in ("/", "?", "#"):
+        idx = raw.find(delim, user_at)
+        if idx >= 0 and idx < path_at:
+            path_at = idx
+    authority = raw[user_at:path_at]
+    if not authority:
+        return None
+    at_rel = authority.rfind("@")
+    at = user_at + at_rel if at_rel >= 0 else -1
+    host_start = at + 1 if at >= 0 else user_at
+    if host_start >= path_at:
+        return None
+    return user_at, at, host_start, path_at
 
 
 def _url_spans(text: str) -> list[dict]:
@@ -355,15 +367,12 @@ def _url_spans(text: str) -> list[dict]:
         for match in pattern.finditer(text):
             raw = match.group(0)
             parsed = urlparse(raw if "://" in raw else f"https://{raw}")
-            needle = _url_host_needle(parsed)
-            host_at = raw.lower().find(needle) if needle else -1
-            if host_at < 0:
+            bounds = _url_authority_bounds(raw) if parsed.hostname else None
+            if bounds is None:
                 spans.append({"start": match.start(), "end": match.end(), "label": "url"})
                 continue
-            scheme_at = raw.find("://")
-            user_at = scheme_at + 3 if scheme_at >= 0 else 0
-            at = raw.rfind("@", 0, host_at + 1)
-            if user_at < at < host_at:
+            user_at, at, _host_start, path_at = bounds
+            if at > user_at:
                 spans.append(
                     {
                         "start": match.start() + user_at,
@@ -371,11 +380,10 @@ def _url_spans(text: str) -> list[dict]:
                         "label": "url",
                     }
                 )
-            secret_at = host_at + len(needle)
-            if secret_at < len(raw):
+            if path_at < len(raw):
                 spans.append(
                     {
-                        "start": match.start() + secret_at,
+                        "start": match.start() + path_at,
                         "end": match.end(),
                         "label": "url",
                         "replacement": " XXX",
@@ -488,17 +496,25 @@ def maybe_load_mask_head() -> None:
     )
 
 
+def _sanitize_surrogates(text: str) -> str:
+    if not text:
+        return ""
+    # Replace lone UTF-16 surrogates 1:1 with U+FFFD so code-unit length stays identical.
+    return "".join("\ufffd" if 0xD800 <= ord(ch) <= 0xDFFF else ch for ch in text)
+
+
 def _utf16_units(text: str) -> int:
-    return len(text.encode("utf-16-le")) // 2
+    return len(_sanitize_surrogates(text).encode("utf-16-le")) // 2
 
 
 def _to_utf16_spans(text: str, spans: list[dict]) -> list[dict]:
     """Python indexes are code points. The bot slices UTF-16 code units."""
     if not spans:
         return []
+    safe_text = _sanitize_surrogates(text)
     prefixes = [0]
     total = 0
-    for ch in text:
+    for ch in safe_text:
         total += _utf16_units(ch)
         prefixes.append(total)
     converted = []
@@ -521,16 +537,24 @@ class MaskTruncated(Exception):
     """Tokenizer windows left characters uncovered. A 200 would leave them unmarked."""
 
 
-def mask_coverage_truncated(text: str, offsets, tokenizer=None) -> bool:
-    """True when tokenizer offsets stop before the end of a non-empty string.
+def _gap_has_tokens(slice_text: str, tokenizer) -> bool:
+    if not slice_text:
+        return False
+    if tokenizer is None:
+        return True
+    return tokenizer(slice_text, add_special_tokens=False, return_tensors="pt")["input_ids"].numel() > 0
 
-    With a tokenizer, an uncovered tail that yields no tokens (trailing spaces, an emoji
+
+def mask_coverage_truncated(text: str, offsets, tokenizer=None) -> bool:
+    """True when tokenizer offsets leave non-tokenless interior gaps or tail uncovered.
+
+    With a tokenizer, an uncovered slice that yields no tokens (spaces, an emoji
     variation selector) is not truncation: the model never sees those characters.
     """
     body = "" if text is None else str(text)
     if not body:
         return False
-    covered = 0
+    intervals = []
     for span in offsets or []:
         try:
             start = int(span[0])
@@ -538,13 +562,18 @@ def mask_coverage_truncated(text: str, offsets, tokenizer=None) -> bool:
         except (TypeError, ValueError, IndexError):
             continue
         if end > start:
-            covered = max(covered, end)
-    tail = body[covered:]
-    if not tail:
-        return False
-    if tokenizer is None:
+            intervals.append((max(0, start), min(len(body), end)))
+    if not intervals:
+        return _gap_has_tokens(body, tokenizer)
+    intervals.sort()
+    covered = 0
+    for start, end in intervals:
+        if start > covered and _gap_has_tokens(body[covered:start], tokenizer):
+            return True
+        covered = max(covered, end)
+    if covered < len(body) and _gap_has_tokens(body[covered:], tokenizer):
         return True
-    return tokenizer(tail, add_special_tokens=False, return_tensors="pt")["input_ids"].numel() > 0
+    return False
 
 
 def model_mask_spans(text: str) -> list[dict]:
@@ -557,43 +586,40 @@ def model_mask_spans(text: str) -> list[dict]:
     from pii_mask_head import (
         MASK_OPTION,
         KEEP_OPTION,
-        flags_from_offsets,
+        flags_from_window_offsets,
         mask_option_logits,
         pool_token_hidden,
         spans_from_flags,
     )
 
+    safe_text = _sanitize_surrogates("" if text is None else str(text))
     tokenizer = _COLLATOR.tokenizer
     limit = 96
     if _MASK_CFG and _MASK_CFG.get("context_tokens"):
-        limit = int(_MASK_CFG["context_tokens"])
+        limit = max(8, int(_MASK_CFG["context_tokens"]))
+    stride = max(1, limit // 2)
     mask_option = (_MASK_CFG or {}).get("mask_option") or MASK_OPTION
     keep_option = (_MASK_CFG or {}).get("keep_option") or KEEP_OPTION
     # Long messages are split into overlapping windows of the trained context length,
     # so every character is scored instead of the tail being dropped.
     encoded = tokenizer(
-        text,
+        safe_text,
         truncation=True,
         max_length=limit,
-        stride=limit // 4,
+        stride=stride,
         return_overflowing_tokens=True,
         padding=True,
         add_special_tokens=True,
         return_offsets_mapping=True,
         return_tensors="pt",
     )
-    encoded = {
-        key: value.to(_DEVICE)
-        for key, value in encoded.items()
-        if key in ("input_ids", "attention_mask", "offset_mapping")
-    }
+    n_windows = int(encoded["input_ids"].shape[0])
+    if n_windows > _MAX_MASK_WINDOWS:
+        raise ValueError("message too long")
     option_key = (_MODEL.encoder, tokenizer, _DEVICE, mask_option, keep_option)
+    window_probs: list[list[float]] = []
     with _SCORE_LOCK:
         with torch.no_grad():
-            context_hidden = _MODEL.encoder(
-                input_ids=encoded["input_ids"],
-                attention_mask=encoded["attention_mask"],
-            ).last_hidden_state
             if _MASK_OPTION_CACHE is None or _MASK_OPTION_CACHE[0] != option_key:
                 options = tokenizer(
                     [mask_option, keep_option],
@@ -611,15 +637,22 @@ def model_mask_spans(text: str) -> list[dict]:
                 pooled = pool_token_hidden(option_hidden, options["attention_mask"].bool())
                 _MASK_OPTION_CACHE = (option_key, pooled)
             pooled = _MASK_OPTION_CACHE[1]
-            logits = mask_option_logits(_MASK_HEAD, context_hidden, pooled)
-            probs = torch.sigmoid(logits).detach().cpu().tolist()
-    # A character is masked when any window that sees it flags it.
-    offsets = [span for window in encoded["offset_mapping"].detach().cpu().tolist() for span in window]
-    probs = [prob for window in probs for prob in window]
-    if mask_coverage_truncated(text, offsets, tokenizer):
+            for start in range(0, n_windows, _MASK_WINDOW_BATCH):
+                stop = min(n_windows, start + _MASK_WINDOW_BATCH)
+                batch_ids = encoded["input_ids"][start:stop].to(_DEVICE)
+                batch_mask = encoded["attention_mask"][start:stop].to(_DEVICE)
+                context_hidden = _MODEL.encoder(
+                    input_ids=batch_ids,
+                    attention_mask=batch_mask,
+                ).last_hidden_state
+                logits = mask_option_logits(_MASK_HEAD, context_hidden, pooled)
+                window_probs.extend(torch.sigmoid(logits).detach().cpu().tolist())
+    window_offsets = encoded["offset_mapping"].detach().cpu().tolist()
+    flat_offsets = [span for window in window_offsets for span in window]
+    if mask_coverage_truncated(safe_text, flat_offsets, tokenizer):
         raise MaskTruncated("mask truncated")
-    flags = flags_from_offsets(text, offsets, probs, _MASK_THRESHOLD)
-    return _to_utf16_spans(text, spans_from_flags(text, flags))
+    flags = flags_from_window_offsets(safe_text, window_offsets, window_probs, _MASK_THRESHOLD)
+    return _to_utf16_spans(safe_text, spans_from_flags(safe_text, flags))
 
 
 def mask_payload(messages: list) -> dict:
@@ -648,6 +681,8 @@ def authorized(handler: BaseHTTPRequestHandler) -> bool:
 
 
 class Handler(BaseHTTPRequestHandler):
+    timeout = 30
+
     def log_message(self, fmt: str, *args) -> None:
         sys.stderr.write("[INFO] " + (fmt % args) + "\n")
 
@@ -687,6 +722,9 @@ class Handler(BaseHTTPRequestHandler):
         if path not in ("/predict", "/v1/score", "/score", "/v1/mask"):
             self._send(404, {"error": "not found"})
             return
+        if "chunked" in (self.headers.get("transfer-encoding") or "").lower():
+            self._send(411, {"error": "length_required"})
+            return
         try:
             length = int(self.headers.get("content-length") or 0)
         except ValueError:
@@ -701,7 +739,7 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length) if length else b"{}"
         try:
             payload = json.loads(raw.decode("utf-8") or "{}")
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             self._send(422, {"error": "invalid json"})
             return
         if not isinstance(payload, dict):

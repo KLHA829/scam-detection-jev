@@ -10,7 +10,21 @@
 
 const { spawnSync } = require('child_process');
 
+const UNSET_ENV = [
+  'ARCHIVE_THRESHOLD',
+  'SAFE_THRESHOLD',
+  'BLOCK_THRESHOLD',
+  'BLOCK_ENABLED',
+  'HEURISTIC_ENABLED',
+  'OPERATOR_MODE',
+  'CONTEXT_LLM_ENABLED',
+  'LLM_REVIEW_ENABLED',
+  'SCORER',
+  'MALICIOUS_HOSTS_PATH',
+];
+
 const env = { ...process.env, LLM_REVIEW_COOLDOWN_MS: '0' };
+for (const key of UNSET_ENV) delete env[key];
 
 const jsRun = spawnSync(
   process.execPath,
