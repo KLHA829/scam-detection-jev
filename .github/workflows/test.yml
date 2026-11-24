@@ -130,7 +130,6 @@ jobs:
   e2e-whatsapp-boot:
     runs-on: ubuntu-latest
     # WhatsApp Web may be unreachable from the runner; this boot smoke is best-effort.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -139,4 +138,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx puppeteer browsers install chrome
-      - run: npm run test:e2e:boot
+      - id: boot
+        continue-on-error: true
+        run: npm run test:e2e:boot
+      - if: steps.boot.outcome == 'failure'
+        run: echo "::warning::e2e-whatsapp-boot failed (best-effort live WhatsApp Web check); see previous step logs."
