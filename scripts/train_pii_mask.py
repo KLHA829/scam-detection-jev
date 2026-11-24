@@ -195,7 +195,7 @@ def main() -> None:
     print(json.dumps({"train_rows": len(train_rows), "positive_tokens": positive, "pos_weight": float(pos_weight)}))
 
     optimiser = torch.optim.AdamW(head.parameters(), lr=args.learning_rate, weight_decay=1e-4)
-    best_f1 = -1.0
+    best_score = (-1, -1.0)
     best_state = None
     for epoch in range(args.epochs):
         head.train()
@@ -236,8 +236,9 @@ def main() -> None:
             "hard_negative_rows_flagged": stats["hard_negative_rows_flagged"],
             "threshold": threshold,
         }))
-        if stats["f1"] > best_f1:
-            best_f1 = stats["f1"]
+        candidate_score = (-int(stats["hard_negative_rows_flagged"]), float(stats["f1"]))
+        if best_state is None or candidate_score > best_score:
+            best_score = candidate_score
             best_state = {key: value.detach().cpu().clone() for key, value in head.state_dict().items()}
             best_stats = dict(stats)
 

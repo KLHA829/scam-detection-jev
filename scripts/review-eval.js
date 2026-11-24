@@ -70,6 +70,9 @@ async function main() {
   if (MODE !== 'off' && MODE !== 'all') {
     throw new Error(`unsupported --mode ${MODE}; expected off or all`);
   }
+  if (LLM !== 'off' && LLM !== 'dry' && LLM !== 'live') {
+    throw new Error(`unsupported --llm ${LLM}; expected off, dry, or live`);
+  }
 
   const run = JSON.parse(fs.readFileSync(FROM_RUN, 'utf8'));
   const rows = run[SPLIT];

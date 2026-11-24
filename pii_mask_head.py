@@ -30,19 +30,56 @@ LURE_WORDS = (
 )
 
 
+_LURE_STOP_BEFORE = set(",，。:：;；!！?？()（）\"'「」『』")
+_NAME_PREFIX_CHARS = set(
+    "陳李黃張劉周吳鄭王何梁馬羅蔡楊許謝郭洪曾邱廖賴徐朱葉沈韓馮鄧曹彭鍾蔣蕭潘譚汪陸蘇盧唐孫魏方石余姚戴宋范杜丁傅江夏高林胡袁于董程呂阮莊簡連康雷畢翁游伍古屈甄聶湯岑霍龍莫嚴龔區丘韋麥尹駱黎尤陽馬官葛狐甫容徒轅阿abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+-"
+)
+
+
+def _enclosing_flagged_span(flags: list[bool], idx: int, end: int) -> tuple[int, int]:
+    run_start = idx
+    while run_start > 0 and flags[run_start - 1]:
+        run_start -= 1
+    run_end = end
+    while run_end < len(flags) and flags[run_end]:
+        run_end += 1
+    return run_start, run_end
+
+
 def clear_lure_chars(text: str, flags: list[bool]) -> list[bool]:
-    """A mask head must not hide the words the later model uses as evidence."""
+    """A mask head must not hide the words the later model uses as evidence,
+    nor unmask lure substrings embedded inside a flagged PII entity (name/email/URL).
+    """
     for word in LURE_WORDS:
         start = 0
         while True:
             idx = text.find(word, start)
             if idx < 0:
                 break
-            for offset in range(len(word)):
-                pos = idx + offset
-                if pos < len(flags) and not text[pos].isdigit():
-                    flags[pos] = False
-            start = idx + len(word)
+            end = idx + len(word)
+            run_start, run_end = _enclosing_flagged_span(flags, idx, end)
+            span_slice = text[run_start:run_end]
+            inside_url_or_email = "@" in span_slice or "/" in span_slice
+            preceded_by_name_char = (
+                idx > 0
+                and flags[idx - 1]
+                and (
+                    text[idx - 1] in _NAME_PREFIX_CHARS
+                    or (
+                        idx >= 2
+                        and flags[idx - 2]
+                        and text[idx - 2] in _NAME_PREFIX_CHARS
+                        and not text[idx - 1].isspace()
+                        and not text[idx - 1].isdigit()
+                        and text[idx - 1] not in _LURE_STOP_BEFORE
+                    )
+                )
+            )
+            if not inside_url_or_email and not preceded_by_name_char:
+                for pos in range(idx, end):
+                    if pos < len(flags) and not text[pos].isdigit():
+                        flags[pos] = False
+            start = end
     return flags
 
 
@@ -78,6 +115,18 @@ def flags_from_offsets(text: str, offsets, probs, threshold: float) -> list[bool
             flags[pos] = True
     clear_lure_chars(text, flags)
     return flags
+
+
+def flags_from_window_offsets(
+    text: str,
+    window_offsets,
+    window_probs,
+    threshold: float,
+) -> list[bool]:
+    """Combine overlapping window token probabilities by union (any window flagging masks the character)."""
+    flat_offsets = [span for win in window_offsets for span in win]
+    flat_probs = [prob for win in window_probs for prob in win]
+    return flags_from_offsets(text, flat_offsets, flat_probs, threshold)
 
 
 def mask_option_logits(head, context_hidden, option_hidden, mask_index: int = 0):

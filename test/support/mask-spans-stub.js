@@ -1,7 +1,5 @@
 'use strict';
 
-const { domainToUnicode } = require('url');
-
 /**
  * Offline regex stand-in for stub-jevlike POST /v1/mask (tests only).
  * Live inbound must not require this module — use the jevlike PII head worker.
@@ -53,7 +51,7 @@ const RULES = [
   },
   {
     label: 'account',
-    re: /(?:\bpayme\b|轉數快|转数快|\bfps\b)(?:\s*(?:id|號碼|号码|戶口|户口|帳號|账号))?\s*[:：#]?\s*([A-Z0-9._+-]{4,32})/gi,
+    re: /(?:\bpayme\b|轉數快|转数快|\bfps\b)(?:\s*(?:id|號碼|号码|戶口|户口|帳號|账号))?\s*[:：#]?\s*(?!https?:\/\/)([A-Z0-9._+-]{4,32}|\d{4}\s+\d{4})/gi,
     group: 1,
   },
 ];
@@ -65,7 +63,7 @@ const NAME_RE = new RegExp(
 
 const URL_RE = /https?:\/\/[^\s<>"'）)】]+/gi;
 const WWW_RE = /\bwww\.[^\s<>"'）)】]+/gi;
-const SHORT_RE = /\b((?:wa\.me|t\.me|bit\.ly|tinyurl\.com)\/)(\S+)/gi;
+const SHORT_RE = /\b((?:wa\.me|t\.me|bit\.ly|tinyurl\.com)\/)([A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]+)/gi;
 
 function spansFromRegex(text, re, label, groupIndex) {
   const spans = [];
@@ -98,10 +96,21 @@ function otpSpans(text) {
   return spans;
 }
 
-function urlHostNeedle(url) {
-  const host = domainToUnicode(String(url.hostname || '')).toLowerCase();
-  if (!host) return '';
-  return url.port ? `${host}:${url.port}` : host;
+function urlAuthorityBounds(raw) {
+  const schemeAt = raw.indexOf('://');
+  const userAt = schemeAt >= 0 ? schemeAt + 3 : 0;
+  let pathAt = raw.length;
+  for (const delim of ['/', '?', '#']) {
+    const idx = raw.indexOf(delim, userAt);
+    if (idx >= 0 && idx < pathAt) pathAt = idx;
+  }
+  const authority = raw.slice(userAt, pathAt);
+  if (!authority) return null;
+  const atRel = authority.lastIndexOf('@');
+  const at = atRel >= 0 ? userAt + atRel : -1;
+  const hostStart = at >= 0 ? at + 1 : userAt;
+  if (hostStart >= pathAt) return null;
+  return { userAt, at, hostStart, pathAt };
 }
 
 function urlSpans(text) {
@@ -114,21 +123,16 @@ function urlSpans(text) {
       const abs = match.index;
       try {
         const url = new URL(raw.includes('://') ? raw : `https://${raw}`);
-        const needle = urlHostNeedle(url);
-        const hostAt = needle ? raw.toLowerCase().indexOf(needle) : -1;
-        if (hostAt < 0) {
+        const bounds = url.hostname ? urlAuthorityBounds(raw) : null;
+        if (!bounds) {
           spans.push({ start: abs, end: abs + raw.length, label: 'url' });
         } else {
-          const schemeAt = raw.indexOf('://');
-          const userAt = schemeAt >= 0 ? schemeAt + 3 : 0;
-          const at = raw.lastIndexOf('@', hostAt);
-          if (at > userAt && at < hostAt) {
-            spans.push({ start: abs + userAt, end: abs + at, label: 'url' });
+          if (bounds.at > bounds.userAt) {
+            spans.push({ start: abs + bounds.userAt, end: abs + bounds.at, label: 'url' });
           }
-          const secretAt = hostAt + needle.length;
-          if (secretAt < raw.length) {
+          if (bounds.pathAt < raw.length) {
             spans.push({
-              start: abs + secretAt,
+              start: abs + bounds.pathAt,
               end: abs + raw.length,
               label: 'url',
               replacement: ' XXX',
