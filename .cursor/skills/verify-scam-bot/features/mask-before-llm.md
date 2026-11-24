@@ -8,6 +8,7 @@ Before any chat-API call, the bot asks jevlike `POST /v1/mask` which characters 
 - `mask-xxx` replaces a Hong Kong phone and a 我係 name with `XXX` and leaves the lure word 驗證碼 visible.
 - `mask-incomplete` skips the chat API when the mask throws, is short a row, or has a non-integer span. The DM is not archived or blocked because the mask failed.
 - `mask-empty` accepts a span list of `[]`.
+- `mask-long-message` scores a message longer than the PII head's trained context (`context_tokens`) in overlapping windows, so spans at both the head and the tail are masked and the message reaches review; a tokenizer that still leaves model-visible text uncovered fails the mask (`python -m unittest test_jevlike_serve.LongMessageMaskTests`, needs torch, so CI without torch skips it).
 - `otp-offer-sentence` runs `offer verbs bind OTP within one sentence` in `lib/scam-intent.test.js`: unrelated OTP attendance replies reach masked review, while comma-separated and multiline list lures still hit the rule and require AI confirmation for saved and unsaved contacts; `drive-mask-before-llm` checks this suite's TAP result.
 - `english-otp-advice` runs the `English OTP advice and solicitations` suite in `lib/scam-intent.test.js`: directly negated OTP requests and feedback plus an OTP warning go to masked AI review, mask failure stays fail-closed, and affirmative requests (including “don't hesitate” and “never mind”) still hit the rule with short links and go to masked AI review. Removed negated verbs are newline barriers for direct-harvest distance matching; whole-body intent checks preserve multi-line scam detection. `drive-mask-before-llm` includes this suite and checks its TAP result.
 - `mask-base-url` accepts a worker base or full `/v1/mask` endpoint with trailing slashes, without duplicating the path; lab score still resolves independently (`node --test lib/jevlike-base-url.test.js` exercises the real inbound handler over local HTTP).
@@ -70,6 +71,7 @@ Exit code `0`. The context-LLM case ends `action` `ignore` and `skipped` `mask_f
 
 - Primary review requires a `scam` label and sufficient confidence. Contradictory `should_archive: true` on `not_scam`, `unknown`, invalid or missing labels does not archive. `lib/llm-review.test.js` locks parsing, merge and the real handler; `drive-mask-before-llm` runs these cases.
 - A mask that is truncated, short a row, or has a non-integer span is a failed mask. The LLM call is skipped. That failure does not archive or block.
+- A message longer than the trained context is not a truncated mask: the live worker scores it in overlapping windows. Trailing characters the tokenizer emits no token for (spaces, an emoji variation selector) do not count as truncated.
 - Empty `spans` arrays are success.
 - The stub's 200 uses the offline span helper. Live `/v1/mask` returns only the PII head. A missing head is 503, and the bot skips the LLM call the same way.
 - Lure words such as 驗證碼 are cleared from the mask so the later model still sees them.
