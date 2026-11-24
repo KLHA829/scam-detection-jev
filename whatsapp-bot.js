@@ -251,7 +251,10 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId, { botCo
     exclusive: (fn) => pacer.exclusive(fn),
     pause: () => pacer.pause(),
     getChat: (id) => client.getChatById(id),
-    getContact: (chat) => chat.getContact(),
+    getContact: async (chat) => {
+      const contact = await chat.getContact();
+      return (await loadSenderContact(client, { senderId: record.chatId, contact, botContactNames })) || contact;
+    },
     botContactNames,
     archiveChat: async (chat) => {
       await chat.archive();
@@ -597,6 +600,7 @@ async function handleWaMessage(msg, {
           pause: () => pacer.pause(),
           refreshUnsavedContact: refreshSender,
           botContactNames,
+          isCurrent,
         }),
       hasContactLabel: (info) =>
         Boolean(botContactNames && info && botContactNames.wroteForNumber(info.digits, info.contactName)),
