@@ -36,9 +36,9 @@ type WhatsmeowBridge struct {
 	log               waLog.Logger
 	ctx               context.Context
 	cancel            context.CancelFunc
-	fetchContactsFn   func(context.Context) error
+	fetchContactsFn   func(ctx context.Context, fullSync bool) error
 	syncRetryDelay    time.Duration
-	onSyncAttemptDone func(gen uint64, err error)
+	onSyncAttemptDone func(gen uint64, fullSync bool, err error)
 	syncRetryWake     chan struct{}
 
 	mu                sync.RWMutex
@@ -49,6 +49,7 @@ type WhatsmeowBridge struct {
 	connGen           uint64
 	syncAttemptActive bool
 	syncNeedsRetry    bool
+	syncNeedsFull     bool
 }
 
 func ensurePrivateSQLiteFile(dbPath string) error {
@@ -133,8 +134,8 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 		cancel:         bridgeCancel,
 		syncRetryDelay: defaultSyncRetryDelay,
 		syncRetryWake:  make(chan struct{}, 1),
-		fetchContactsFn: func(fetchCtx context.Context) error {
-			return cli.FetchAppState(fetchCtx, appstate.WAPatchCriticalUnblockLow, false, false)
+		fetchContactsFn: func(fetchCtx context.Context, fullSync bool) error {
+			return cli.FetchAppState(fetchCtx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
 		},
 	}
 	cli.AddEventHandler(bridge.handleEvent)
@@ -195,6 +196,7 @@ func (b *WhatsmeowBridge) markContactsSyncedForGen(gen uint64) {
 		b.contactsSynced = true
 		b.syncAttemptActive = false
 		b.syncNeedsRetry = false
+		b.syncNeedsFull = false
 	}
 	b.mu.Unlock()
 }
@@ -211,34 +213,50 @@ func (b *WhatsmeowBridge) syncContacts(ctx context.Context, gen uint64) {
 	if delay <= 0 {
 		delay = defaultSyncRetryDelay
 	}
-	for attempt := 0; attempt < maxSyncAttempts; attempt++ {
+	for attempt := 0; ; attempt++ {
 		if !b.isGenActive(gen) {
 			return
 		}
+		b.mu.RLock()
+		fullSync := b.syncNeedsFull
+		b.mu.RUnlock()
+
 		syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		err := b.fetchContactsFn(syncCtx)
+		err := b.fetchContactsFn(syncCtx, fullSync)
 		cancel()
 		if err == nil {
 			b.markContactsSyncedForGen(gen)
 			if b.onSyncAttemptDone != nil {
-				b.onSyncAttemptDone(gen, nil)
+				b.onSyncAttemptDone(gen, fullSync, nil)
 			}
 			return
 		}
-		b.log.Warnf("contact app state sync attempt %d/%d failed (staying fail-closed): %v", attempt+1, maxSyncAttempts, err)
+		b.log.Warnf("contact app state sync attempt %d/%d (fullSync=%v) failed (staying fail-closed): %v", attempt+1, maxSyncAttempts, fullSync, err)
 		lastAttempt := attempt+1 >= maxSyncAttempts
+		wokeDuringFinal := false
 		b.mu.Lock()
+		if lastAttempt {
+			select {
+			case <-b.syncRetryWake:
+				wokeDuringFinal = true
+			default:
+			}
+		}
 		if b.connGen == gen {
-			if lastAttempt {
+			b.syncNeedsFull = true
+			b.syncNeedsRetry = true
+			if lastAttempt && !wokeDuringFinal {
 				b.syncAttemptActive = false
 			}
-			b.syncNeedsRetry = true
 		}
 		b.mu.Unlock()
 		if b.onSyncAttemptDone != nil {
-			b.onSyncAttemptDone(gen, err)
+			b.onSyncAttemptDone(gen, fullSync, err)
 		}
 		if lastAttempt {
+			if wokeDuringFinal {
+				continue
+			}
 			return
 		}
 		timer := time.NewTimer(delay)
@@ -329,11 +347,13 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	case *events.AppStateSyncComplete:
 		if evt.Name == appstate.WAPatchCriticalUnblockLow {
 			var retryGen uint64
-			var wakeWaiting bool
 			b.mu.Lock()
 			if b.connected && b.loggedIn && !b.contactsSynced && b.syncNeedsRetry {
 				if b.syncAttemptActive {
-					wakeWaiting = true
+					select {
+					case b.syncRetryWake <- struct{}{}:
+					default:
+					}
 				} else {
 					b.syncAttemptActive = true
 					b.syncNeedsRetry = false
@@ -341,12 +361,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 				}
 			}
 			b.mu.Unlock()
-			if wakeWaiting {
-				select {
-				case b.syncRetryWake <- struct{}{}:
-				default:
-				}
-			} else if retryGen != 0 {
+			if retryGen != 0 {
 				go b.syncContacts(b.ctx, retryGen)
 			}
 		}
@@ -374,6 +389,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		b.contactsSynced = false
 		b.syncAttemptActive = false
 		b.syncNeedsRetry = false
+		b.syncNeedsFull = false
 		b.mu.Unlock()
 		b.hub.Publish(BridgeEvent{
 			Type: "disconnected",

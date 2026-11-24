@@ -833,28 +833,35 @@ func TestNewWhatsmeowBridgeSQLiteInitSyncReconnectAndLID(t *testing.T) {
 		t.Fatal("Disconnected must invalidate ContactsSynced")
 	}
 
+	type syncAttempt struct {
+		fullSync bool
+		err      error
+	}
 	var fetchMu sync.Mutex
 	fetchFail := true
-	attemptDone := make(chan error, 8)
+	attemptDone := make(chan syncAttempt, 16)
 	bridge.syncRetryDelay = 15 * time.Millisecond
-	bridge.onSyncAttemptDone = func(_ uint64, err error) {
-		attemptDone <- err
+	bridge.onSyncAttemptDone = func(_ uint64, fullSync bool, err error) {
+		attemptDone <- syncAttempt{fullSync: fullSync, err: err}
 	}
-	bridge.fetchContactsFn = func(context.Context) error {
+	bridge.fetchContactsFn = func(_ context.Context, fullSync bool) error {
 		fetchMu.Lock()
 		fail := fetchFail
 		fetchMu.Unlock()
 		if fail {
-			return errors.New("app state key not found")
+			return errors.New("app state key not found after snapshot checkpoint")
+		}
+		if !fullSync {
+			return errors.New("incremental retry cannot recover skipped snapshot contacts")
 		}
 		return nil
 	}
 
 	bridge.handleEvent(&events.Connected{})
 	select {
-	case err := <-attemptDone:
-		if err == nil {
-			t.Fatal("expected initial sync attempt to fail")
+	case res := <-attemptDone:
+		if res.err == nil || res.fullSync {
+			t.Fatalf("expected initial incremental sync attempt to fail, got %+v", res)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for initial failing syncContacts")
@@ -887,17 +894,20 @@ func TestNewWhatsmeowBridgeSQLiteInitSyncReconnectAndLID(t *testing.T) {
 	deadline := time.After(2 * time.Second)
 	for {
 		select {
-		case err := <-attemptDone:
-			if err == nil {
+		case res := <-attemptDone:
+			if res.err == nil {
+				if !res.fullSync {
+					t.Fatal("retry after failed fetch must force fullSync=true")
+				}
 				goto recovered
 			}
 		case <-deadline:
-			t.Fatal("timed out waiting for generation-scoped backoff retry after incremental key recovery")
+			t.Fatal("timed out waiting for generation-scoped fullSync retry after key recovery")
 		}
 	}
 recovered:
 	if !bridge.Health().ContactsSynced {
-		t.Fatal("expected ContactsSynced=true after backoff retry succeeded")
+		t.Fatal("expected ContactsSynced=true after fullSync retry succeeded")
 	}
 	unsavedAfterCatchup, err := bridge.GetContact(ctx, "85261234567@c.us")
 	if err != nil {
@@ -905,6 +915,48 @@ recovered:
 	}
 	if unsavedAfterCatchup.IsMyContact == nil || *unsavedAfterCatchup.IsMyContact {
 		t.Fatalf("expected IsMyContact=false after key recovery, got %+v", unsavedAfterCatchup)
+	}
+
+	bridge.handleEvent(&events.Disconnected{})
+	var finalAttemptCount int
+	var finalMu sync.Mutex
+	finalDone := make(chan syncAttempt, 16)
+	bridge.syncRetryDelay = 2 * time.Millisecond
+	bridge.onSyncAttemptDone = func(_ uint64, fullSync bool, err error) {
+		finalDone <- syncAttempt{fullSync: fullSync, err: err}
+	}
+	bridge.fetchContactsFn = func(_ context.Context, fullSync bool) error {
+		finalMu.Lock()
+		finalAttemptCount++
+		n := finalAttemptCount
+		finalMu.Unlock()
+		if n < maxSyncAttempts {
+			return errors.New("still missing key")
+		}
+		if n == maxSyncAttempts {
+			bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow})
+			return errors.New("key arrived mid-final-attempt")
+		}
+		if !fullSync {
+			return errors.New("expected fullSync on wake retry")
+		}
+		return nil
+	}
+	bridge.handleEvent(&events.Connected{})
+	finalDeadline := time.After(2 * time.Second)
+	for {
+		select {
+		case res := <-finalDone:
+			if res.err == nil && res.fullSync {
+				goto wakeRecovered
+			}
+		case <-finalDeadline:
+			t.Fatal("expected AppStateSyncComplete wake during final attempt to trigger one more fullSync retry")
+		}
+	}
+wakeRecovered:
+	if !bridge.Health().ContactsSynced {
+		t.Fatal("expected ContactsSynced=true after final-attempt wake retry")
 	}
 
 	if err := bridge.store.SaveMessage(ctx, StoredMessage{
