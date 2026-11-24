@@ -9,6 +9,12 @@ review-queue.json
 llm-review-cooldown.json
 bot-contact-names.json
 user-restored-chats.json
+wa-bridge.db
+wa-bridge.db-shm
+wa-bridge.db-wal
+wa-bridge-cursor.json
+wa-bridge/wa-bridge
+wa-bridge/wa-bridge.exe
 .DS_Store
 session/
 chrome-data/
