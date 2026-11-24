@@ -9,6 +9,7 @@ const log = require('./lib/log');
 const {
   createWhatsAppTransport,
   ensureTransport,
+  isWaTransport,
   normalizeMessage,
   createWwebjsClient,
   puppeteerArgs,
@@ -584,8 +585,9 @@ async function handleWaMessage(rawMsg, {
   editedFrom = null,
   isCurrent = () => true,
 }) {
-  const transport = ensureTransport(providedTransport || client);
-  const msg = normalizeMessage(rawMsg);
+  const rawDriver = providedTransport || client;
+  const transport = ensureTransport(rawDriver);
+  const msg = rawDriver && !isWaTransport(rawDriver) ? normalizeMessage(rawMsg) : rawMsg;
   const preIgnore = shouldIgnoreMessage({
     fromMe: Boolean(msg.fromMe),
     type: msg.type,
@@ -623,7 +625,7 @@ async function handleWaMessage(rawMsg, {
       isChannel: Boolean(chat.isChannel),
       type: msg.type,
       isMe: Boolean(contact.isMe),
-      pushName: msg.notifyName || contact.pushname || contact.name,
+      pushName: msg.notifyName || (msg._data && msg._data.notifyName) || contact.pushname || contact.name,
       contactName: (sender && sender.name) || contact.name || contact.pushname,
       body: msg.body || '',
       isForwarded: msg.isForwarded === true,
