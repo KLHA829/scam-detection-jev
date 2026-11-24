@@ -518,11 +518,15 @@ def _to_utf16_spans(text: str, spans: list[dict]) -> list[dict]:
 
 
 class MaskTruncated(Exception):
-    """Tokenizer dropped the tail. A 200 would leave those characters unmarked."""
+    """Tokenizer windows left characters uncovered. A 200 would leave them unmarked."""
 
 
-def mask_coverage_truncated(text: str, offsets) -> bool:
-    """True when a non-empty string is not fully covered by tokenizer offsets."""
+def mask_coverage_truncated(text: str, offsets, tokenizer=None) -> bool:
+    """True when tokenizer offsets stop before the end of a non-empty string.
+
+    With a tokenizer, an uncovered tail that yields no tokens (trailing spaces, an emoji
+    variation selector) is not truncation: the model never sees those characters.
+    """
     body = "" if text is None else str(text)
     if not body:
         return False
@@ -535,7 +539,12 @@ def mask_coverage_truncated(text: str, offsets) -> bool:
             continue
         if end > start:
             covered = max(covered, end)
-    return covered < len(body)
+    tail = body[covered:]
+    if not tail:
+        return False
+    if tokenizer is None:
+        return True
+    return tokenizer(tail, add_special_tokens=False, return_tensors="pt")["input_ids"].numel() > 0
 
 
 def model_mask_spans(text: str) -> list[dict]:
@@ -560,15 +569,24 @@ def model_mask_spans(text: str) -> list[dict]:
         limit = int(_MASK_CFG["context_tokens"])
     mask_option = (_MASK_CFG or {}).get("mask_option") or MASK_OPTION
     keep_option = (_MASK_CFG or {}).get("keep_option") or KEEP_OPTION
+    # Long messages are split into overlapping windows of the trained context length,
+    # so every character is scored instead of the tail being dropped.
     encoded = tokenizer(
         text,
         truncation=True,
         max_length=limit,
+        stride=limit // 4,
+        return_overflowing_tokens=True,
+        padding=True,
         add_special_tokens=True,
         return_offsets_mapping=True,
         return_tensors="pt",
     )
-    encoded = {key: value.to(_DEVICE) for key, value in encoded.items()}
+    encoded = {
+        key: value.to(_DEVICE)
+        for key, value in encoded.items()
+        if key in ("input_ids", "attention_mask", "offset_mapping")
+    }
     option_key = (_MODEL.encoder, tokenizer, _DEVICE, mask_option, keep_option)
     with _SCORE_LOCK:
         with torch.no_grad():
@@ -594,9 +612,11 @@ def model_mask_spans(text: str) -> list[dict]:
                 _MASK_OPTION_CACHE = (option_key, pooled)
             pooled = _MASK_OPTION_CACHE[1]
             logits = mask_option_logits(_MASK_HEAD, context_hidden, pooled)
-            probs = torch.sigmoid(logits)[0].detach().cpu().tolist()
-    offsets = encoded["offset_mapping"][0].detach().cpu().tolist()
-    if mask_coverage_truncated(text, offsets):
+            probs = torch.sigmoid(logits).detach().cpu().tolist()
+    # A character is masked when any window that sees it flags it.
+    offsets = [span for window in encoded["offset_mapping"].detach().cpu().tolist() for span in window]
+    probs = [prob for window in probs for prob in window]
+    if mask_coverage_truncated(text, offsets, tokenizer):
         raise MaskTruncated("mask truncated")
     flags = flags_from_offsets(text, offsets, probs, _MASK_THRESHOLD)
     return _to_utf16_spans(text, spans_from_flags(text, flags))

@@ -62,8 +62,9 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - `python jevlike_serve.py` (or `npm run jevlike`) in terminal 1 — **PII mask head required**; then `npm start` in terminal 2 with `LLM_REVIEW_*` set.
 - `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — stub worker for offline tests (mask + optional fixed scores).
 
-## Current state (update with the date when it changes) — 2026-11-23
+## Current state (update with the date when it changes) — 2026-11-24
 
+- `/v1/mask` scores a message longer than the PII head's trained context (`context_tokens`, 96 by default) in overlapping windows of that size and masks a character when any window flags it, so long messages reach AI review instead of failing as truncated. Trailing characters the tokenizer emits no token for (spaces, an emoji variation selector) are not truncation. A tokenizer that still drops text fails the mask (2026-11-24).
 - A `（可疑推銷）` label the bot wrote is removed when a later review of the chat is a confident `no_action` with `pitch: false`; a contact the user saved or renamed is left alone (2026-11-23).
 - A first message from an unsaved number archives only on strong evidence (`strong: true`); a weak scam verdict waits for the sender's next message, so a clinic or shop that writes first after the user gave a number in person is not archived (2026-11-23).
 - The context review transcript includes the user's own messages in 1:1 chats (recorded from `message_create`, edits replaced in place), masked like inbound and marked `user:`; the prompt treats a payment, deposit or details request that completes a purchase, booking or service the user asked for as ordinary chat. Inbound-only transcripts are unchanged (2026-11-23).
