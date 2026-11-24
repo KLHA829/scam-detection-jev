@@ -835,12 +835,15 @@ func TestNewWhatsmeowBridgeSQLiteInitSyncReconnectAndLID(t *testing.T) {
 
 	var fetchMu sync.Mutex
 	fetchFail := true
-	fetchDone := make(chan struct{}, 4)
+	attemptDone := make(chan error, 8)
+	bridge.syncRetryDelay = 15 * time.Millisecond
+	bridge.onSyncAttemptDone = func(_ uint64, err error) {
+		attemptDone <- err
+	}
 	bridge.fetchContactsFn = func(context.Context) error {
 		fetchMu.Lock()
 		fail := fetchFail
 		fetchMu.Unlock()
-		defer func() { fetchDone <- struct{}{} }()
 		if fail {
 			return errors.New("app state key not found")
 		}
@@ -849,7 +852,10 @@ func TestNewWhatsmeowBridgeSQLiteInitSyncReconnectAndLID(t *testing.T) {
 
 	bridge.handleEvent(&events.Connected{})
 	select {
-	case <-fetchDone:
+	case err := <-attemptDone:
+		if err == nil {
+			t.Fatal("expected initial sync attempt to fail")
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for initial failing syncContacts")
 	}
@@ -878,14 +884,20 @@ func TestNewWhatsmeowBridgeSQLiteInitSyncReconnectAndLID(t *testing.T) {
 	fetchFail = false
 	fetchMu.Unlock()
 
-	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow})
-	select {
-	case <-fetchDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for generation-scoped retry after key arrival")
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case err := <-attemptDone:
+			if err == nil {
+				goto recovered
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for generation-scoped backoff retry after incremental key recovery")
+		}
 	}
+recovered:
 	if !bridge.Health().ContactsSynced {
-		t.Fatal("expected ContactsSynced=true after key-recovery retry succeeded")
+		t.Fatal("expected ContactsSynced=true after backoff retry succeeded")
 	}
 	unsavedAfterCatchup, err := bridge.GetContact(ctx, "85261234567@c.us")
 	if err != nil {

@@ -23,13 +23,23 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const (
+	defaultSyncRetryDelay = 2 * time.Second
+	maxSyncAttempts       = 5
+)
+
 type WhatsmeowBridge struct {
-	db              *sql.DB
-	store           *BridgeStore
-	client          *whatsmeow.Client
-	hub             *EventHub
-	log             waLog.Logger
-	fetchContactsFn func(context.Context) error
+	db                *sql.DB
+	store             *BridgeStore
+	client            *whatsmeow.Client
+	hub               *EventHub
+	log               waLog.Logger
+	ctx               context.Context
+	cancel            context.CancelFunc
+	fetchContactsFn   func(context.Context) error
+	syncRetryDelay    time.Duration
+	onSyncAttemptDone func(gen uint64, err error)
+	syncRetryWake     chan struct{}
 
 	mu                sync.RWMutex
 	connected         bool
@@ -112,12 +122,17 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 	chmodSQLiteSidecars(dbPath)
 
 	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
+	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
 	bridge := &WhatsmeowBridge{
-		db:     db,
-		store:  bridgeStore,
-		client: cli,
-		hub:    NewEventHub(),
-		log:    logger,
+		db:             db,
+		store:          bridgeStore,
+		client:         cli,
+		hub:            NewEventHub(),
+		log:            logger,
+		ctx:            bridgeCtx,
+		cancel:         bridgeCancel,
+		syncRetryDelay: defaultSyncRetryDelay,
+		syncRetryWake:  make(chan struct{}, 1),
 		fetchContactsFn: func(fetchCtx context.Context) error {
 			return cli.FetchAppState(fetchCtx, appstate.WAPatchCriticalUnblockLow, false, false)
 		},
@@ -162,6 +177,9 @@ func (b *WhatsmeowBridge) Start(ctx context.Context) error {
 }
 
 func (b *WhatsmeowBridge) Close() error {
+	if b.cancel != nil {
+		b.cancel()
+	}
 	if b.client != nil {
 		b.client.Disconnect()
 	}
@@ -181,20 +199,59 @@ func (b *WhatsmeowBridge) markContactsSyncedForGen(gen uint64) {
 	b.mu.Unlock()
 }
 
+func (b *WhatsmeowBridge) isGenActive(gen uint64) bool {
+	b.mu.RLock()
+	active := b.connected && b.loggedIn && b.connGen == gen
+	b.mu.RUnlock()
+	return active
+}
+
 func (b *WhatsmeowBridge) syncContacts(ctx context.Context, gen uint64) {
-	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	if err := b.fetchContactsFn(syncCtx); err != nil {
-		b.log.Warnf("contact app state sync failed (staying fail-closed): %v", err)
+	delay := b.syncRetryDelay
+	if delay <= 0 {
+		delay = defaultSyncRetryDelay
+	}
+	for attempt := 0; attempt < maxSyncAttempts; attempt++ {
+		if !b.isGenActive(gen) {
+			return
+		}
+		syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		err := b.fetchContactsFn(syncCtx)
+		cancel()
+		if err == nil {
+			b.markContactsSyncedForGen(gen)
+			if b.onSyncAttemptDone != nil {
+				b.onSyncAttemptDone(gen, nil)
+			}
+			return
+		}
+		b.log.Warnf("contact app state sync attempt %d/%d failed (staying fail-closed): %v", attempt+1, maxSyncAttempts, err)
+		lastAttempt := attempt+1 >= maxSyncAttempts
 		b.mu.Lock()
 		if b.connGen == gen {
-			b.syncAttemptActive = false
+			if lastAttempt {
+				b.syncAttemptActive = false
+			}
 			b.syncNeedsRetry = true
 		}
 		b.mu.Unlock()
-		return
+		if b.onSyncAttemptDone != nil {
+			b.onSyncAttemptDone(gen, err)
+		}
+		if lastAttempt {
+			return
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-b.syncRetryWake:
+			timer.Stop()
+		case <-timer.C:
+		}
+		delay *= 2
 	}
-	b.markContactsSyncedForGen(gen)
 }
 
 func (b *WhatsmeowBridge) Events() *EventHub {
@@ -252,7 +309,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		b.mu.Unlock()
 
 		if isLoggedIn {
-			go b.syncContacts(context.Background(), gen)
+			go b.syncContacts(b.ctx, gen)
 		}
 
 		if shouldEmitReady {
@@ -272,15 +329,25 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	case *events.AppStateSyncComplete:
 		if evt.Name == appstate.WAPatchCriticalUnblockLow {
 			var retryGen uint64
+			var wakeWaiting bool
 			b.mu.Lock()
-			if b.connected && b.loggedIn && !b.contactsSynced && b.syncNeedsRetry && !b.syncAttemptActive {
-				b.syncAttemptActive = true
-				b.syncNeedsRetry = false
-				retryGen = b.connGen
+			if b.connected && b.loggedIn && !b.contactsSynced && b.syncNeedsRetry {
+				if b.syncAttemptActive {
+					wakeWaiting = true
+				} else {
+					b.syncAttemptActive = true
+					b.syncNeedsRetry = false
+					retryGen = b.connGen
+				}
 			}
 			b.mu.Unlock()
-			if retryGen != 0 {
-				go b.syncContacts(context.Background(), retryGen)
+			if wakeWaiting {
+				select {
+				case b.syncRetryWake <- struct{}{}:
+				default:
+				}
+			} else if retryGen != 0 {
+				go b.syncContacts(b.ctx, retryGen)
 			}
 		}
 
