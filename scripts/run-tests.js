@@ -21,6 +21,7 @@ const UNSET_ENV = [
   'LLM_REVIEW_ENABLED',
   'SCORER',
   'MALICIOUS_HOSTS_PATH',
+  'WA_TRANSPORT',
 ];
 
 const env = { ...process.env, LLM_REVIEW_COOLDOWN_MS: '0' };
