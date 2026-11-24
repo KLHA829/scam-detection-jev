@@ -17,18 +17,34 @@ def tiny_mask_runtime(torch):
     class Tokenizer:
         option_calls = 0
 
-        def __call__(self, text, max_length, **kwargs):
+        def __call__(
+            self,
+            text,
+            max_length=512,
+            stride=0,
+            return_overflowing_tokens=False,
+            add_special_tokens=True,
+            **kwargs,
+        ):
+            """One token per character, windowed like a Hugging Face fast tokenizer."""
             is_options = isinstance(text, list)
             self.option_calls += int(is_options)
-            rows = text if is_options else [text]
-            ids = [[0] + [ord(ch) % 97 + 1 for ch in row] + [0] for row in rows]
-            width = min(max(map(len, ids)), max_length)
-            ids = [row[:width] + [0] * max(0, width - len(row)) for row in ids]
-            tokens = torch.tensor(ids)
+            if is_options:
+                rows = [[(ord(ch) % 97 + 1, [i, i + 1]) for i, ch in enumerate(row)] for row in text]
+            else:
+                chars = [(ord(ch) % 97 + 1, [i, i + 1]) for i, ch in enumerate(text) if not ch.isspace()]
+                size = max_length - 2
+                step = size - stride if return_overflowing_tokens else len(chars) + 1
+                rows = [chars[start : start + size] for start in range(0, max(1, len(chars) - stride), step)]
+            if add_special_tokens:
+                rows = [[(0, [0, 0])] + row[: max_length - 2] + [(0, [0, 0])] for row in rows]
+            width = max(map(len, rows))
+            rows = [row + [(0, [0, 0])] * (width - len(row)) for row in rows]
+            tokens = torch.tensor([[token for token, _ in row] for row in rows])
             result = {"input_ids": tokens, "attention_mask": (tokens != 0).long()}
             if not is_options:
-                offsets = [[0, 0]] + [[i, i + 1] for i in range(len(text))] + [[0, 0]]
-                result["offset_mapping"] = torch.tensor([offsets[:width]])
+                result["offset_mapping"] = torch.tensor([[span for _, span in row] for row in rows])
+                result["overflow_to_sample_mapping"] = torch.zeros(len(rows), dtype=torch.long)
             return result
 
     class Encoder:
@@ -101,11 +117,50 @@ class MaskOptionCacheTests(unittest.TestCase):
             serve._MASK_CFG = {"mask_option": "custom mask"}
             serve.model_mask_spans("custom options")
             self.assertEqual(serve._MODEL.encoder.option_calls, 2)
-            with self.assertRaises(serve.MaskTruncated):
-                serve.model_mask_spans("x" * 100)
             with patch.object(serve, "_MASK_HEAD", None):
                 with self.assertRaises(RuntimeError):
                     serve.mask_payload(["private"])
+
+
+class LongMessageMaskTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("torch is not installed")
+        self.runtime = tiny_mask_runtime(torch)
+
+    def test_message_longer_than_context_is_masked_to_the_end(self):
+        tail = "電話91234567"
+        filler = "你" * 200
+        with patch.multiple(serve, **self.runtime):
+            expected = serve.model_mask_spans(tail)
+            spans = serve.model_mask_spans(filler + tail)
+        self.assertTrue(expected)
+        shifted = [{**span, "start": span["start"] + 200, "end": span["end"] + 200} for span in expected]
+        self.assertEqual(spans, shifted)
+        self.assertEqual(self.runtime["_MODEL"].encoder.calls, 3)
+
+    def test_trailing_characters_without_tokens_are_not_truncation(self):
+        tokenizer = self.runtime["_COLLATOR"].tokenizer
+        self.assertFalse(serve.mask_coverage_truncated("甲 \n", [(0, 1)], tokenizer))
+        self.assertTrue(serve.mask_coverage_truncated("甲 9", [(0, 1)], tokenizer))
+        with patch.multiple(serve, **self.runtime):
+            self.assertEqual(serve.model_mask_spans("電話91234567  "), serve.model_mask_spans("電話91234567"))
+
+    def test_tokenizer_that_drops_the_tail_still_fails_closed(self):
+        tokenizer = self.runtime["_COLLATOR"].tokenizer
+
+        class Truncating(type(tokenizer)):
+            def __call__(self, text, max_length=512, **kwargs):
+                kwargs.pop("return_overflowing_tokens", None)
+                return super().__call__(text, max_length, **kwargs)
+
+        with patch.multiple(serve, **self.runtime), patch.object(
+            serve._COLLATOR, "tokenizer", Truncating()
+        ):
+            with self.assertRaises(serve.MaskTruncated):
+                serve.model_mask_spans("x" * 100)
 
 
 class ScamProbabilityTests(unittest.TestCase):
