@@ -1,26 +1,30 @@
+FROM golang:1.26-bookworm AS wa-bridge-builder
+
+WORKDIR /src/wa-bridge
+COPY wa-bridge/go.mod wa-bridge/go.sum ./
+RUN go mod download
+
+COPY wa-bridge/ ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/wa-bridge .
+
 FROM node:22-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium \
-    fonts-liberation \
-    fonts-noto-cjk \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdrm2 \
-    libgbm1 \
-    libgtk-3-0 \
-    libnss3 \
-    libx11-xcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    xdg-utils \
+    ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-ENV PUPPETEER_SKIP_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
-    NODE_ENV=production
+ENV NODE_ENV=production \
+    PUPPETEER_SKIP_DOWNLOAD=true \
+    WA_TRANSPORT=whatsmeow \
+    WA_BRIDGE_AUTO_START=1 \
+    WA_BRIDGE_BIN=/app/wa-bridge/wa-bridge \
+    WA_BRIDGE_DB_PATH=/data/wa-bridge.db \
+    WA_BRIDGE_CURSOR_PATH=/data/wa-bridge-cursor.json \
+    OPERATOR_MODE_PATH=/data/operator-mode.json \
+    REVIEW_QUEUE_PATH=/data/review-queue.json \
+    LLM_REVIEW_COOLDOWN_PATH=/data/llm-review-cooldown.json \
+    BOT_CONTACT_NAMES_PATH=/data/bot-contact-names.json \
+    BLOCK_LOG_PATH=/data/blocks.jsonl
 
 WORKDIR /app
 
@@ -28,7 +32,10 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY . .
-RUN chown -R node:node /app
+COPY --from=wa-bridge-builder /out/wa-bridge /app/wa-bridge/wa-bridge
+RUN mkdir -p /data && chown -R node:node /app /data
+
 USER node
+VOLUME ["/data"]
 
 CMD ["node", "whatsapp-bot.js"]

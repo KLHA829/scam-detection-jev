@@ -157,3 +157,25 @@ jobs:
         run: npm run test:e2e:boot
       - if: steps.boot.outcome == 'failure'
         run: echo "::warning::e2e-whatsapp-boot failed (best-effort live WhatsApp Web check); see previous step logs."
+
+  e2e-whatsmeow-boot:
+    runs-on: ubuntu-latest
+    # WhatsApp servers may be unreachable from the runner; this Chromium-free boot smoke is best-effort.
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: wa-bridge/go.mod
+          cache-dependency-path: wa-bridge/go.sum
+      - run: npm ci
+      - id: boot
+        continue-on-error: true
+        run: npm run test:e2e:boot:whatsmeow
+      - if: steps.boot.outcome == 'failure'
+        run: echo "::warning::e2e-whatsmeow-boot failed (best-effort live WhatsApp check); see previous step logs."

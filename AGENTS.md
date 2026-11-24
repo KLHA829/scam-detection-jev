@@ -9,7 +9,9 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 
 | Path | Role |
 |---|---|
-| `whatsapp-bot.js` | WhatsApp Web client: QR, orchestration, archive + graded block |
+| `whatsapp-bot.js` | WhatsApp Web client: QR, orchestration, archive + graded block (transport-agnostic) |
+| `lib/wa-transport/` | `WaTransport` boundary (`wwebjs` default adapter, `whatsmeow` Go sidecar HTTP/SSE adapter) |
+| `wa-bridge/` | pure-Go `whatsmeow` + `modernc.org/sqlite` local loopback HTTP/SSE sidecar (no Chromium/CGO) |
 | `lib/decide-incoming.js` | curated URL and email-domain archive only; else ignore until LLM merge |
 | `lib/handle-incoming.js` | inbound orchestration: heuristic fast path → mask → LLM |
 | `lib/jevlike-client.js` | HTTP client (`createMaskClient`; `/v1/mask` live; `/v1/score` lab-only) |
@@ -58,11 +60,15 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - `npm run typecheck` — TypeScript checks production JavaScript without emitting files.
 - `npm run test:e2e` — real local HTTP mask/LLM mocks drive the inbound path; no WhatsApp login.
 - `node scripts/legit-fpr.js` — false block / false archive rate on ~300 legit messages (`fixtures/legit-messages.json`) through the real handler, model answering not_scam. `lib/legit-fpr.test.js` (in `npm test`) fails when that list differs from `fixtures/legit-fpr-baseline.json`; rerun with `--update-baseline` only for an intended change.
+- `npm run wa-bridge:build` — compile pure-Go `wa-bridge/` (`CGO_ENABLED=0`; supports `--goos` / `--goarch` for Linux cross-builds).
 - `npm run test:e2e:boot` — best-effort boot through Chromium launch and QR emission; never scan the QR.
+- `npm run test:e2e:boot:whatsmeow` — Chromium-free best-effort boot compiling `wa-bridge` to a temp dir and waiting for QR emission; never scan the QR.
 - `python jevlike_serve.py` (or `npm run jevlike`) in terminal 1 — **PII mask head required**; then `npm start` in terminal 2 with `LLM_REVIEW_*` set.
 - `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — stub worker for offline tests (mask + optional fixed scores).
 
 ## Current state (update with the date when it changes) — 2026-11-24
+
+- The bot supports Chromium-free Linux/macOS/Windows operation via `WaTransport` (`lib/wa-transport/`) and the pure-Go `wa-bridge/` (`whatsmeow` + `modernc.org/sqlite`) sidecar (`WA_TRANSPORT=whatsmeow`); `Dockerfile` uses a multi-stage Go + Node 22 build defaulting to `whatsmeow` with `/data` state paths, `npm run wa-bridge:build` builds the sidecar, and `npm run test:e2e:boot:whatsmeow` verifies Chromium-free QR emission in CI while `resolveTransportName` keeps `wwebjs` as default until live QR validation completes (2026-11-24).
 
 - Saved status of a `@lid` sender is read from its phone-number contact (the address book is keyed by phone number), unless the LID record already says saved. When it cannot be read, or WhatsApp gives no saved flag, the status is unknown: like a saved contact it only gets the review card and is never auto-archived, blocked or labelled (2026-11-24).
 - `/v1/mask` scores a message longer than the PII head's trained context (`context_tokens`, 96 by default) in overlapping windows of that size and masks a character when any window flags it, so long messages reach AI review instead of failing as truncated. Trailing characters the tokenizer emits no token for (spaces, an emoji variation selector) are not truncation. A tokenizer that still drops text fails the mask (2026-11-24).

@@ -91,6 +91,23 @@ Pi 建議 4 GB RAM 以上。`JEVLIKE_DEVICE=cpu` 為預設。
 - `scripts/download_jevlike_ckpt.sh` under git-bash uses a relative `--dir` so native `gh.exe` does not write to `C:\c\Users\...`.
 - Do not run `npm audit fix`. See [Known security advisories](#known-security-advisories).
 
+### WhatsApp transport (`whatsmeow` / Linux)
+
+As an alternative to Chromium + `whatsapp-web.js` (`WA_TRANSPORT=wwebjs`), the bot supports a Chromium-free pure-Go `whatsmeow` sidecar (`wa-bridge/`, Linux `amd64`/`arm64`, macOS, and Windows; requires **Go 1.26+** to build):
+
+```bash
+# Build native sidecar binary into wa-bridge/wa-bridge (or wa-bridge.exe on Windows)
+npm run wa-bridge:build
+
+# Cross-compile for Linux from Windows or macOS
+node scripts/build-wa-bridge.js --goos linux --goarch amd64
+
+# Start bot with auto-managed sidecar (guided mode recommended for first QR test)
+WA_TRANSPORT=whatsmeow WA_BRIDGE_AUTO_START=1 OPERATOR_MODE=guided npm start
+```
+
+Session keys and local message cache live in `WA_BRIDGE_DB_PATH` (default `./wa-bridge.db`, `0600` on POSIX) and `WA_BRIDGE_CURSOR_PATH` (default `./wa-bridge-cursor.json`). Keep those files across restarts to avoid re-scanning the QR code. `WA_TRANSPORT` still defaults to `wwebjs` until live `whatsmeow` QR verification is finished.
+
 ## Point the bot at your API
 
 Set `LLM_REVIEW_API_URL`, `LLM_REVIEW_MODEL`, and `LLM_REVIEW_API_KEY` when your server needs auth. `LLM_REVIEW_ENABLED` defaults to **true**.
@@ -144,6 +161,15 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `PUPPETEER_EXECUTABLE_PATH` | Unset | Override Puppeteer's browser executable. |
 | `PUPPETEER_NO_SANDBOX` | Unset | Exactly `1` disables Chromium sandboxing. Root already disables it; do not opt in unless required. |
 | `PUPPETEER_SKIP_DOWNLOAD` | Unset | Puppeteer installation option to skip browser download, not a bot behavior flag. |
+| `WA_TRANSPORT` | `wwebjs` | Transport backend: `wwebjs` (Chromium / `whatsapp-web.js`) or `whatsmeow` (Chromium-free `wa-bridge` Go sidecar). |
+| `WA_BRIDGE_AUTO_START` | Off | Set `1` or `true` when `WA_TRANSPORT=whatsmeow` to spawn and supervise the local `wa-bridge` binary automatically. |
+| `WA_BRIDGE_BIN` | `wa-bridge/wa-bridge` (`.exe` on Windows) | Path to the compiled `wa-bridge` binary for `WA_BRIDGE_AUTO_START=1`. |
+| `WA_BRIDGE_URL` | `http://127.0.0.1:8767` | Loopback base URL (`127.0.0.1`, `localhost`, or `::1`) of an external `wa-bridge` process. |
+| `WA_BRIDGE_TOKEN` | Empty | Required bearer token when connecting to an external `wa-bridge`; auto-generated when `WA_BRIDGE_AUTO_START=1` leaves it unset. |
+| `WA_BRIDGE_DB_PATH` | `./wa-bridge.db` | SQLite database storing the `whatsmeow` session, poll options, and recent text message cache (`0600` on POSIX). |
+| `WA_BRIDGE_CURSOR_PATH` | `./wa-bridge-cursor.json` | Persisted SSE replay cursor and handled self-message IDs for the `whatsmeow` adapter. |
+| `WA_BRIDGE_TIMEOUT_MS` | `15000` | HTTP/startup timeout in ms for `wa-bridge` calls. |
+| `WA_BRIDGE_HOST`, `WA_BRIDGE_PORT`, `WA_BRIDGE_LOG_LEVEL` | `127.0.0.1`, `8767`, `WARN` | Standalone `wa-bridge` loopback bind host/port and log level (`ERROR` \| `WARN` \| `INFO` \| `DEBUG`). |
 
 ### Checkpoint download helper settings
 
@@ -195,7 +221,7 @@ npm run test:e2e
 
 `npm test` is offline: in-process stub, no live WhatsApp, no encoder download. GitHub Actions runs it on pull requests and on `main`.
 
-The mocked HTTP E2E test drives the real inbound modules against local mask and LLM servers. The optional boot smoke (`npm run test:e2e:boot`) launches Chromium and waits for the WhatsApp QR event without scanning it; install Chrome first with `npx puppeteer browsers install chrome`. CI treats that network-dependent boot as best-effort.
+The mocked HTTP E2E test drives the real inbound modules against local mask and LLM servers. Two optional best-effort boot checks wait for the WhatsApp QR event without scanning it: `npm run test:e2e:boot` launches Chromium (`npx puppeteer browsers install chrome` first), while `npm run test:e2e:boot:whatsmeow` builds `wa-bridge/` and verifies Chromium-free QR emission via `whatsmeow` (needs Go 1.26+). CI treats both network-dependent boot checks as best-effort.
 
 Smoke check for mask and dry LLM transport:
 
@@ -215,18 +241,18 @@ node scripts/legit-fpr.js
 
 ## Optional Docker
 
-The image runs WhatsApp Web (Chromium) only. Run jevlike beside it and set `JEVLIKE_BASE_URL`.
+The container image uses a multi-stage Linux build (`golang:1.26-bookworm` → `node:22-bookworm-slim`) that compiles the pure-Go `wa-bridge` sidecar and runs `WA_TRANSPORT=whatsmeow` with **no Chromium**. Run jevlike beside it and set `JEVLIKE_BASE_URL`.
 
 ```bash
 docker build -t scam-detection-jev .
+mkdir -p wa-data
 docker run --rm -it \
   -e JEVLIKE_BASE_URL=http://host.docker.internal:8766 \
-  -e BOT_CONTACT_NAMES_PATH=/app/.wwebjs_auth/bot-contact-names.json \
-  -v "$(pwd)/.wwebjs_auth:/app/.wwebjs_auth" \
+  -v "$(pwd)/wa-data:/data" \
   scam-detection-jev
 ```
 
-You still need a terminal or logs to read the QR code. `BOT_CONTACT_NAMES_PATH` keeps the record of names the bot wrote in the mounted folder, so a new container still treats `（可疑推銷）` senders as unsaved. The image runs as user `node`. Fix ownership if `.wwebjs_auth` was created as root.
+State files (`wa-bridge.db`, `wa-bridge-cursor.json`, `bot-contact-names.json`, `operator-mode.json`, `review-queue.json`, `llm-review-cooldown.json`, `blocks.jsonl`) default to `/data/...` inside the container, so mounting `-v "$(pwd)/wa-data:/data"` preserves your WhatsApp session and label history across restarts without storing secrets in the image. You still need a terminal or logs on first run to read the QR code. The image runs as user `node`; ensure host permissions on `./wa-data` allow `node` (uid `1000`) to write. To fall back to the legacy Chromium adapter instead, add Puppeteer's Chromium packages in `Dockerfile` and override `-e WA_TRANSPORT=wwebjs`.
 
 ## Optional agent smoke (no QR)
 
@@ -245,7 +271,9 @@ You still need a terminal or logs to read the QR code. `BOT_CONTACT_NAMES_PATH` 
 
 | Path | Role |
 |------|------|
-| `whatsapp-bot.js` | WhatsApp Web client, QR, archive, graded block |
+| `whatsapp-bot.js` | WhatsApp client orchestration, QR, archive, graded block |
+| `lib/wa-transport/` | `WaTransport` boundary (`wwebjs` default, `whatsmeow` HTTP/SSE adapter) |
+| `wa-bridge/` | Pure-Go `whatsmeow` + `modernc.org/sqlite` sidecar (Linux/macOS/Windows, no Chromium/CGO) |
 | `lib/handle-incoming.js` | Heuristics, mask, LLM orchestration |
 | `lib/jevlike-client.js` | `createMaskClient`, `/v1/mask` |
 | `lib/llm-review.js` | Primary LLM after mask |
