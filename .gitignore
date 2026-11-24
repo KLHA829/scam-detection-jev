@@ -8,12 +8,14 @@ operator-mode.json
 review-queue.json
 llm-review-cooldown.json
 bot-contact-names.json
+wa-data/
 wa-bridge.db
 wa-bridge.db-shm
 wa-bridge.db-wal
 wa-bridge-cursor.json
 wa-bridge/wa-bridge
 wa-bridge/wa-bridge.exe
+wa-bridge/wa-bridge-*
 .DS_Store
 session/
 chrome-data/

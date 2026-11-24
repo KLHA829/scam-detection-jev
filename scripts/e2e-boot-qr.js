@@ -204,7 +204,8 @@ async function main() {
   try {
     let bridgeBin = '';
     if (transport === 'whatsmeow') {
-      const configuredBin = process.env.WA_BRIDGE_BIN ? String(process.env.WA_BRIDGE_BIN).trim() : '';
+      const rawConfigured = process.env.WA_BRIDGE_BIN ? String(process.env.WA_BRIDGE_BIN).trim() : '';
+      const configuredBin = rawConfigured ? path.resolve(process.cwd(), rawConfigured) : '';
       if (configuredBin && fs.existsSync(configuredBin)) {
         bridgeBin = configuredBin;
       } else {

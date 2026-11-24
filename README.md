@@ -99,7 +99,7 @@ As an alternative to Chromium + `whatsapp-web.js` (`WA_TRANSPORT=wwebjs`), the b
 # Build native sidecar binary into wa-bridge/wa-bridge (or wa-bridge.exe on Windows)
 npm run wa-bridge:build
 
-# Cross-compile for Linux from Windows or macOS
+# Cross-compile for Linux from Windows or macOS (writes wa-bridge/wa-bridge-linux-amd64 without overwriting native binary; pass --out or WA_BRIDGE_BIN to customize)
 node scripts/build-wa-bridge.js --goos linux --goarch amd64
 
 # Start bot with auto-managed sidecar (guided mode recommended for first QR test)
@@ -252,7 +252,7 @@ docker run --rm -it \
   scam-detection-jev
 ```
 
-State files (`wa-bridge.db`, `wa-bridge-cursor.json`, `bot-contact-names.json`, `operator-mode.json`, `review-queue.json`, `llm-review-cooldown.json`, `blocks.jsonl`) default to `/data/...` inside the container, so mounting `-v "$(pwd)/wa-data:/data"` preserves your WhatsApp session and label history across restarts without storing secrets in the image. You still need a terminal or logs on first run to read the QR code. The image runs as user `node`; ensure host permissions on `./wa-data` allow `node` (uid `1000`) to write. To fall back to the legacy Chromium adapter instead, add Puppeteer's Chromium packages in `Dockerfile` and override `-e WA_TRANSPORT=wwebjs`.
+State files (`wa-bridge.db`, `wa-bridge-cursor.json`, `bot-contact-names.json`, `operator-mode.json`, `review-queue.json`, `llm-review-cooldown.json`, `blocks.jsonl`) default to `/data/...` inside the container, so mounting `-v "$(pwd)/wa-data:/data"` preserves your WhatsApp session and label history across restarts without storing secrets in the image. `wa-data/` and `**/wa-bridge.db*` are excluded in `.dockerignore` and `.gitignore` so rebuilding the image never bakes your live database or keys into a new image. When upgrading from the legacy Chromium container (`.wwebjs_auth`), copy `bot-contact-names.json` (plus any persisted `operator-mode.json`, `review-queue.json`, or `blocks.jsonl`) into `./wa-data/` before starting the new container so previously bot-labelled contacts stay recognized as unsaved. You still need a terminal or logs on first run to read the QR code. The image runs as user `node`; ensure host permissions on `./wa-data` allow `node` (uid `1000`) to write. To fall back to the legacy Chromium adapter instead, add Puppeteer's Chromium packages in `Dockerfile` and override `-e WA_TRANSPORT=wwebjs`.
 
 ## Optional agent smoke (no QR)
 

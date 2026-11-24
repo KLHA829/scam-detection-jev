@@ -42,22 +42,63 @@ function parseArgs(argv) {
   return parsed;
 }
 
-function defaultBinaryName(goos) {
-  const targetOs = goos || (process.platform === 'win32' ? 'windows' : process.platform);
-  return targetOs === 'windows' ? 'wa-bridge.exe' : 'wa-bridge';
+function hostGoos(platform = process.platform) {
+  return platform === 'win32' ? 'windows' : platform;
+}
+
+function hostGoarch(arch = process.arch) {
+  if (arch === 'x64') return 'amd64';
+  if (arch === 'ia32') return '386';
+  return arch;
+}
+
+function defaultBinaryName(
+  goos = '',
+  goarch = '',
+  { hostOs = hostGoos(), hostArch = hostGoarch() } = {},
+) {
+  const targetOs = String(goos || hostOs).trim();
+  const targetArch = String(goarch || hostArch).trim();
+  const ext = targetOs === 'windows' ? '.exe' : '';
+  if (targetOs === hostOs && targetArch === hostArch) {
+    return `wa-bridge${ext}`;
+  }
+  return `wa-bridge-${targetOs}-${targetArch}${ext}`;
 }
 
 /**
- * Compile `wa-bridge/` into `outPath` (defaults to `wa-bridge/wa-bridge[.exe]`).
+ * Resolve the output path for `wa-bridge` without letting cross-builds clobber
+ * the default native host binary unless `--out` or `WA_BRIDGE_BIN` is set.
+ * @param {{ goos?: string, goarch?: string, outPath?: string, cwd?: string, hostOs?: string, hostArch?: string }} [options]
+ */
+function resolveTargetPath(options = {}) {
+  const rawOut = options.outPath ? String(options.outPath).trim() : '';
+  if (rawOut) {
+    return path.resolve(options.cwd || process.cwd(), rawOut);
+  }
+  return path.join(
+    BRIDGE_DIR,
+    defaultBinaryName(options.goos, options.goarch, {
+      hostOs: options.hostOs,
+      hostArch: options.hostArch,
+    }),
+  );
+}
+
+/**
+ * Compile `wa-bridge/` into `outPath` (defaults to `wa-bridge/wa-bridge[.exe]`
+ * for native builds, or `wa-bridge/wa-bridge-<goos>-<goarch>[.exe]` for cross-builds).
  * @param {{ goos?: string, goarch?: string, outPath?: string, cwd?: string, quiet?: boolean }} [options]
  */
 function buildWaBridge(options = {}) {
   const goos = String(options.goos ?? process.env.GOOS ?? '').trim();
   const goarch = String(options.goarch ?? process.env.GOARCH ?? '').trim();
-  const rawOut = options.outPath ? String(options.outPath) : '';
-  const targetPath = rawOut
-    ? path.resolve(options.cwd || process.cwd(), rawOut)
-    : path.join(BRIDGE_DIR, defaultBinaryName(goos));
+  const targetPath = resolveTargetPath({
+    goos,
+    goarch,
+    outPath: options.outPath,
+    cwd: options.cwd,
+  });
 
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
 
@@ -93,10 +134,11 @@ function buildWaBridge(options = {}) {
 if (require.main === module) {
   try {
     const cli = parseArgs(process.argv.slice(2));
+    const configuredOut = cli.out || process.env.WA_BRIDGE_BIN || undefined;
     const built = buildWaBridge({
       goos: cli.goos,
       goarch: cli.goarch,
-      outPath: cli.out,
+      outPath: configuredOut,
     });
     process.stdout.write(`Built wa-bridge: ${built}\n`);
   } catch (err) {
@@ -108,5 +150,8 @@ if (require.main === module) {
 module.exports = {
   buildWaBridge,
   defaultBinaryName,
+  hostGoarch,
+  hostGoos,
   parseArgs,
+  resolveTargetPath,
 };

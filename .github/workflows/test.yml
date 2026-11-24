@@ -135,11 +135,12 @@ jobs:
         with:
           go-version-file: wa-bridge/go.mod
           cache-dependency-path: wa-bridge/go.sum
-      - name: vet and test wa-bridge
+      - name: vet, test, and pure-Go build wa-bridge
         working-directory: wa-bridge
         run: |
           go vet ./...
           go test -race ./...
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/wa-bridge-ci .
 
   e2e-whatsapp-boot:
     runs-on: ubuntu-latest
