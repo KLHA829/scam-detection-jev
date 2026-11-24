@@ -3,10 +3,17 @@
 require('dotenv').config();
 
 const path = require('path');
-const { Client, LocalAuth, Poll } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
 const log = require('./lib/log');
+const {
+  createWhatsAppTransport,
+  ensureTransport,
+  isWaTransport,
+  normalizeMessage,
+  createWwebjsClient,
+  puppeteerArgs,
+} = require('./lib/wa-transport');
 const { createMaskClient } = require('./lib/jevlike-client');
 const {
   processIncomingMessage,
@@ -67,28 +74,14 @@ const {
 const AUTH_PATH = path.join(process.cwd(), '.wwebjs_auth');
 const VOIDED_POLL_TEXT = '呢個投票已作廢：對方改咗訊息，唔會封存或封鎖。';
 
-function puppeteerArgs(
-  uid = typeof process.getuid === 'function' ? process.getuid() : null,
-  forceNoSandbox = process.env.PUPPETEER_NO_SANDBOX === '1',
-) {
-  const args = ['--disable-dev-shm-usage'];
-  if (uid === 0 || forceNoSandbox) args.push('--no-sandbox', '--disable-setuid-sandbox');
-  return args;
-}
-
 function createWhatsAppClient() {
-  const puppeteer = { args: puppeteerArgs() };
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    puppeteer.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-  }
-  return new Client({
-    authStrategy: new LocalAuth({ dataPath: AUTH_PATH }),
-    puppeteer,
-  });
+  return createWwebjsClient({ authPath: AUTH_PATH });
 }
 
-function selfWid(client) {
-  return serializedId(client && client.info && client.info.wid);
+function selfWid(transport) {
+  if (!transport) return null;
+  if (typeof transport.getSelfWid === 'function') return transport.getSelfWid();
+  return serializedId(transport.info && transport.info.wid);
 }
 
 function llmConfidenceFromResult(result) {
@@ -98,16 +91,15 @@ function llmConfidenceFromResult(result) {
   return Number.isFinite(conf) ? conf : null;
 }
 
-async function sendUnblockPoll(client, queue, pacer, row) {
-  const wid = selfWid(client);
+async function sendUnblockPoll(transport, queue, pacer, row) {
+  const wid = selfWid(transport);
   if (!wid || !queue || !row || !row.chatId) return null;
   try {
-    const sent = await client.sendMessage(
-      wid,
-      new Poll(UNBLOCK_POLL_NAME, optionLabels(UNBLOCK_OPTIONS), {
-        allowMultipleAnswers: false,
-      }),
-    );
+    const sent = await transport.sendPoll(wid, {
+      name: UNBLOCK_POLL_NAME,
+      options: optionLabels(UNBLOCK_OPTIONS),
+      allowMultipleAnswers: false,
+    });
     const pollId = messageIdOf(sent);
     if (!pollId) return null;
     queue.add({
@@ -137,11 +129,11 @@ async function sendUnblockPoll(client, queue, pacer, row) {
   }
 }
 
-async function sendActionNotice(client, result, { maskClient, llmReview, listName, pacer, reviewQueue } = {}) {
+async function sendActionNotice(transport, result, { maskClient, llmReview, listName, pacer, reviewQueue } = {}) {
   const action = result && result.decision && result.decision.action;
   if (!result || result.ignored || result.deferred) return;
   if (action !== 'archive' && action !== 'block') return;
-  const wid = selfWid(client);
+  const wid = selfWid(transport);
   if (!wid) {
     log.warn('self chat unavailable; action notice not sent', { chatId: result.chatId });
     return;
@@ -165,7 +157,7 @@ async function sendActionNotice(client, result, { maskClient, llmReview, listNam
     });
     await pacer.exclusive(async () => {
       try {
-        await client.sendMessage(wid, notice.text);
+        await transport.sendText(wid, notice.text);
       } catch (err) {
         log.error('action notice failed', {
           chatId: result.chatId,
@@ -173,7 +165,7 @@ async function sendActionNotice(client, result, { maskClient, llmReview, listNam
         });
       }
       if (result.blocked) {
-        await sendUnblockPoll(client, reviewQueue, pacer, {
+        await sendUnblockPoll(transport, reviewQueue, pacer, {
           ...result,
           listName,
           digits: result.formattedNumber,
@@ -191,38 +183,37 @@ async function sendActionNotice(client, result, { maskClient, llmReview, listNam
   }
 }
 
-async function sendSetupPoll(client, operator, { reconfigure = false } = {}) {
-  const wid = selfWid(client);
+async function sendSetupPoll(transport, operator, { reconfigure = false } = {}) {
+  const wid = selfWid(transport);
   if (!wid) {
     log.warn('self chat unavailable; operator setup not sent');
     return null;
   }
-  await client.sendMessage(
+  await transport.sendText(
     wid,
     reconfigure ? '再揀一次處理方式。未揀之前維持而家嘅模式。' : SETUP_INTRO,
   );
-  const sent = await client.sendMessage(
-    wid,
-    new Poll(SETUP_POLL_NAME, optionLabels(SETUP_OPTIONS), {
-      allowMultipleAnswers: false,
-    }),
-  );
-  const id = serializedId(sent && sent.id);
+  const sent = await transport.sendPoll(wid, {
+    name: SETUP_POLL_NAME,
+    options: optionLabels(SETUP_OPTIONS),
+    allowMultipleAnswers: false,
+  });
+  const id = messageIdOf(sent);
   if (!id) return null;
   if (reconfigure) operator.rememberReconfigurePoll(id);
   else operator.rememberSetupPoll(id);
   return id;
 }
 
-async function confirmOperatorMode(client, operator, mode) {
-  const wid = selfWid(client);
+async function confirmOperatorMode(transport, operator, mode) {
+  const wid = selfWid(transport);
   if (!wid) return;
   if (operator.pinned()) {
-    await client.sendMessage(wid, '模式由 OPERATOR_MODE 釘死。改環境變數先至可以轉。');
+    await transport.sendText(wid, '模式由 OPERATOR_MODE 釘死。改環境變數先至可以轉。');
     return;
   }
   operator.choose(mode);
-  await client.sendMessage(
+  await transport.sendText(
     wid,
     mode === 'guided'
       ? '已改為逐條問你。之後每條可疑訊息會轉發嚟呢度。'
@@ -230,12 +221,12 @@ async function confirmOperatorMode(client, operator, mode) {
   );
 }
 
-async function confirmReviewChoice(client, queue, pacer, choice, pollId, { botContactNames } = {}) {
-  const wid = selfWid(client);
+async function confirmReviewChoice(transport, queue, pacer, choice, pollId, { botContactNames } = {}) {
+  const wid = selfWid(transport);
   const existing = queue.get(pollId);
   if (!existing || !wid) return;
   if (existing.resolved) {
-    await client.sendMessage(wid, '已經處理咗。');
+    await transport.sendText(wid, '已經處理咗。');
     return;
   }
   let record;
@@ -243,30 +234,34 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId, { botCo
     record = queue.consume(pollId);
   } catch (err) {
     log.error('review choice save failed', { error: err.message });
-    await pacer.exclusive(() => client.sendMessage(wid, '儲存選擇失敗，未執行操作。請稍後再試。'));
+    await pacer.exclusive(() => transport.sendText(wid, '儲存選擇失敗，未執行操作。請稍後再試。'));
     return;
   }
   if (!record) {
-    await client.sendMessage(wid, queue.isPendingVoid(pollId) ? VOIDED_POLL_TEXT : '已經處理咗。');
+    await transport.sendText(wid, queue.isPendingVoid(pollId) ? VOIDED_POLL_TEXT : '已經處理咗。');
     return;
   }
   const result = await applyReviewChoice(record, choice, {
     exclusive: (fn) => pacer.exclusive(fn),
     pause: () => pacer.pause(),
-    getChat: (id) => client.getChatById(id),
+    getChat: (id) => transport.getChat(id),
     getContact: async (chat) => {
-      const contact = await chat.getContact();
-      return (await loadSenderContact(client, { senderId: record.chatId, contact, botContactNames })) || contact;
+      const contact = await transport.getChatContact(chat);
+      return (await loadSenderContact(transport, { senderId: record.chatId, contact, botContactNames })) || contact;
     },
     refreshContact: async (chat) =>
-      loadSenderContact(client, { senderId: record.chatId, contact: await chat.getContact(), botContactNames }),
+      loadSenderContact(transport, {
+        senderId: record.chatId,
+        contact: await transport.getChatContact(chat),
+        botContactNames,
+      }),
     botContactNames,
     archiveChat: async (chat) => {
-      await chat.archive();
+      await transport.archiveChat(chat);
     },
     blockContact: ({ chat, contact, record: row, contactName, canRenameContact }) =>
       blockAndRename({
-        client,
+        client: transport,
         contact,
         chat,
         digits: row.digits,
@@ -285,9 +280,9 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId, { botCo
     }
   }
   await pacer.exclusive(async () => {
-    await client.sendMessage(wid, result.text);
+    await transport.sendText(wid, result.text);
     if (result.blocked) {
-      await sendUnblockPoll(client, queue, pacer, {
+      await sendUnblockPoll(transport, queue, pacer, {
         chatId: record.chatId,
         digits: record.digits,
         contactName: record.contactName,
@@ -300,12 +295,12 @@ async function confirmReviewChoice(client, queue, pacer, choice, pollId, { botCo
   });
 }
 
-async function confirmUnblockChoice(client, queue, pacer, choice, pollId, { botContactNames } = {}) {
-  const wid = selfWid(client);
+async function confirmUnblockChoice(transport, queue, pacer, choice, pollId, { botContactNames } = {}) {
+  const wid = selfWid(transport);
   const existing = queue.get(pollId);
   if (!existing || !wid) return;
   if (existing.resolved) {
-    await client.sendMessage(wid, '已經處理咗。');
+    await transport.sendText(wid, '已經處理咗。');
     return;
   }
   let record;
@@ -313,27 +308,31 @@ async function confirmUnblockChoice(client, queue, pacer, choice, pollId, { botC
     record = queue.consume(pollId);
   } catch (err) {
     log.error('unblock choice save failed', { error: err.message });
-    await pacer.exclusive(() => client.sendMessage(wid, '儲存選擇失敗，未執行操作。請稍後再試。'));
+    await pacer.exclusive(() => transport.sendText(wid, '儲存選擇失敗，未執行操作。請稍後再試。'));
     return;
   }
   if (!record) {
-    await client.sendMessage(wid, '已經處理咗。');
+    await transport.sendText(wid, '已經處理咗。');
     return;
   }
   const resolveContact = async (chat) => {
-    const raw = await chat.getContact();
-    return (await loadSenderContact(client, { senderId: record.chatId, contact: raw, botContactNames })) || raw;
+    const raw = await transport.getChatContact(chat);
+    return (await loadSenderContact(transport, { senderId: record.chatId, contact: raw, botContactNames })) || raw;
   };
   const refreshVerifiedContact = async (chat) =>
-    loadSenderContact(client, { senderId: record.chatId, contact: await chat.getContact(), botContactNames });
+    loadSenderContact(transport, {
+      senderId: record.chatId,
+      contact: await transport.getChatContact(chat),
+      botContactNames,
+    });
   const result = await applyUnblockChoice(record, choice, {
     exclusive: (fn) => pacer.exclusive(fn),
     pause: () => pacer.pause(),
-    getChat: (id) => client.getChatById(id),
+    getChat: (id) => transport.getChat(id),
     getContact: resolveContact,
     unblockContact: ({ chat, contact, digits, blockContactName, renamed, savedContact }) =>
       unblockContact({
-        client,
+        client: transport,
         contact,
         chat,
         digits,
@@ -353,22 +352,22 @@ async function confirmUnblockChoice(client, queue, pacer, choice, pollId, { botC
       log.error('unblock choice release failed', { pollId, error: err && err.message ? err.message : String(err) });
     }
   }
-  await pacer.exclusive(() => client.sendMessage(wid, result.text));
+  await pacer.exclusive(() => transport.sendText(wid, result.text));
 }
 
 async function handleOperatorCommand(cmd, deps, wid) {
-  const { client, reviewQueue, pacer, botContactNames } = deps;
+  const { transport, reviewQueue, pacer, botContactNames } = deps;
   const unblockDeps = {
     exclusive: (fn) => pacer.exclusive(fn),
     pause: () => pacer.pause(),
-    getChat: (id) => client.getChatById(id),
+    getChat: (id) => transport.getChat(id),
     getContact: async (chat, row) => {
-      const raw = await chat.getContact();
-      return (await loadSenderContact(client, { senderId: row && row.chatId, contact: raw, botContactNames })) || raw;
+      const raw = await transport.getChatContact(chat);
+      return (await loadSenderContact(transport, { senderId: row && row.chatId, contact: raw, botContactNames })) || raw;
     },
     unblockContact: ({ chat, contact, record: row, digits, blockContactName, renamed, savedContact }) =>
       unblockContact({
-        client,
+        client: transport,
         contact,
         chat,
         digits,
@@ -377,20 +376,24 @@ async function handleOperatorCommand(cmd, deps, wid) {
         savedContact,
         pause: () => pacer.pause(),
         refreshContact: async (c) =>
-          loadSenderContact(client, { senderId: row && row.chatId, contact: await c.getContact(), botContactNames }),
+          loadSenderContact(transport, {
+            senderId: row && row.chatId,
+            contact: await transport.getChatContact(c),
+            botContactNames,
+          }),
         botContactNames,
         extraIds: row && row.chatId ? [row.chatId] : [],
       }),
   };
 
   if (cmd.kind === 'help') {
-    await pacer.exclusive(() => client.sendMessage(wid, OPERATOR_HELP_TEXT));
+    await pacer.exclusive(() => transport.sendText(wid, OPERATOR_HELP_TEXT));
     return;
   }
   if (cmd.kind === 'list_blocks') {
     const rows = loadRecentBlocksForCommands(process.env, 20);
     const text = formatRecentBlocksList(rows, { limit: 5 });
-    await pacer.exclusive(() => client.sendMessage(wid, text));
+    await pacer.exclusive(() => transport.sendText(wid, text));
     return;
   }
 
@@ -401,16 +404,16 @@ async function handleOperatorCommand(cmd, deps, wid) {
 
   if (cmd.kind === 'keep_blocked') {
     if (openUnblock.length === 0) {
-      await pacer.exclusive(() => client.sendMessage(wid, '而家冇待決定嘅解除封鎖問題。'));
+      await pacer.exclusive(() => transport.sendText(wid, '而家冇待決定嘅解除封鎖問題。'));
       return;
     }
     if (openUnblock.length > 1) {
       await pacer.exclusive(() =>
-        client.sendMessage(wid, formatAmbiguousKeepBlocked(openUnblock.map((row) => ({ ...row, displayName: row.listName || row.contactName })))),
+        transport.sendText(wid, formatAmbiguousKeepBlocked(openUnblock.map((row) => ({ ...row, displayName: row.listName || row.contactName })))),
       );
       return;
     }
-    await confirmUnblockChoice(client, reviewQueue, pacer, 'keep', openUnblock[0].pollId, {
+    await confirmUnblockChoice(transport, reviewQueue, pacer, 'keep', openUnblock[0].pollId, {
       botContactNames,
     });
     return;
@@ -419,21 +422,21 @@ async function handleOperatorCommand(cmd, deps, wid) {
   if (cmd.kind === 'unblock') {
     const target = resolveUnblockCommand(cmd.digits, { openUnblockPolls: openUnblock });
     if (target.kind === 'not_found') {
-      await pacer.exclusive(() => client.sendMessage(wid, '搵唔到符合嘅封鎖紀錄。'));
+      await pacer.exclusive(() => transport.sendText(wid, '搵唔到符合嘅封鎖紀錄。'));
       return;
     }
     if (target.kind === 'ambiguous') {
-      await pacer.exclusive(() => client.sendMessage(wid, formatAmbiguousUnblock(target.candidates)));
+      await pacer.exclusive(() => transport.sendText(wid, formatAmbiguousUnblock(target.candidates)));
       return;
     }
     if (target.kind === 'poll') {
-      await confirmUnblockChoice(client, reviewQueue, pacer, 'unblock', target.pollId, {
+      await confirmUnblockChoice(transport, reviewQueue, pacer, 'unblock', target.pollId, {
         botContactNames,
       });
       return;
     }
     const result = await applyUnblockChoice(target.record, 'unblock', unblockDeps);
-    await pacer.exclusive(() => client.sendMessage(wid, result.text));
+    await pacer.exclusive(() => transport.sendText(wid, result.text));
     if (result.ok && reviewQueue && typeof reviewQueue.findOpenUnblock === 'function') {
       for (const poll of reviewQueue.findOpenUnblock()) {
         if (poll.chatId === target.record.chatId) {
@@ -444,27 +447,21 @@ async function handleOperatorCommand(cmd, deps, wid) {
   }
 }
 
-async function isSelfChatId(client, chatId) {
-  const wid = selfWid(client);
-  if (!wid || !chatId) return false;
-  if (chatId === wid) return true;
-  if (typeof client.getContactLidAndPhone !== 'function') return false;
-  const mappings = await client.getContactLidAndPhone([wid]);
-  return Array.isArray(mappings) && mappings.some(({ lid, pn }) =>
-    (pn === wid && lid === chatId) || (lid === wid && pn === chatId),
-  );
+async function isSelfChatId(transport, chatId) {
+  if (!transport || !chatId) return false;
+  return transport.isSelfChatId(chatId);
 }
 
 async function handleSelfMessage(msg, deps) {
   const body = String(msg.body || '').trim();
   if (!shouldProcessSelfMessageBody(body, Boolean(msg.hasQuotedMsg))) return;
-  const wid = selfWid(deps.client);
+  const wid = selfWid(deps.transport);
   if (!wid) return;
   let isSelf;
   try {
     const chat = await msg.getChat();
     const chatId = serializedId(chat && chat.id);
-    isSelf = await isSelfChatId(deps.client, chatId);
+    isSelf = await isSelfChatId(deps.transport, chatId);
   } catch (err) {
     log.warn('self chat check failed', { error: err.message });
     return;
@@ -472,10 +469,9 @@ async function handleSelfMessage(msg, deps) {
   if (!isSelf) return;
 
   let quotedId = null;
-  if (msg.hasQuotedMsg && typeof msg.getQuotedMessage === 'function') {
+  if (msg.hasQuotedMsg && typeof msg.getQuotedMessageId === 'function') {
     try {
-      const quoted = await msg.getQuotedMessage();
-      quotedId = serializedId(quoted && quoted.id);
+      quotedId = await msg.getQuotedMessageId();
     } catch (err) {
       log.warn('quoted message unavailable', { error: err.message });
     }
@@ -488,27 +484,27 @@ async function handleSelfMessage(msg, deps) {
   });
   if (route.kind === 'reconfigure') {
     if (deps.operator.pinned()) {
-      await deps.client.sendMessage(wid, '模式由 OPERATOR_MODE 釘死。改環境變數先至可以轉。');
+      await deps.transport.sendText(wid, '模式由 OPERATOR_MODE 釘死。改環境變數先至可以轉。');
       return;
     }
-    await sendSetupPoll(deps.client, deps.operator, { reconfigure: true });
+    await sendSetupPoll(deps.transport, deps.operator, { reconfigure: true });
     return;
   }
   if (route.kind === 'setup') {
-    await confirmOperatorMode(deps.client, deps.operator, route.mode);
+    await confirmOperatorMode(deps.transport, deps.operator, route.mode);
     return;
   }
   if (route.kind === 'already') {
-    await deps.client.sendMessage(wid, '已經處理咗。');
+    await deps.transport.sendText(wid, '已經處理咗。');
     return;
   }
   if (route.kind === 'voided') {
-    await deps.client.sendMessage(wid, VOIDED_POLL_TEXT);
+    await deps.transport.sendText(wid, VOIDED_POLL_TEXT);
     return;
   }
   if (route.kind === 'review') {
     await confirmReviewChoice(
-      deps.client,
+      deps.transport,
       deps.reviewQueue,
       deps.pacer,
       route.choice,
@@ -519,7 +515,7 @@ async function handleSelfMessage(msg, deps) {
   }
   if (route.kind === 'unblock') {
     await confirmUnblockChoice(
-      deps.client,
+      deps.transport,
       deps.reviewQueue,
       deps.pacer,
       route.choice,
@@ -536,10 +532,12 @@ async function handleSelfMessage(msg, deps) {
 }
 
 function incomingMessageId(msg) {
+  if (!msg) return null;
+  if (typeof msg.id === 'string') return msg.id;
   return msg?.id?._serialized || msg?.id?.id || null;
 }
 
-async function recordOwnMessage(msg, { client, recentContext, editedFrom = null }) {
+async function recordOwnMessage(msg, { transport, recentContext, editedFrom = null }) {
   if (!recentContext) return;
   let chat;
   try {
@@ -549,10 +547,10 @@ async function recordOwnMessage(msg, { client, recentContext, editedFrom = null 
     return;
   }
   const chatId = serializedId(chat && chat.id);
-  if (!chatId || chatId === selfWid(client)) return;
+  if (!chatId || chatId === selfWid(transport)) return;
   if (/@lid$/i.test(chatId)) {
     try {
-      if (await isSelfChatId(client, chatId)) return;
+      if (await isSelfChatId(transport, chatId)) return;
     } catch {}
   }
   recordOutgoingMessage(
@@ -569,8 +567,9 @@ async function recordOwnMessage(msg, { client, recentContext, editedFrom = null 
   );
 }
 
-async function handleWaMessage(msg, {
+async function handleWaMessage(rawMsg, {
   client,
+  transport: providedTransport,
   pacer,
   threadContext,
   recentContext,
@@ -586,6 +585,9 @@ async function handleWaMessage(msg, {
   editedFrom = null,
   isCurrent = () => true,
 }) {
+  const rawDriver = providedTransport || client;
+  const transport = ensureTransport(rawDriver);
+  const msg = rawDriver && !isWaTransport(rawDriver) ? normalizeMessage(rawMsg) : rawMsg;
   const preIgnore = shouldIgnoreMessage({
     fromMe: Boolean(msg.fromMe),
     type: msg.type,
@@ -607,14 +609,14 @@ async function handleWaMessage(msg, {
     return null;
   }
 
-  const chatId = (chat.id && chat.id._serialized) || msg.from;
-  const contactId = contact.id && contact.id._serialized;
+  const chatId = serializedId(chat && chat.id) || msg.from;
+  const contactId = serializedId(contact && contact.id);
   const senderId = msg.author || msg.from || chatId;
   const extraIds = [senderId, chatId].filter(Boolean);
-  const sender = await loadSenderContact(client, { senderId, contact, botContactNames });
+  const sender = await loadSenderContact(transport, { senderId, contact, botContactNames });
   const listName = chatListName(sender || contact, msg);
   const refreshSender = async () =>
-    loadSenderContact(client, { senderId, contact: await msg.getContact(), botContactNames });
+    loadSenderContact(transport, { senderId, contact: await msg.getContact(), botContactNames });
 
   const result = await processIncomingMessage(
     {
@@ -623,7 +625,7 @@ async function handleWaMessage(msg, {
       isChannel: Boolean(chat.isChannel),
       type: msg.type,
       isMe: Boolean(contact.isMe),
-      pushName: msg._data?.notifyName || contact.pushname || contact.name,
+      pushName: msg.notifyName || (msg._data && msg._data.notifyName) || contact.pushname || contact.name,
       contactName: (sender && sender.name) || contact.name || contact.pushname,
       body: msg.body || '',
       isForwarded: msg.isForwarded === true,
@@ -639,9 +641,10 @@ async function handleWaMessage(msg, {
       threadContext,
       recentContext,
       resolveNumber: () =>
-        resolveRealNumber(client, phoneLookupId(chatId, contactId), contact),
+        resolveRealNumber(transport, phoneLookupId(chatId, contactId), contact),
       archiveChat: async () => {
-        await chat.archive();
+        if (transport) await transport.archiveChat(chat);
+        else await chat.archive();
       },
       refreshContact: refreshSender,
       exclusive: (fn) => pacer.exclusive(fn),
@@ -656,7 +659,7 @@ async function handleWaMessage(msg, {
       isCurrent,
       blockContact: (info) =>
         blockAndRename({
-          client,
+          client: transport,
           contact,
           chat,
           digits: info && info.digits,
@@ -679,7 +682,7 @@ async function handleWaMessage(msg, {
         ),
       clearContactLabel: (info) =>
         clearUnsavedContactLabel({
-          client,
+          client: transport,
           digits: info && info.digits,
           contactName: info && info.contactName,
           pause: () => pacer.pause(),
@@ -690,7 +693,7 @@ async function handleWaMessage(msg, {
         }),
       labelContact: (info) =>
         labelUnsavedContact({
-          client,
+          client: transport,
           digits: info && info.digits,
           contactName: info && info.contactName,
           pause: () => pacer.pause(),
@@ -702,12 +705,12 @@ async function handleWaMessage(msg, {
     },
   );
   if (result && !result.deferred && !result.stale && (isCurrent() || result.blocked || result.archived)) {
-    await sendActionNotice(client, result, {
+    await sendActionNotice(transport, result, {
       maskClient, llmReview, listName, pacer, reviewQueue,
     });
   }
   if (!result || !result.deferred || !reviewQueue || !isCurrent()) return result;
-  const wid = selfWid(client);
+  const wid = selfWid(transport);
   if (!wid) {
     log.error('guided review has no self chat', { chatId });
     return result;
@@ -721,12 +724,9 @@ async function handleWaMessage(msg, {
       queue: reviewQueue,
       exclusive: (fn) => pacer.exclusive(fn),
       forward: () => msg.forward(wid),
-      sendText: (text) => client.sendMessage(wid, text),
-      sendPoll: async (name, options) =>
-        client.sendMessage(
-          wid,
-          new Poll(name, options, { allowMultipleAnswers: false }),
-        ),
+      sendText: (text) => transport.sendText(wid, text),
+      sendPoll: (name, options) =>
+        transport.sendPoll(wid, { name, options, allowMultipleAnswers: false }),
     });
     if (delivered && delivered.pollId && result.cooldownEligible && isCurrent()) {
       recordChatLlmReviewSuccess(chatId, { store: llmCooldownStore });
@@ -743,7 +743,8 @@ async function handleWaMessage(msg, {
   return result;
 }
 
-function attachHandlers(client, deps) {
+function attachHandlers(clientOrTransport, deps) {
+  const transport = ensureTransport(clientOrTransport);
   const inFlight = new Map();
   let setupInFlight = false;
   async function handleCurrent(msg, options) {
@@ -752,30 +753,30 @@ function attachHandlers(client, deps) {
     if (id) inFlight.set(id, revision);
     const isCurrent = () => !id || inFlight.get(id) === revision;
     try {
-      return await handleWaMessage(msg, { client, ...deps, ...options, isCurrent });
+      return await handleWaMessage(msg, { transport, ...deps, ...options, isCurrent });
     } finally {
       if (id && isCurrent()) inFlight.delete(id);
     }
   }
 
-  client.on('qr', (qr) => {
+  transport.on('qr', (qr) => {
     log.info('scan QR to link WhatsApp Web');
     qrcode.generate(qr, { small: true });
   });
 
-  client.on('authenticated', () => {
+  transport.on('authenticated', () => {
     log.ok('WhatsApp session authenticated');
   });
 
-  client.on('auth_failure', (m) => {
+  transport.on('auth_failure', (m) => {
     log.error('auth failure', m);
   });
 
-  client.on('ready', () => {
+  transport.on('ready', () => {
     log.ok('WhatsApp client ready');
     if (setupInFlight || !deps.operator || !deps.operator.needsSetup()) return;
     setupInFlight = true;
-    sendSetupPoll(client, deps.operator)
+    sendSetupPoll(transport, deps.operator)
       .catch((err) => {
         log.error('operator setup failed', { error: err.message });
       })
@@ -784,7 +785,7 @@ function attachHandlers(client, deps) {
       });
   });
 
-  client.on('message', async (msg) => {
+  transport.on('message', async (msg) => {
     try {
       await handleCurrent(msg);
     } catch (err) {
@@ -792,7 +793,7 @@ function attachHandlers(client, deps) {
     }
   });
 
-  client.on('message_edit', async (msg, newBody, prevBody) => {
+  transport.on('message_edit', async (msg, newBody, prevBody) => {
     try {
       if (typeof newBody === 'string') {
         if (newBody === prevBody) return;
@@ -801,7 +802,7 @@ function attachHandlers(client, deps) {
       if (msg && msg.fromMe) {
         await recordOwnMessage(msg, {
           ...deps,
-          client,
+          transport,
           editedFrom: typeof prevBody === 'string' ? prevBody : null,
         });
         return;
@@ -822,17 +823,17 @@ function attachHandlers(client, deps) {
     }
   });
 
-  client.on('message_create', async (msg) => {
+  transport.on('message_create', async (msg) => {
     try {
       if (!msg.fromMe) return;
-      await recordOwnMessage(msg, { ...deps, client });
-      if (deps.operator) await handleSelfMessage(msg, { client, ...deps });
+      await recordOwnMessage(msg, { ...deps, transport });
+      if (deps.operator) await handleSelfMessage(msg, { transport, ...deps });
     } catch (err) {
       log.error('self chat handler failed', { error: err.message });
     }
   });
 
-  client.on('vote_update', async (vote) => {
+  transport.on('vote_update', async (vote) => {
     try {
       if (!deps.operator || !deps.reviewQueue) return;
       const route = routeVote(vote, {
@@ -840,16 +841,16 @@ function attachHandlers(client, deps) {
         queue: deps.reviewQueue,
       });
       if (route.kind === 'setup') {
-        await confirmOperatorMode(client, deps.operator, route.mode);
+        await confirmOperatorMode(transport, deps.operator, route.mode);
       } else if (route.kind === 'already') {
-        const wid = selfWid(client);
-        if (wid) await client.sendMessage(wid, '已經處理咗。');
+        const wid = selfWid(transport);
+        if (wid) await transport.sendText(wid, '已經處理咗。');
       } else if (route.kind === 'voided') {
-        const wid = selfWid(client);
-        if (wid) await client.sendMessage(wid, VOIDED_POLL_TEXT);
+        const wid = selfWid(transport);
+        if (wid) await transport.sendText(wid, VOIDED_POLL_TEXT);
       } else if (route.kind === 'review') {
         await confirmReviewChoice(
-          client,
+          transport,
           deps.reviewQueue,
           deps.pacer,
           route.choice,
@@ -858,7 +859,7 @@ function attachHandlers(client, deps) {
         );
       } else if (route.kind === 'unblock') {
         await confirmUnblockChoice(
-          client,
+          transport,
           deps.reviewQueue,
           deps.pacer,
           route.choice,
@@ -871,7 +872,7 @@ function attachHandlers(client, deps) {
     }
   });
 
-  client.on('disconnected', (reason) => {
+  transport.on('disconnected', (reason) => {
     log.warn('disconnected', { reason });
   });
 }
@@ -894,7 +895,7 @@ async function main() {
   const botContactNames = createBotContactNames({
     filePath: defaultBotContactNamesPath(process.env),
   });
-  const client = createWhatsAppClient();
+  const transport = createWhatsAppTransport({ env: process.env, authPath: AUTH_PATH });
 
   try {
     const hosts = loadMaliciousHosts();
@@ -915,6 +916,7 @@ async function main() {
   }
 
   log.info('starting WhatsApp scam-risk bot (mask + LLM primary, malicious-host block)', {
+    waTransport: transport.name,
     maskWorker: maskClient.baseURL,
     waActionGapMs: pacer.gapMs,
     contextTurns: threadContext.turns,
@@ -928,7 +930,7 @@ async function main() {
     operatorSetup: operator.needsSetup(),
   });
 
-  attachHandlers(client, {
+  attachHandlers(transport, {
     maskClient,
     llmReview,
     pacer,
@@ -939,13 +941,14 @@ async function main() {
     llmCooldownStore,
     botContactNames,
   });
-  await client.initialize();
+  await transport.initialize();
 }
 
 module.exports = {
   AUTH_PATH,
   createMaskClient,
   createWhatsAppClient,
+  createWhatsAppTransport,
   puppeteerArgs,
   handleWaMessage,
   attachHandlers,
