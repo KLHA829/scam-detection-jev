@@ -984,27 +984,50 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 	}
 	defer func() { _ = bridge.Close() }()
 
-	if !bridge.client.EmitAppStateEventsOnFullSync {
-		t.Fatal("expected EmitAppStateEventsOnFullSync=true so full sync seeds bridge archive state")
+	if bridge.client.EmitAppStateEventsOnFullSync {
+		t.Fatal("expected EmitAppStateEventsOnFullSync=false so full sync keeps bulk contact error handling")
+	}
+
+	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
+	}
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
 	}
 
 	ch, cancel := bridge.Events().Subscribe(16)
 	defer cancel()
 
+	// Simulates initial QR pairing completing Store initialization and installing the archive wrapper.
+	bridge.handleEvent(&events.PairSuccess{})
+	select {
+	case evt := <-ch:
+		if evt.Type != "authenticated" {
+			t.Fatalf("expected authenticated event after PairSuccess, got %+v", evt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for authenticated event")
+	}
+
 	chatJID := types.NewJID("85261112222", types.DefaultUserServer)
-	bridge.handleEvent(&events.Archive{
-		JID:          chatJID,
-		FromFullSync: true,
-		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(true)},
-	})
+	t1 := time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
+	t2 := t1.Add(time.Minute)
+	t3 := t2.Add(time.Minute)
+	t4 := t3.Add(time.Minute)
+
+	// Full sync seeds whatsmeow_chat_settings directly through Store.ChatSettings.PutArchived without emitting SSE events.
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, chatJID, true); err != nil {
+		t.Fatalf("PutArchived full-sync seed: %v", err)
+	}
 	select {
 	case unexpected := <-ch:
-		t.Fatalf("FromFullSync archive must not emit SSE event, got %+v", unexpected)
+		t.Fatalf("full-sync ChatSettings seeding must not emit SSE event, got %+v", unexpected)
 	case <-time.After(30 * time.Millisecond):
-	}
-	archived, known, err := bridge.store.GetChatArchived(ctx, "85261112222@c.us")
-	if err != nil || !known || !archived {
-		t.Fatalf("expected stored archived=true after full sync, got (%v, %v, %v)", archived, known, err)
 	}
 
 	readNext := func() BridgeEvent {
@@ -1018,9 +1041,13 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 		}
 	}
 
-	// Un-archiving a previously archived chat emits archived=false, wasArchived=true.
+	// Un-archiving after full sync updates ChatSettings first and emits archived=false, wasArchived=true.
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, chatJID, false); err != nil {
+		t.Fatalf("PutArchived live un-archive: %v", err)
+	}
 	bridge.handleEvent(&events.Archive{
 		JID:          chatJID,
+		Timestamp:    t2,
 		FromFullSync: false,
 		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(false)},
 	})
@@ -1031,8 +1058,12 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 	}
 
 	// Redundant live un-archive uses stored prev=false so wasArchived=false.
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, chatJID, false); err != nil {
+		t.Fatalf("PutArchived duplicate un-archive: %v", err)
+	}
 	bridge.handleEvent(&events.Archive{
 		JID:          chatJID,
+		Timestamp:    t2,
 		FromFullSync: false,
 		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(false)},
 	})
@@ -1042,10 +1073,49 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 		t.Fatalf("duplicate un-archive must preserve wasArchived=false, got %+v", dup)
 	}
 
+	// Delayed older snapshot event cannot overwrite a newer live archive before a subsequent manual un-archive.
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, chatJID, true); err != nil {
+		t.Fatalf("PutArchived live archive: %v", err)
+	}
+	bridge.handleEvent(&events.Archive{
+		JID:          chatJID,
+		Timestamp:    t3,
+		FromFullSync: false,
+		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(true)},
+	})
+	_ = readNext()
+
+	bridge.handleEvent(&events.Archive{
+		JID:          chatJID,
+		Timestamp:    t1,
+		FromFullSync: true,
+		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(false)},
+	})
+	archivedAfterStale, knownAfterStale, _, err := bridge.store.GetChatArchivedState(ctx, "85261112222@c.us")
+	if err != nil || !knownAfterStale || !archivedAfterStale {
+		t.Fatalf("delayed stale snapshot must not clobber live archive=true, got (%v, %v, %v)", archivedAfterStale, knownAfterStale, err)
+	}
+
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, chatJID, false); err != nil {
+		t.Fatalf("PutArchived manual un-archive after stale snapshot: %v", err)
+	}
+	bridge.handleEvent(&events.Archive{
+		JID:          chatJID,
+		Timestamp:    t4,
+		FromFullSync: false,
+		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(false)},
+	})
+	afterStale := readNext()
+	afterStaleData, _ := afterStale.Data.(map[string]any)
+	if afterStaleData["archived"] != false || afterStaleData["wasArchived"] != true {
+		t.Fatalf("manual un-archive after stale snapshot must keep wasArchived=true, got %+v", afterStale)
+	}
+
 	// Un-archiving an unseen chat defaults wasArchived to true, and group chats set isGroup=true.
 	groupJID := types.NewJID("1203630000", types.GroupServer)
 	bridge.handleEvent(&events.Archive{
 		JID:          groupJID,
+		Timestamp:    t4,
 		FromFullSync: false,
 		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(false)},
 	})

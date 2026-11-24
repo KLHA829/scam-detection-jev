@@ -15,6 +15,7 @@ import (
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waSyncAction"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -28,9 +29,39 @@ const (
 	maxSyncAttempts       = 5
 )
 
+type putArchiveTransition struct {
+	prevFound    bool
+	prevArchived bool
+	archived     bool
+}
+
+type archiveTrackingChatSettings struct {
+	store.ChatSettingsStore
+	onPutArchived func(chatID string, prevFound, prevArchived, newArchived bool)
+}
+
+func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat types.JID, archived bool) error {
+	var prevFound bool
+	var prevArchived bool
+	if settings, err := w.ChatSettingsStore.GetChatSettings(ctx, chat); err == nil && settings.Found {
+		prevFound = true
+		prevArchived = settings.Archived
+	}
+	if err := w.ChatSettingsStore.PutArchived(ctx, chat, archived); err != nil {
+		return err
+	}
+	if w.onPutArchived != nil {
+		if chatID := canonicalJID(chat); chatID != "" {
+			w.onPutArchived(chatID, prevFound, prevArchived, archived)
+		}
+	}
+	return nil
+}
+
 type WhatsmeowBridge struct {
 	db                *sql.DB
 	store             *BridgeStore
+	rawChatSettings   store.ChatSettingsStore
 	client            *whatsmeow.Client
 	hub               *EventHub
 	log               waLog.Logger
@@ -50,6 +81,9 @@ type WhatsmeowBridge struct {
 	syncAttemptActive bool
 	syncNeedsRetry    bool
 	syncNeedsFull     bool
+
+	archiveMu      sync.Mutex
+	lastPutArchive map[string]putArchiveTransition
 }
 
 func ensurePrivateSQLiteFile(dbPath string) error {
@@ -122,22 +156,23 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 	}
 	chmodSQLiteSidecars(dbPath)
 
-	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
-	cli.EmitAppStateEventsOnFullSync = true
 	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
 	bridge := &WhatsmeowBridge{
 		db:             db,
 		store:          bridgeStore,
-		client:         cli,
 		hub:            NewEventHub(),
 		log:            logger,
 		ctx:            bridgeCtx,
 		cancel:         bridgeCancel,
 		syncRetryDelay: defaultSyncRetryDelay,
 		syncRetryWake:  make(chan struct{}, 1),
-		fetchContactsFn: func(fetchCtx context.Context, fullSync bool) error {
-			return cli.FetchAppState(fetchCtx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
-		},
+		lastPutArchive: make(map[string]putArchiveTransition),
+	}
+	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
+	bridge.client = cli
+	bridge.ensureChatSettingsWrapped()
+	bridge.fetchContactsFn = func(fetchCtx context.Context, fullSync bool) error {
+		return cli.FetchAppState(fetchCtx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
 	}
 	cli.AddEventHandler(bridge.handleEvent)
 	return bridge, nil
@@ -312,6 +347,7 @@ func (b *WhatsmeowBridge) Health() HealthStatus {
 func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	switch evt := rawEvt.(type) {
 	case *events.Connected:
+		b.ensureChatSettingsWrapped()
 		b.mu.Lock()
 		b.connGen++
 		gen := b.connGen
@@ -343,6 +379,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		}
 
 	case *events.PairSuccess:
+		b.ensureChatSettingsWrapped()
 		b.hub.Publish(BridgeEvent{Type: "authenticated"})
 
 	case *events.AppStateSyncComplete:
@@ -405,6 +442,68 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	}
 }
 
+func (b *WhatsmeowBridge) ensureChatSettingsWrapped() {
+	if b.client == nil || b.client.Store == nil {
+		return
+	}
+	b.archiveMu.Lock()
+	defer b.archiveMu.Unlock()
+	cs := b.client.Store.ChatSettings
+	if cs == nil {
+		return
+	}
+	if _, ok := cs.(*archiveTrackingChatSettings); ok {
+		return
+	}
+	b.rawChatSettings = cs
+	b.client.Store.ChatSettings = &archiveTrackingChatSettings{
+		ChatSettingsStore: cs,
+		onPutArchived:     b.recordPutArchived,
+	}
+}
+
+func (b *WhatsmeowBridge) rawChatSettingsStore() store.ChatSettingsStore {
+	b.archiveMu.Lock()
+	defer b.archiveMu.Unlock()
+	return b.rawChatSettings
+}
+
+func (b *WhatsmeowBridge) recordPutArchived(chatID string, prevFound, prevArchived, newArchived bool) {
+	if chatID == "" {
+		return
+	}
+	b.archiveMu.Lock()
+	defer b.archiveMu.Unlock()
+	if b.lastPutArchive == nil {
+		b.lastPutArchive = make(map[string]putArchiveTransition)
+	}
+	if len(b.lastPutArchive) >= maxStoredMessages {
+		clear(b.lastPutArchive)
+	}
+	b.lastPutArchive[chatID] = putArchiveTransition{
+		prevFound:    prevFound,
+		prevArchived: prevArchived,
+		archived:     newArchived,
+	}
+}
+
+func (b *WhatsmeowBridge) consumePutArchived(chatID string, expectedArchived bool) (putArchiveTransition, bool) {
+	b.archiveMu.Lock()
+	defer b.archiveMu.Unlock()
+	if b.lastPutArchive == nil {
+		return putArchiveTransition{}, false
+	}
+	tr, ok := b.lastPutArchive[chatID]
+	if !ok {
+		return putArchiveTransition{}, false
+	}
+	delete(b.lastPutArchive, chatID)
+	if tr.archived != expectedArchived {
+		return putArchiveTransition{}, false
+	}
+	return tr, true
+}
+
 func (b *WhatsmeowBridge) handleArchiveEvent(evt *events.Archive) {
 	if evt == nil || evt.Action == nil {
 		return
@@ -418,20 +517,52 @@ func (b *WhatsmeowBridge) handleArchiveEvent(evt *events.Archive) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	prev, known, err := b.store.GetChatArchived(ctx, chatID)
-	if err != nil {
-		known = false
-	}
-	if err := b.store.SetChatArchived(ctx, chatID, archived); err != nil {
-		b.log.Warnf("failed to persist archive state for %s: %v", chatID, err)
+	var tsMs int64
+	if !evt.Timestamp.IsZero() {
+		tsMs = evt.Timestamp.UnixMilli()
 	}
 	if evt.FromFullSync {
+		if _, err := b.store.SetChatArchivedAt(ctx, chatID, archived, tsMs); err != nil {
+			b.log.Warnf("failed to seed archive state for %s: %v", chatID, err)
+		}
 		return
 	}
-	wasArchived := !archived
-	if known {
-		wasArchived = prev
+
+	prev, known, storedTS, err := b.store.GetChatArchivedState(ctx, chatID)
+	if err != nil {
+		known = false
+		storedTS = 0
 	}
+	if tsMs > 0 && storedTS > 0 && tsMs < storedTS {
+		return
+	}
+	trans, matchedPut := b.consumePutArchived(chatID, archived)
+
+	rawCS := b.rawChatSettingsStore()
+	var wasArchived bool
+	switch {
+	case known:
+		wasArchived = prev
+	case matchedPut && trans.prevFound:
+		wasArchived = trans.prevArchived
+	case rawCS != nil:
+		if settings, err := rawCS.GetChatSettings(ctx, evt.JID); err == nil && settings.Found {
+			wasArchived = settings.Archived
+		} else {
+			wasArchived = !archived
+		}
+	default:
+		wasArchived = !archived
+	}
+
+	writeTS := tsMs
+	if writeTS <= 0 {
+		writeTS = time.Now().UnixMilli()
+	}
+	if _, err := b.store.SetChatArchivedAt(ctx, chatID, archived, writeTS); err != nil {
+		b.log.Warnf("failed to persist archive state for %s: %v", chatID, err)
+	}
+
 	b.hub.Publish(BridgeEvent{
 		Type: "chat_archived",
 		Data: map[string]any{
@@ -889,7 +1020,10 @@ func (b *WhatsmeowBridge) ArchiveChat(ctx context.Context, chatID string, archiv
 	if err := b.client.SendAppState(ctx, appstate.BuildArchive(target, archived, lastTS, lastKey)); err != nil {
 		return err
 	}
-	_ = b.store.SetChatArchived(ctx, canonicalJID(target), archived)
+	if rawCS := b.rawChatSettingsStore(); rawCS != nil {
+		_ = rawCS.PutArchived(ctx, target, archived)
+	}
+	_, _ = b.store.SetChatArchivedAt(ctx, canonicalJID(target), archived, time.Now().UnixMilli())
 	return nil
 }
 

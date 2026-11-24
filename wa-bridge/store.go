@@ -231,43 +231,71 @@ func (s *BridgeStore) GetMessage(ctx context.Context, msgID string) (StoredMessa
 }
 
 func (s *BridgeStore) GetChatArchived(ctx context.Context, chatJID string) (bool, bool, error) {
+	archived, known, _, err := s.GetChatArchivedState(ctx, chatJID)
+	return archived, known, err
+}
+
+func (s *BridgeStore) GetChatArchivedState(ctx context.Context, chatJID string) (bool, bool, int64, error) {
 	if chatJID == "" {
-		return false, false, nil
+		return false, false, 0, nil
 	}
 	var archivedInt int
+	var updatedAt int64
 	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT archived FROM bridge_chat_archive WHERE chat_jid = ?`,
+		`SELECT archived, updated_at FROM bridge_chat_archive WHERE chat_jid = ?`,
 		chatJID,
-	).Scan(&archivedInt)
+	).Scan(&archivedInt, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, false, nil
+		return false, false, 0, nil
 	}
 	if err != nil {
-		return false, false, fmt.Errorf("query chat archive state: %w", err)
+		return false, false, 0, fmt.Errorf("query chat archive state: %w", err)
 	}
-	return archivedInt != 0, true, nil
+	return archivedInt != 0, true, updatedAt, nil
 }
 
 func (s *BridgeStore) SetChatArchived(ctx context.Context, chatJID string, archived bool) error {
+	_, err := s.SetChatArchivedAt(ctx, chatJID, archived, time.Now().UnixMilli())
+	return err
+}
+
+// SetChatArchivedAt persists archive state monotonically by timestamp when both
+// the stored row and incoming event carry non-zero timestamps.
+func (s *BridgeStore) SetChatArchivedAt(ctx context.Context, chatJID string, archived bool, tsMs int64) (bool, error) {
 	if chatJID == "" {
-		return nil
+		return false, nil
+	}
+	_, known, existingTS, err := s.GetChatArchivedState(ctx, chatJID)
+	if err != nil {
+		return false, err
+	}
+	if known && tsMs > 0 && existingTS > 0 && tsMs < existingTS {
+		return false, nil
+	}
+	writeTS := tsMs
+	if writeTS <= 0 {
+		if existingTS > 0 {
+			writeTS = existingTS
+		} else {
+			writeTS = time.Now().UnixMilli()
+		}
 	}
 	archivedInt := 0
 	if archived {
 		archivedInt = 1
 	}
-	_, err := s.db.ExecContext(
+	_, err = s.db.ExecContext(
 		ctx,
 		`INSERT INTO bridge_chat_archive(chat_jid, archived, updated_at)
 		 VALUES (?, ?, ?)
 		 ON CONFLICT(chat_jid) DO UPDATE SET archived = excluded.archived, updated_at = excluded.updated_at`,
-		chatJID, archivedInt, time.Now().UnixMilli(),
+		chatJID, archivedInt, writeTS,
 	)
 	if err != nil {
-		return fmt.Errorf("save chat archive state: %w", err)
+		return false, fmt.Errorf("save chat archive state: %w", err)
 	}
-	return nil
+	return true, nil
 }
 
 func (s *BridgeStore) GetLastChatMessage(ctx context.Context, chatJID string) (StoredMessage, bool, error) {
