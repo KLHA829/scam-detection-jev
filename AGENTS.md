@@ -62,8 +62,9 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - `python jevlike_serve.py` (or `npm run jevlike`) in terminal 1 — **PII mask head required**; then `npm start` in terminal 2 with `LLM_REVIEW_*` set.
 - `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — stub worker for offline tests (mask + optional fixed scores).
 
-## Current state (update with the date when it changes) — 2026-11-23
+## Current state (update with the date when it changes) — 2026-11-24
 
+- A 1:1 chat the user moves out of the archive (`chat_archived` with `prev=true`, `curr=false`) is recorded in `USER_RESTORED_CHATS_PATH` (default `./user-restored-chats.json`). Model verdicts on that chat then go to the self-chat review card like a saved contact, after any cooldown or restart; a curated malicious-host match still archives and blocks (2026-11-24).
 - A `（可疑推銷）` label the bot wrote is removed when a later review of the chat is a confident `no_action` with `pitch: false`; a contact the user saved or renamed is left alone (2026-11-23).
 - A first message from an unsaved number archives only on strong evidence (`strong: true`); a weak scam verdict waits for the sender's next message, so a clinic or shop that writes first after the user gave a number in person is not archived (2026-11-23).
 - The context review transcript includes the user's own messages in 1:1 chats (recorded from `message_create`, edits replaced in place), masked like inbound and marked `user:`; the prompt treats a payment, deposit or details request that completes a purchase, booking or service the user asked for as ordinary chat. Inbound-only transcripts are unchanged (2026-11-23).

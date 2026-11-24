@@ -26,6 +26,7 @@ const {
 const { blockAndRename, clearUnsavedContactLabel, labelUnsavedContact, unblockContact } = require('./lib/wa-actions');
 const { isOperatorSavedContact } = require('./lib/block-policy');
 const { createBotContactNames, defaultBotContactNamesPath } = require('./lib/bot-contact-names');
+const { createUserRestoredChats, defaultUserRestoredChatsPath } = require('./lib/user-restored-chats');
 const { createActionPacer } = require('./lib/action-pacer');
 const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-context');
 const { createOperatorState } = require('./lib/operator-mode');
@@ -528,6 +529,7 @@ async function handleWaMessage(msg, {
   reviewQueue,
   llmCooldownStore,
   botContactNames,
+  userRestoredChats,
   bypassLlmCooldown = false,
   editedFrom = null,
   isCurrent = () => true,
@@ -558,6 +560,7 @@ async function handleWaMessage(msg, {
       isForwarded: msg.isForwarded === true,
       chatId,
       savedContact: isOperatorSavedContact(contact, botContactNames),
+      userRestored: Boolean(userRestoredChats && userRestoredChats.has(chatId)),
       messageId: incomingMessageId(msg),
     },
     {
@@ -739,6 +742,15 @@ function attachHandlers(client, deps) {
     }
   });
 
+  client.on('chat_archived', (chat, archived, wasArchived) => {
+    // The bot only ever archives, so a chat leaving the archive is the user overruling it.
+    if (archived !== false || wasArchived !== true || !chat || chat.isGroup) return;
+    const chatId = serializedId(chat.id);
+    if (!chatId || !deps.userRestoredChats) return;
+    deps.userRestoredChats.record(chatId);
+    log.info('chat restored by user; model verdicts only alert from now on', { chatId });
+  });
+
   client.on('vote_update', async (vote) => {
     try {
       if (!deps.operator || !deps.reviewQueue) return;
@@ -800,6 +812,9 @@ async function main() {
   const botContactNames = createBotContactNames({
     filePath: defaultBotContactNamesPath(process.env),
   });
+  const userRestoredChats = createUserRestoredChats({
+    filePath: defaultUserRestoredChatsPath(process.env),
+  });
   const client = createWhatsAppClient();
 
   try {
@@ -844,6 +859,7 @@ async function main() {
     reviewQueue,
     llmCooldownStore,
     botContactNames,
+    userRestoredChats,
   });
   await client.initialize();
 }
