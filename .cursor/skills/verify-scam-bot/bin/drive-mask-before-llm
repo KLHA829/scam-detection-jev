@@ -63,6 +63,10 @@ const TEST_NAMES = [
   'archives llm_review_scam when the model flags scam',
   'does not archive when mask fails for local unsaved',
   "sends the user's question and the reply as masked turns marked by speaker",
+  'keeps the official PayMe domain readable and tells the model it is official',
+  'leaves lookalike and other domains masked and adds nothing to the prompt',
+  "names brands' own domains and leaves lookalikes and other domains out",
+  'does not count a brand domain inside a login, an email, another link or a longer name',
 ];
 
 const TEST_FILES = [
