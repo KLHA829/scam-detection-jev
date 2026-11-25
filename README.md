@@ -9,7 +9,7 @@ For why the live path works this way, see [DESIGN_DECISIONS.md](DESIGN_DECISIONS
 
 ## Before you start
 
-You need **Node.js 20+**, **Python 3.11+** (3.10 works; 3.11 is preferred), a WhatsApp account you may link via WhatsApp Web, and an OpenAI-compatible API for `LLM_REVIEW_*`.
+You need **Node.js 20+**, **Python 3.11+** (3.10 works; 3.11 is preferred), **Go 1.26+** (for the default `whatsmeow` sidecar; omit only if using `WA_TRANSPORT=wwebjs` with Chrome), a WhatsApp account you may link via WhatsApp Web, and an OpenAI-compatible API for `LLM_REVIEW_*`.
 
 Copy [`.env.example`](.env.example) to `.env`. Product invariants live in [AGENTS.md](AGENTS.md). Do not run `npm audit fix` (it downgrades Puppeteer and breaks the bot). See [Known security advisories](#known-security-advisories).
 
@@ -31,6 +31,7 @@ python -m pip install --upgrade pip
 python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 python -m pip install -r requirements.txt
 npm install
+npm run wa-bridge:build     # build default whatsmeow sidecar (Go 1.26+)
 scripts/download_jevlike_ckpt.sh
 python scripts/train_pii_mask.py --output models/jevlike_hf_pii_mask.pt
 
@@ -45,7 +46,7 @@ curl -s -X POST localhost:8766/v1/mask -H 'content-type: application/json' -d '{
 npm start
 ```
 
-Scan the QR code. Session data stays in `.wwebjs_auth/` (gitignored). Keep that folder across restarts. Deleting it forces a new login and often logs the session out.
+Scan the QR code. By default (`WA_TRANSPORT=whatsmeow`), session keys stay in `wa-bridge.db` (gitignored; `.wwebjs_auth/` when using `WA_TRANSPORT=wwebjs`). Keep that file/folder across restarts. Deleting it forces a new login and often logs the session out.
 
 Set `JEVLIKE_DEVICE=cuda` only when you have a compatible NVIDIA GPU. CPU is the default on a Pi.
 
@@ -53,7 +54,7 @@ The r1 download alone cannot serve `/v1/mask`: training creates the separate PII
 
 ### Raspberry Pi (正體中文)
 
-需要 **Node.js 20+**、**Python 3.11+**、64-bit OS（Raspberry Pi OS 64-bit / aarch64）。
+需要 **Node.js 20+**、**Python 3.11+**、**Go 1.26+**（預設 `whatsmeow` sidecar 需要）、64-bit OS（Raspberry Pi OS 64-bit / aarch64）。
 
 ```bash
 git clone git@github.com:KLHA829/scam-detection-jev.git
@@ -67,6 +68,7 @@ python -m pip install --upgrade pip
 python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 python -m pip install -r requirements.txt
 npm install
+npm run wa-bridge:build
 scripts/download_jevlike_ckpt.sh
 python scripts/train_pii_mask.py --output models/jevlike_hf_pii_mask.pt
 
@@ -80,7 +82,7 @@ curl -s -X POST localhost:8766/v1/mask -H 'content-type: application/json' -d '{
 npm start                 # terminal 2
 ```
 
-掃 QR。Session 在 `.wwebjs_auth/`。權重見 Release [jevlike-hf-r1](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1)。不要把 `.pt` 或 encoder 推進 git。詳見 [models/README.md](models/README.md)。
+掃 QR。預設（`WA_TRANSPORT=whatsmeow`）Session 存在 `wa-bridge.db`（若設為 `WA_TRANSPORT=wwebjs` 則在 `.wwebjs_auth/`）。權重見 Release [jevlike-hf-r1](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1)。不要把 `.pt`、`.db` 或 encoder 推進 git。詳見 [models/README.md](models/README.md)。
 
 Pi 建議 4 GB RAM 以上。`JEVLIKE_DEVICE=cpu` 為預設。
 

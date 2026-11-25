@@ -129,10 +129,10 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 ## Landmines
 
 - Do **not** run `npm audit fix` — it downgrades puppeteer and breaks the bot (see README).
-- Do not commit `.env`, `.wwebjs_auth/`, `*.pt`, or HF encoder weights.
-- Chromium is not installed by `npm install`: run `npx puppeteer browsers install chrome` before `npm start`.
+- Do not commit `.env`, `.wwebjs_auth/`, `wa-bridge.db*`, `*.pt`, or HF encoder weights.
+- Default `whatsmeow` uses `npm run wa-bridge:build` (no Chrome); Chromium is only needed when `WA_TRANSPORT=wwebjs` (`npx puppeteer browsers install chrome`).
 - This bot is a personal filter on your own account, not a service. WhatsApp Web automation can log the
-  session out; keep `.wwebjs_auth/`.
+  session out; keep `wa-bridge.db` (or `.wwebjs_auth/` for `wwebjs`).
 
 **Gardener:** When you fix a behavior bug or doc drift, encode the correction in tests, CI, or `.cursor/skills/verify-scam-bot/` (feature map + `bin/drive-*`) — not only in this file. Follow the Maintenance checklist in that skill.
 
@@ -162,4 +162,4 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - Node 22 and Python 3.12 are on the default image. `python3-venv` is not, so a venv needs that package first. Scorer dependencies live in `.venv` (gitignored). Start the worker with `.venv/bin/python jevlike_serve.py`. `npm test` uses system `python3` and does not import torch.
 - The r1 head is not in git. `scripts/download_jevlike_ckpt.sh` writes `models/jevlike_hf_chinese_roberta_r1.pt`. The public release URL 404s on this private repo; the script falls back to `gh`. The frozen encoder `hfl/chinese-roberta-wwm-ext` caches under `~/.cache/huggingface`.
 - `npm test` is the offline check (no WhatsApp, no encoder download). CI also runs `node scripts/review-eval.js --llm dry --mode all` on `fixtures/review-eval-smoke.json`. Live mask: `POST /v1/mask` with `{"messages":["..."]}`. The worker does not read `.env`.
-- Do not launch `npm start` for routine verification. WhatsApp Web needs an interactive QR login and can log the session out. Chrome for that path is `npx puppeteer browsers install chrome` (not part of `npm ci`).
+- Do not launch `npm start` for routine verification. WhatsApp Web needs an interactive QR login and can log the session out. Chrome (`npx puppeteer browsers install chrome`, not part of `npm ci`) is only needed for legacy `WA_TRANSPORT=wwebjs`.
