@@ -24,6 +24,7 @@ ENV NODE_ENV=production \
     REVIEW_QUEUE_PATH=/data/review-queue.json \
     LLM_REVIEW_COOLDOWN_PATH=/data/llm-review-cooldown.json \
     BOT_CONTACT_NAMES_PATH=/data/bot-contact-names.json \
+    USER_RESTORED_CHATS_PATH=/data/user-restored-chats.json \
     BLOCK_LOG_PATH=/data/blocks.jsonl
 
 WORKDIR /app

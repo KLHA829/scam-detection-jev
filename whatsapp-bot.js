@@ -34,6 +34,7 @@ const { blockAndRename, clearUnsavedContactLabel, labelUnsavedContact, unblockCo
 const { savedContactStatus } = require('./lib/block-policy');
 const { loadSenderContact } = require('./lib/sender-contact');
 const { createBotContactNames, defaultBotContactNamesPath } = require('./lib/bot-contact-names');
+const { createUserRestoredChats, defaultUserRestoredChatsPath } = require('./lib/user-restored-chats');
 const { createActionPacer } = require('./lib/action-pacer');
 const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-context');
 const { createOperatorState } = require('./lib/operator-mode');
@@ -567,6 +568,17 @@ async function recordOwnMessage(msg, { transport, recentContext, editedFrom = nu
   );
 }
 
+// The sender contact is best effort: when it cannot be read, the message is
+// still reviewed and its saved status is unknown, which never auto-acts.
+async function loadMessageContact(msg) {
+  try {
+    return (await msg.getContact()) || null;
+  } catch (err) {
+    log.error('failed to load contact', { error: err.message });
+    return null;
+  }
+}
+
 async function handleWaMessage(rawMsg, {
   client,
   transport: providedTransport,
@@ -581,6 +593,7 @@ async function handleWaMessage(rawMsg, {
   reviewQueue,
   llmCooldownStore,
   botContactNames,
+  userRestoredChats,
   bypassLlmCooldown = false,
   editedFrom = null,
   isCurrent = () => true,
@@ -600,23 +613,25 @@ async function handleWaMessage(rawMsg, {
   }
 
   let chat;
-  let contact;
   try {
     chat = await msg.getChat();
-    contact = await msg.getContact();
   } catch (err) {
-    log.error('failed to load chat/contact', { error: err.message });
+    log.error('failed to load chat', { error: err.message });
     return null;
   }
+  const contact = await loadMessageContact(msg);
 
   const chatId = serializedId(chat && chat.id) || msg.from;
   const contactId = serializedId(contact && contact.id);
   const senderId = msg.author || msg.from || chatId;
   const extraIds = [senderId, chatId].filter(Boolean);
-  const sender = await loadSenderContact(transport, { senderId, contact, botContactNames });
+  // Without the sender's own record a LID saved flag is unread, so the saved
+  // status stays unknown even when the phone-number contact says unsaved.
+  const readSender = async (senderContact) =>
+    senderContact ? loadSenderContact(transport, { senderId, contact: senderContact, botContactNames }) : null;
+  const sender = await readSender(contact);
   const listName = chatListName(sender || contact, msg);
-  const refreshSender = async () =>
-    loadSenderContact(transport, { senderId, contact: await msg.getContact(), botContactNames });
+  const refreshSender = async () => readSender(await loadMessageContact(msg));
 
   const result = await processIncomingMessage(
     {
@@ -624,13 +639,14 @@ async function handleWaMessage(rawMsg, {
       isGroup: Boolean(chat.isGroup),
       isChannel: Boolean(chat.isChannel),
       type: msg.type,
-      isMe: Boolean(contact.isMe),
-      pushName: msg.notifyName || (msg._data && msg._data.notifyName) || contact.pushname || contact.name,
-      contactName: (sender && sender.name) || contact.name || contact.pushname,
+      isMe: Boolean(contact && contact.isMe),
+      pushName: msg.notifyName || (msg._data && msg._data.notifyName) || (contact && (contact.pushname || contact.name)),
+      contactName: (sender && sender.name) || (contact && (contact.name || contact.pushname)),
       body: msg.body || '',
       isForwarded: msg.isForwarded === true,
       chatId,
       savedContact: savedContactStatus(sender, botContactNames),
+      userRestored: Boolean(userRestoredChats && userRestoredChats.has(chatId)),
       messageId: incomingMessageId(msg),
     },
     {
@@ -833,6 +849,15 @@ function attachHandlers(clientOrTransport, deps) {
     }
   });
 
+  transport.on('chat_archived', (chat, archived, wasArchived) => {
+    // The bot only ever archives, so a chat leaving the archive is the user overruling it.
+    if (archived !== false || wasArchived !== true || !chat || chat.isGroup) return;
+    const chatId = serializedId(chat.id);
+    if (!chatId || !deps.userRestoredChats) return;
+    deps.userRestoredChats.record(chatId);
+    log.info('chat restored by user; model verdicts only alert from now on', { chatId });
+  });
+
   transport.on('vote_update', async (vote) => {
     try {
       if (!deps.operator || !deps.reviewQueue) return;
@@ -895,6 +920,9 @@ async function main() {
   const botContactNames = createBotContactNames({
     filePath: defaultBotContactNamesPath(process.env),
   });
+  const userRestoredChats = createUserRestoredChats({
+    filePath: defaultUserRestoredChatsPath(process.env),
+  });
   const transport = createWhatsAppTransport({ env: process.env, authPath: AUTH_PATH });
 
   try {
@@ -940,6 +968,7 @@ async function main() {
     reviewQueue,
     llmCooldownStore,
     botContactNames,
+    userRestoredChats,
   });
   await transport.initialize();
 }
