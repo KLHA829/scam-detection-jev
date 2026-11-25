@@ -1,18 +1,18 @@
 # WhatsApp transport (whatsmeow / Docker)
 
-Chromium-free `WaTransport` adapter (`WA_TRANSPORT=whatsmeow`) connecting over loopback HTTP/SSE to the pure-Go `wa-bridge/` sidecar, plus multi-stage Linux Docker packaging in [`Dockerfile`](../../../Dockerfile). Runtime `resolveTransportName` in `lib/wa-transport/index.js` keeps `wwebjs` as the default fallback until manual live QR validation is completed; `Dockerfile` defaults to `WA_TRANSPORT=whatsmeow` with `/data` state paths.
+Chromium-free `WaTransport` adapter (`WA_TRANSPORT=whatsmeow`) connecting over loopback HTTP/SSE to the pure-Go `wa-bridge/` sidecar, plus multi-stage Linux Docker packaging in [`Dockerfile`](../../../../Dockerfile). Runtime `resolveTransportName` in `lib/wa-transport/index.js` keeps `wwebjs` as the default fallback until manual live QR validation is completed; `Dockerfile` defaults to `WA_TRANSPORT=whatsmeow` with `/data` state paths.
 
 ## Sub-features
 
 - **Transport selection & contract** (`lib/wa-transport/index.js`, `lib/wa-transport/contract.test.js`): `resolveTransportName` returns `wwebjs` when unset, selects `createWhatsmeowTransport` for `WA_TRANSPORT=whatsmeow`, and throws on unsupported transport names.
-- **Loopback HTTP/SSE adapter & auto-start** (`lib/wa-transport/whatsmeow.js`, `lib/wa-transport/whatsmeow.test.js`): `validateBridgeBaseUrl` restricts `WA_BRIDGE_URL` (default `http://127.0.0.1:8767`) to loopback (`127.*`, `localhost`, `::1`, `http://` only when auto-starting), optionally starts `WA_BRIDGE_BIN` (`wa-bridge/wa-bridge[.exe]`) via `WA_BRIDGE_AUTO_START`, and stores SSE cursors plus handled self message IDs in `WA_BRIDGE_CURSOR_PATH` (default `./wa-bridge-cursor.json`).
+- **Loopback HTTP/SSE adapter & auto-start** (`lib/wa-transport/whatsmeow.js`, `lib/wa-transport/whatsmeow.test.js`): `validateBridgeBaseUrl` restricts `WA_BRIDGE_URL` (default `http://127.0.0.1:8767`) to loopback (`127.*`, `localhost`, `::1`, `http://` only when auto-starting), optionally starts `WA_BRIDGE_BIN` (`wa-bridge/wa-bridge[.exe]`) via `WA_BRIDGE_AUTO_START`, and stores SSE cursors plus handled self message IDs via `WA_BRIDGE_CURSOR_PATH` (defaults to `./wa-bridge-cursor.json` for standalone sidecars; with `WA_BRIDGE_AUTO_START=1`, cursor state stays in memory unless `WA_BRIDGE_CURSOR_PATH` is explicitly set, as `Dockerfile` does with `/data/wa-bridge-cursor.json`).
 - **Pure-Go sidecar** (`wa-bridge/`): Go module using `go.whatsmeow` and pure-Go SQLite (`WA_BRIDGE_DB_PATH`) with unit tests in `wa-bridge/bridge_test.go`.
 - **Cross-platform build helper** (`scripts/build-wa-bridge.js`, `npm run wa-bridge:build`): builds `CGO_ENABLED=0` binaries (`wa-bridge/wa-bridge[.exe]` for native host builds, or `wa-bridge/wa-bridge-<goos>-<goarch>[.exe]` when cross-compiling with `--goos`/`--goarch` unless `--out` is given).
 - **Linux Docker packaging** (`Dockerfile`, `.dockerignore`): two-stage `golang:1.26-bookworm` builder + `node:22-bookworm-slim` runtime setting `PUPPETEER_SKIP_DOWNLOAD=true`, `WA_TRANSPORT=whatsmeow`, `WA_BRIDGE_AUTO_START=1`, `WA_BRIDGE_BIN=/app/wa-bridge/wa-bridge`, and `/data` persistence paths (`WA_BRIDGE_DB_PATH`, `WA_BRIDGE_CURSOR_PATH`, `OPERATOR_MODE_PATH`, `REVIEW_QUEUE_PATH`, `LLM_REVIEW_COOLDOWN_PATH`, `BOT_CONTACT_NAMES_PATH`, `USER_RESTORED_CHATS_PATH`, `BLOCK_LOG_PATH`). `.dockerignore` excludes local `wa-data`, `wa-bridge/wa-bridge-*`, `**/wa-bridge.db*`, and `**/wa-bridge-cursor.json`.
 
 ## How to get to it (user POV)
 
-1. Build the native sidecar (`npm run wa-bridge:build`) and set `WA_TRANSPORT=whatsmeow` (plus `WA_BRIDGE_AUTO_START=1` or point `WA_BRIDGE_URL` to a running `wa-bridge`).
+1. Build the native sidecar (`npm run wa-bridge:build`) and set `WA_TRANSPORT=whatsmeow`, plus either `WA_BRIDGE_AUTO_START=1` (auto-generates a bearer token when `WA_BRIDGE_TOKEN` is unset) or both `WA_BRIDGE_URL` and `WA_BRIDGE_TOKEN` pointing at a running standalone `wa-bridge`.
 2. Start the live PII mask worker (`JEVLIKE_MASK_CKPT` exported), then run `npm start` and scan the terminal QR code once to link the WhatsApp Web device.
 3. For Docker, build `docker build -t scam-detection-jev .` and mount a persistent volume at `/data` (passing `JEVLIKE_BASE_URL` and `LLM_REVIEW_*` via env).
 
