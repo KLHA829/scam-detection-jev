@@ -267,7 +267,7 @@ npm run mini-wa -- --with-bot --with-stub
 Open `http://127.0.0.1:8787` in your browser. To test against your real `jevlike_serve.py` and real OpenAI-compatible LLM without overwriting your live bot state (`operator-mode.json`, `review-queue.json`, etc.), run `npm run mini-wa` and connect `npm start` using the `Bearer Token` printed in the terminal plus isolated state paths:
 
 ```bash
-STATE_DIR=$(mktemp -d)
+STATE_DIR=$(mktemp -d) && \
 WA_TRANSPORT=whatsmeow WA_BRIDGE_AUTO_START=0 WA_BRIDGE_URL=http://127.0.0.1:8767 WA_BRIDGE_TOKEN=<printed-token> \
 WA_BRIDGE_CURSOR_PATH="$STATE_DIR/cursor.json" OPERATOR_MODE_PATH="$STATE_DIR/operator-mode.json" \
 REVIEW_QUEUE_PATH="$STATE_DIR/review-queue.json" LLM_REVIEW_COOLDOWN_PATH="$STATE_DIR/cooldown.json" \
