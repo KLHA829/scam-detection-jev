@@ -636,8 +636,13 @@ class UnloadedWorkerTests(unittest.TestCase):
         saved = serve._MODEL
         serve._MODEL = object()
         try:
-            with patch.dict(os.environ, {"JEVLIKE_MASK_CKPT": ""}, clear=False):
-                self.assertIsNone(serve.maybe_load_mask_head())
+            with tempfile.TemporaryDirectory() as tmp:
+                missing = Path(tmp) / "missing.pt"
+                with (
+                    patch.object(serve, "DEFAULT_MASK_CKPT", missing),
+                    patch.dict(os.environ, {"JEVLIKE_MASK_CKPT": ""}, clear=False),
+                ):
+                    self.assertIsNone(serve.maybe_load_mask_head())
         finally:
             serve._MODEL = saved
 

@@ -43,5 +43,6 @@ Each feature file: H1 + paragraph, then `Sub-features`, `How to get to it (user 
 - [Lab jevlike score](./lab-jevlike-score.md) — **lab-only** stub `/v1/score` and `lab/score-message` tests (not live inbound).
 - [Action receipt](./action-receipt.md) — operator self-chat receipt after archive/block.
 - [Guided poll](./operator-guided-poll.md) — guided mode waits for 封鎖並封存 / 只封存 / 留低.
+- [WhatsApp transport (whatsmeow / Docker)](./wa-transport.md) — Chromium-free `WaTransport` adapter (`WA_TRANSPORT=whatsmeow`) and pure-Go `wa-bridge/` sidecar (`Dockerfile` defaults to `whatsmeow` with `/data` state paths; runtime `resolveTransportName` keeps `wwebjs` until manual QR validation); offline tests (`lib/wa-transport/*.test.js`, `wa-bridge/bridge_test.go`) and best-effort `npm run test:e2e:boot:whatsmeow`.
 
 Legacy filename [score-archive.md](./score-archive.md) redirects to mask-primary + lab score docs.
