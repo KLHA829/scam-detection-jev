@@ -255,6 +255,17 @@ docker run --rm -it \
 
 State files (`wa-bridge.db`, `wa-bridge-cursor.json`, `bot-contact-names.json`, `user-restored-chats.json`, `operator-mode.json`, `review-queue.json`, `llm-review-cooldown.json`, `blocks.jsonl`) default to `/data/...` inside the container, so mounting `-v "$(pwd)/wa-data:/data"` preserves your WhatsApp session, restored-chat overrides, and label history across restarts without storing secrets in the image. `wa-data/` and `**/wa-bridge.db*` are excluded in `.dockerignore` and `.gitignore` so rebuilding the image never bakes your live database or keys into a new image. When upgrading from the legacy Chromium container (`.wwebjs_auth`), copy `bot-contact-names.json` and `user-restored-chats.json` (plus any persisted `operator-mode.json`, `review-queue.json`, or `blocks.jsonl`) into `./wa-data/` before starting the new container so previously bot-labelled contacts stay recognized as unsaved and user-restored chats stay protected. You still need a terminal or logs on first run to read the QR code. The image runs as user `node`; ensure host permissions on `./wa-data` allow `node` (uid `1000`) to write. To fall back to the legacy Chromium adapter instead, add Puppeteer's Chromium packages in `Dockerfile` and override `-e WA_TRANSPORT=wwebjs`.
 
+## Mini WhatsApp Sandbox (no QR login)
+
+Run a local Chromium-free fake `wa-bridge` (`whatsmeow` HTTP + SSE protocol) with a WhatsApp-style Web UI so you can test inbound scam messages, edits, Self-Chat Poll cards, `@lid` resolution, contact states, and archive/block actions without scanning a QR code:
+
+```bash
+# Offline UI + bot + built-in stub mask & LLM:
+npm run mini-wa -- --with-bot --with-stub
+```
+
+Open `http://127.0.0.1:8787` in your browser. To test against your real `jevlike_serve.py` and real OpenAI-compatible LLM, run `npm run mini-wa` and connect `npm start` with `WA_TRANSPORT=whatsmeow WA_BRIDGE_AUTO_START=0 WA_BRIDGE_URL=http://127.0.0.1:8767 WA_BRIDGE_TOKEN=mini-wa-token`.
+
 ## Optional agent smoke (no QR)
 
 [`.cursor/skills/verify-scam-bot/`](.cursor/skills/verify-scam-bot/SKILL.md):
