@@ -14,6 +14,9 @@ const root = path.resolve(skillDir, '../../..');
 const evidenceRoot = path.join(skillDir, 'evidence');
 
 const TEST_NAMES = [
+  'does not archive again after the user un-archives a chat the bot archived',
+  'remembers the un-archive after a restart',
+  'still blocks a curated malicious host in a restored chat',
   'reads LLM_REVIEW_COOLDOWN_MS with production default when unset',
   'tracks per-chat windows',
   'persists across store reload (process restart) until expiry',

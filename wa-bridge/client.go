@@ -15,6 +15,7 @@ import (
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waSyncAction"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -24,13 +25,44 @@ import (
 )
 
 const (
-	defaultSyncRetryDelay = 2 * time.Second
-	maxSyncAttempts       = 5
+	defaultSyncRetryDelay        = 2 * time.Second
+	maxSyncAttempts              = 5
+	maxArchiveTransitionsPerChat = 64
 )
+
+type putArchiveTransition struct {
+	prevFound    bool
+	prevArchived bool
+	archived     bool
+}
+
+type archiveTrackingChatSettings struct {
+	store.ChatSettingsStore
+	onPutArchived func(chatID string, prevFound, prevArchived, newArchived bool)
+}
+
+func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat types.JID, archived bool) error {
+	var prevFound bool
+	var prevArchived bool
+	if settings, err := w.ChatSettingsStore.GetChatSettings(ctx, chat); err == nil && settings.Found {
+		prevFound = true
+		prevArchived = settings.Archived
+	}
+	if err := w.ChatSettingsStore.PutArchived(ctx, chat, archived); err != nil {
+		return err
+	}
+	if w.onPutArchived != nil {
+		if chatID := canonicalJID(chat); chatID != "" {
+			w.onPutArchived(chatID, prevFound, prevArchived, archived)
+		}
+	}
+	return nil
+}
 
 type WhatsmeowBridge struct {
 	db                *sql.DB
 	store             *BridgeStore
+	rawChatSettings   store.ChatSettingsStore
 	client            *whatsmeow.Client
 	hub               *EventHub
 	log               waLog.Logger
@@ -50,6 +82,9 @@ type WhatsmeowBridge struct {
 	syncAttemptActive bool
 	syncNeedsRetry    bool
 	syncNeedsFull     bool
+
+	archiveMu       sync.Mutex
+	putArchiveQueue map[string][]putArchiveTransition
 }
 
 func ensurePrivateSQLiteFile(dbPath string) error {
@@ -122,21 +157,23 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 	}
 	chmodSQLiteSidecars(dbPath)
 
-	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
 	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
 	bridge := &WhatsmeowBridge{
 		db:             db,
 		store:          bridgeStore,
-		client:         cli,
 		hub:            NewEventHub(),
 		log:            logger,
 		ctx:            bridgeCtx,
 		cancel:         bridgeCancel,
 		syncRetryDelay: defaultSyncRetryDelay,
 		syncRetryWake:  make(chan struct{}, 1),
-		fetchContactsFn: func(fetchCtx context.Context, fullSync bool) error {
-			return cli.FetchAppState(fetchCtx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
-		},
+		putArchiveQueue: make(map[string][]putArchiveTransition),
+	}
+	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
+	bridge.client = cli
+	bridge.ensureChatSettingsWrapped()
+	bridge.fetchContactsFn = func(fetchCtx context.Context, fullSync bool) error {
+		return cli.FetchAppState(fetchCtx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
 	}
 	cli.AddEventHandler(bridge.handleEvent)
 	return bridge, nil
@@ -311,6 +348,7 @@ func (b *WhatsmeowBridge) Health() HealthStatus {
 func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	switch evt := rawEvt.(type) {
 	case *events.Connected:
+		b.ensureChatSettingsWrapped()
 		b.mu.Lock()
 		b.connGen++
 		gen := b.connGen
@@ -342,6 +380,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		}
 
 	case *events.PairSuccess:
+		b.ensureChatSettingsWrapped()
 		b.hub.Publish(BridgeEvent{Type: "authenticated"})
 
 	case *events.AppStateSyncComplete:
@@ -398,7 +437,131 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 
 	case *events.Message:
 		b.handleIncomingMessage(evt)
+
+	case *events.Archive:
+		b.handleArchiveEvent(evt)
 	}
+}
+
+func (b *WhatsmeowBridge) ensureChatSettingsWrapped() {
+	if b.client == nil || b.client.Store == nil {
+		return
+	}
+	b.archiveMu.Lock()
+	defer b.archiveMu.Unlock()
+	cs := b.client.Store.ChatSettings
+	if cs == nil {
+		return
+	}
+	if _, ok := cs.(*archiveTrackingChatSettings); ok {
+		return
+	}
+	b.rawChatSettings = cs
+	b.client.Store.ChatSettings = &archiveTrackingChatSettings{
+		ChatSettingsStore: cs,
+		onPutArchived:     b.recordPutArchived,
+	}
+}
+
+func (b *WhatsmeowBridge) rawChatSettingsStore() store.ChatSettingsStore {
+	b.archiveMu.Lock()
+	defer b.archiveMu.Unlock()
+	return b.rawChatSettings
+}
+
+func (b *WhatsmeowBridge) recordPutArchived(chatID string, prevFound, prevArchived, newArchived bool) {
+	if chatID == "" {
+		return
+	}
+	b.archiveMu.Lock()
+	defer b.archiveMu.Unlock()
+	if b.putArchiveQueue == nil {
+		b.putArchiveQueue = make(map[string][]putArchiveTransition)
+	}
+	if _, exists := b.putArchiveQueue[chatID]; !exists && len(b.putArchiveQueue) >= maxStoredMessages {
+		clear(b.putArchiveQueue)
+	}
+	q := append(b.putArchiveQueue[chatID], putArchiveTransition{
+		prevFound:    prevFound,
+		prevArchived: prevArchived,
+		archived:     newArchived,
+	})
+	if len(q) > maxArchiveTransitionsPerChat {
+		q = q[len(q)-maxArchiveTransitionsPerChat:]
+	}
+	b.putArchiveQueue[chatID] = q
+}
+
+func (b *WhatsmeowBridge) consumePutArchived(chatID string, expectedArchived bool) (putArchiveTransition, bool) {
+	b.archiveMu.Lock()
+	defer b.archiveMu.Unlock()
+	if b.putArchiveQueue == nil {
+		return putArchiveTransition{}, false
+	}
+	q := b.putArchiveQueue[chatID]
+	for i := len(q) - 1; i >= 0; i-- {
+		if q[i].archived == expectedArchived {
+			tr := q[i]
+			q = append(q[:i], q[i+1:]...)
+			if len(q) == 0 {
+				delete(b.putArchiveQueue, chatID)
+			} else {
+				b.putArchiveQueue[chatID] = q
+			}
+			return tr, true
+		}
+	}
+	return putArchiveTransition{}, false
+}
+
+func (b *WhatsmeowBridge) handleArchiveEvent(evt *events.Archive) {
+	if evt == nil || evt.Action == nil {
+		return
+	}
+	chatID := canonicalJID(evt.JID)
+	if chatID == "" {
+		return
+	}
+	archived := evt.Action.GetArchived()
+	if evt.FromFullSync {
+		return
+	}
+
+	ctx := b.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	trans, matchedPut := b.consumePutArchived(chatID, archived)
+
+	rawCS := b.rawChatSettingsStore()
+	var wasArchived bool
+	switch {
+	case matchedPut:
+		if trans.prevFound {
+			wasArchived = trans.prevArchived
+		} else {
+			wasArchived = !archived
+		}
+	case rawCS != nil:
+		if settings, err := rawCS.GetChatSettings(ctx, evt.JID); err == nil && settings.Found {
+			wasArchived = settings.Archived
+		} else {
+			wasArchived = !archived
+		}
+	default:
+		wasArchived = !archived
+	}
+
+	b.hub.Publish(BridgeEvent{
+		Type: "chat_archived",
+		Data: map[string]any{
+			"chatId":      chatID,
+			"isGroup":     evt.JID.Server == types.GroupServer,
+			"isChannel":   evt.JID.Server == types.NewsletterServer,
+			"archived":    archived,
+			"wasArchived": wasArchived,
+		},
+	})
 }
 
 type extractedMessage struct {
