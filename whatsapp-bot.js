@@ -623,10 +623,13 @@ async function handleWaMessage(rawMsg, {
   const contactId = serializedId(contact && contact.id);
   const senderId = msg.author || msg.from || chatId;
   const extraIds = [senderId, chatId].filter(Boolean);
-  const sender = await loadSenderContact(transport, { senderId, contact, botContactNames });
+  // Without the sender's own record a LID saved flag is unread, so the saved
+  // status stays unknown even when the phone-number contact says unsaved.
+  const readSender = async (senderContact) =>
+    senderContact ? loadSenderContact(transport, { senderId, contact: senderContact, botContactNames }) : null;
+  const sender = await readSender(contact);
   const listName = chatListName(sender || contact, msg);
-  const refreshSender = async () =>
-    loadSenderContact(transport, { senderId, contact: await loadMessageContact(msg), botContactNames });
+  const refreshSender = async () => readSender(await loadMessageContact(msg));
 
   const result = await processIncomingMessage(
     {
