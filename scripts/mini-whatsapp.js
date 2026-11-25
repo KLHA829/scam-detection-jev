@@ -4,6 +4,7 @@
 
 require('dotenv/config');
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
@@ -16,9 +17,10 @@ function parseArgs(argv) {
   const args = {
     bridgePort: Number(process.env.WA_BRIDGE_PORT || 8767),
     uiPort: Number(process.env.MINI_WA_UI_PORT || 8787),
-    token: process.env.WA_BRIDGE_TOKEN || 'mini-wa-token',
+    token: process.env.WA_BRIDGE_TOKEN || crypto.randomBytes(24).toString('hex'),
     withBot: false,
     withStub: false,
+    isolatedEnv: false,
     stateDir: '',
     noUi: false,
     help: false,
@@ -27,6 +29,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === '--with-bot') args.withBot = true;
     else if (a === '--with-stub') args.withStub = true;
+    else if (a === '--isolated-env') args.isolatedEnv = true;
     else if (a === '--no-ui') args.noUi = true;
     else if (a === '--help' || a === '-h') args.help = true;
     else if (a === '--bridge-port' && i + 1 < argv.length) { args.bridgePort = Number(argv[++i]); }
@@ -71,7 +74,27 @@ function startMockLlmServer() {
 
     let content;
     if (/Cantonese|廣東話/i.test(sys)) {
-      content = '【Stub AI 提示】模擬檢視到可疑誘導／轉帳風險，請先查證對方身分。';
+      content = JSON.stringify({
+        guide: '【Stub AI 提示】模擬檢視到可疑誘導／轉帳風險，請先查證對方身分。',
+      });
+    } else if (/"label"\s*:/.test(sys)) {
+      if (/驗證碼|login|XXXil/i.test(usr) && !/payme\.hsbc/i.test(usr)) {
+        content = JSON.stringify({
+          label: 'scam',
+          confidence: 0.93,
+          signals: ['stub_lure'],
+          should_archive: true,
+          reason: 'stub_lure',
+        });
+      } else {
+        content = JSON.stringify({
+          label: 'not_scam',
+          confidence: 0.9,
+          signals: [],
+          should_archive: false,
+          reason: 'stub_benign',
+        });
+      }
     } else if (/投資|高回報|短炒/i.test(usr)) {
       content = JSON.stringify({ action: 'no_action', pitch: true, strong: false, confidence: 0.9, reason: 'stub_pitch' });
     } else if (/驗證碼|login|XXXil/i.test(usr) && !/payme\.hsbc/i.test(usr)) {
@@ -96,6 +119,103 @@ function startMockLlmServer() {
   });
 }
 
+function buildBotEnv({
+  baseEnv = process.env,
+  bridgeUrl,
+  token,
+  stateDir,
+  stubUrl = '',
+  mockLlmUrl = '',
+  isolatedEnv = false,
+}) {
+  /** @type {NodeJS.ProcessEnv} */
+  const botEnv = {
+    ...baseEnv,
+    WA_TRANSPORT: 'whatsmeow',
+    WA_BRIDGE_AUTO_START: '0',
+    WA_BRIDGE_URL: bridgeUrl,
+    WA_BRIDGE_TOKEN: token,
+    WA_BRIDGE_CURSOR_PATH: path.join(stateDir, 'wa-bridge-cursor.json'),
+    OPERATOR_MODE_PATH: path.join(stateDir, 'operator-mode.json'),
+    REVIEW_QUEUE_PATH: path.join(stateDir, 'review-queue.json'),
+    LLM_REVIEW_COOLDOWN_PATH: path.join(stateDir, 'llm-review-cooldown.json'),
+    BOT_CONTACT_NAMES_PATH: path.join(stateDir, 'bot-contact-names.json'),
+    USER_RESTORED_CHATS_PATH: path.join(stateDir, 'user-restored-chats.json'),
+    BLOCK_LOG_PATH: path.join(stateDir, 'blocks.jsonl'),
+    WA_ACTION_GAP_MS: baseEnv.WA_ACTION_GAP_MS || '150',
+  };
+  if (isolatedEnv) {
+    botEnv.OPERATOR_MODE = '';
+    botEnv.BLOCK_ENABLED = 'true';
+    botEnv.HEURISTIC_ENABLED = 'true';
+    botEnv.LLM_REVIEW_ENABLED = '1';
+    botEnv.CONTEXT_LLM_ENABLED = '1';
+    botEnv.LLM_REVIEW_MIN_CONFIDENCE = '0.7';
+    botEnv.MALICIOUS_HOSTS_PATH = path.join(__dirname, '..', 'data', 'malicious-hosts.json');
+    if (stubUrl) botEnv.JEVLIKE_API_KEY = '';
+  }
+  if (stubUrl) {
+    botEnv.JEVLIKE_BASE_URL = stubUrl;
+  }
+  if (mockLlmUrl) {
+    botEnv.LLM_REVIEW_API_URL = mockLlmUrl;
+    botEnv.LLM_REVIEW_MODEL = 'mini-wa-stub';
+    botEnv.LLM_REVIEW_API_KEY = 'stub';
+    botEnv.LLM_REVIEW_ENABLED = '1';
+    if (isolatedEnv || baseEnv.CONTEXT_LLM_ENABLED === undefined || baseEnv.CONTEXT_LLM_ENABLED === '') {
+      botEnv.CONTEXT_LLM_ENABLED = '1';
+    }
+  }
+  return botEnv;
+}
+
+function isAllowedLoopbackHost(hostHeader, expectedPort) {
+  if (typeof hostHeader !== 'string' || !hostHeader.trim()) return false;
+  try {
+    const parsed = new URL(`http://${hostHeader.trim()}`);
+    const hostname = parsed.hostname.toLowerCase();
+    const port = parsed.port ? Number(parsed.port) : 80;
+    if (expectedPort && port !== Number(expectedPort)) return false;
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedUiOrigin(originHeader, expectedPort) {
+  if (typeof originHeader !== 'string' || !originHeader.trim()) return true;
+  try {
+    const parsed = new URL(originHeader.trim());
+    if (parsed.protocol !== 'http:') return false;
+    return isAllowedLoopbackHost(parsed.host, expectedPort);
+  } catch {
+    return false;
+  }
+}
+
+async function stopChildProcess(proc) {
+  if (!proc || proc.exitCode != null) return;
+  const exited = new Promise((resolve) => {
+    proc.once('exit', () => resolve());
+  });
+  try {
+    proc.kill();
+  } catch {}
+  const done = await Promise.race([
+    exited.then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 2500)),
+  ]);
+  if (!done && proc.exitCode == null) {
+    try {
+      proc.kill('SIGKILL');
+    } catch {}
+    await Promise.race([
+      exited,
+      new Promise((resolve) => setTimeout(resolve, 1000)),
+    ]);
+  }
+}
+
 async function runCli(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   if (args.help) {
@@ -106,6 +226,7 @@ async function runCli(argv = process.argv.slice(2)) {
       '  --token <token>        Bearer token for wa-bridge API',
       '  --with-bot             Also spawn whatsapp-bot.js connected to this sandbox',
       '  --with-stub            Also start stub-jevlike + mock OpenAI (for offline UI testing)',
+      '  --isolated-env         Ignore .env policy overrides (for clean smoke runs)',
       '  --state-dir <path>     State directory for spawned bot (default: temp dir)',
       '  --no-ui                Run bridge server only without Web UI server',
       '',
@@ -147,9 +268,15 @@ async function runCli(argv = process.argv.slice(2)) {
 
   let uiServer = null;
   let uiUrl = '';
+  let boundUiPort = args.uiPort;
   if (!args.noUi) {
     const html = renderMiniWhatsAppHtml();
     uiServer = http.createServer(async (req, res) => {
+      if (!isAllowedLoopbackHost(req.headers.host, boundUiPort)) {
+        res.writeHead(403, { 'content-type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'forbidden host' }));
+        return;
+      }
       const url = new URL(req.url || '/', 'http://127.0.0.1');
       if (req.method === 'GET' && url.pathname === '/') {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -171,6 +298,20 @@ async function runCli(argv = process.argv.slice(2)) {
         res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ sandbox: sandbox.snapshot(), botStatus, botLogs }));
         return;
+      }
+      if (req.method === 'POST') {
+        const fetchSite = String(req.headers['sec-fetch-site'] || '').trim().toLowerCase();
+        if ((fetchSite && fetchSite !== 'same-origin' && fetchSite !== 'none') || !isAllowedUiOrigin(req.headers.origin, boundUiPort)) {
+          res.writeHead(403, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: 'forbidden origin' }));
+          return;
+        }
+        const ct = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+        if (ct !== 'application/json') {
+          res.writeHead(415, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: 'application/json required' }));
+          return;
+        }
       }
       try {
         const body = await readJson(req);
@@ -202,6 +343,7 @@ async function runCli(argv = process.argv.slice(2)) {
       uiServer.listen(args.uiPort, '127.0.0.1', () => {
         const addr = uiServer.address();
         const port = addr && typeof addr === 'object' ? addr.port : args.uiPort;
+        boundUiPort = port;
         uiUrl = `http://127.0.0.1:${port}`;
         resolve();
       });
@@ -219,32 +361,21 @@ async function runCli(argv = process.argv.slice(2)) {
       ? path.resolve(process.cwd(), args.stateDir)
       : (tempStateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mini-wa-bot-')));
     fs.mkdirSync(stateDir, { recursive: true });
-    /** @type {NodeJS.ProcessEnv} */
-    const botEnv = {
-      ...process.env,
-      WA_TRANSPORT: 'whatsmeow',
-      WA_BRIDGE_AUTO_START: '0',
-      WA_BRIDGE_URL: sandbox.baseUrl,
-      WA_BRIDGE_TOKEN: sandbox.token,
-      WA_BRIDGE_CURSOR_PATH: path.join(stateDir, 'wa-bridge-cursor.json'),
-      OPERATOR_MODE_PATH: path.join(stateDir, 'operator-mode.json'),
-      REVIEW_QUEUE_PATH: path.join(stateDir, 'review-queue.json'),
-      LLM_REVIEW_COOLDOWN_PATH: path.join(stateDir, 'llm-review-cooldown.json'),
-      BOT_CONTACT_NAMES_PATH: path.join(stateDir, 'bot-contact-names.json'),
-      USER_RESTORED_CHATS_PATH: path.join(stateDir, 'user-restored-chats.json'),
-      BLOCK_LOG_PATH: path.join(stateDir, 'blocks.jsonl'),
-      WA_ACTION_GAP_MS: process.env.WA_ACTION_GAP_MS || '150',
-    };
+    let stubUrl = '';
     if (stubServer) {
       const addr = stubServer.address();
       const stubPort = addr && typeof addr === 'object' ? addr.port : 0;
-      botEnv.JEVLIKE_BASE_URL = `http://127.0.0.1:${stubPort}`;
+      stubUrl = `http://127.0.0.1:${stubPort}`;
     }
-    if (mockLlm) {
-      botEnv.LLM_REVIEW_API_URL = mockLlm.url;
-      botEnv.LLM_REVIEW_MODEL = 'mini-wa-stub';
-      botEnv.LLM_REVIEW_API_KEY = 'stub';
-    }
+    const botEnv = buildBotEnv({
+      baseEnv: process.env,
+      bridgeUrl: sandbox.baseUrl,
+      token: sandbox.token,
+      stateDir,
+      stubUrl,
+      mockLlmUrl: mockLlm ? mockLlm.url : '',
+      isolatedEnv: args.isolatedEnv,
+    });
     botStatus = 'running';
     botProc = spawn(process.execPath, [path.join(__dirname, '..', 'whatsapp-bot.js')], {
       cwd: path.join(__dirname, '..'),
@@ -270,7 +401,7 @@ async function runCli(argv = process.argv.slice(2)) {
 
   const shutdown = async () => {
     unsubscribe();
-    if (botProc && botProc.exitCode == null) botProc.kill();
+    await stopChildProcess(botProc);
     if (uiServer) {
       for (const r of [...uiSseClients]) { try { r.end(); } catch {} }
       if (typeof uiServer.closeAllConnections === 'function') uiServer.closeAllConnections();
@@ -285,7 +416,11 @@ async function runCli(argv = process.argv.slice(2)) {
       await new Promise((resolve) => stubServer.close(() => resolve()));
     }
     await sandbox.close();
-    if (tempStateDir) fs.rmSync(tempStateDir, { recursive: true, force: true });
+    if (tempStateDir) {
+      try {
+        fs.rmSync(tempStateDir, { recursive: true, force: true });
+      } catch {}
+    }
   };
 
   process.once('SIGINT', () => void shutdown().finally(() => process.exit(0)));
@@ -302,4 +437,11 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseArgs, runCli };
+module.exports = {
+  parseArgs,
+  runCli,
+  startMockLlmServer,
+  buildBotEnv,
+  isAllowedLoopbackHost,
+  isAllowedUiOrigin,
+};
