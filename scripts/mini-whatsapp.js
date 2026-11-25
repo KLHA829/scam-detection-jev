@@ -152,7 +152,7 @@ function buildBotEnv({
     botEnv.CONTEXT_LLM_ENABLED = '1';
     botEnv.LLM_REVIEW_MIN_CONFIDENCE = '0.7';
     botEnv.MALICIOUS_HOSTS_PATH = path.join(__dirname, '..', 'data', 'malicious-hosts.json');
-    delete botEnv.JEVLIKE_API_KEY;
+    if (stubUrl) botEnv.JEVLIKE_API_KEY = '';
   }
   if (stubUrl) {
     botEnv.JEVLIKE_BASE_URL = stubUrl;
