@@ -567,6 +567,17 @@ async function recordOwnMessage(msg, { transport, recentContext, editedFrom = nu
   );
 }
 
+// The sender contact is best effort: when it cannot be read, the message is
+// still reviewed and its saved status is unknown, which never auto-acts.
+async function loadMessageContact(msg) {
+  try {
+    return (await msg.getContact()) || null;
+  } catch (err) {
+    log.error('failed to load contact', { error: err.message });
+    return null;
+  }
+}
+
 async function handleWaMessage(rawMsg, {
   client,
   transport: providedTransport,
@@ -600,14 +611,13 @@ async function handleWaMessage(rawMsg, {
   }
 
   let chat;
-  let contact;
   try {
     chat = await msg.getChat();
-    contact = await msg.getContact();
   } catch (err) {
-    log.error('failed to load chat/contact', { error: err.message });
+    log.error('failed to load chat', { error: err.message });
     return null;
   }
+  const contact = await loadMessageContact(msg);
 
   const chatId = serializedId(chat && chat.id) || msg.from;
   const contactId = serializedId(contact && contact.id);
@@ -616,7 +626,7 @@ async function handleWaMessage(rawMsg, {
   const sender = await loadSenderContact(transport, { senderId, contact, botContactNames });
   const listName = chatListName(sender || contact, msg);
   const refreshSender = async () =>
-    loadSenderContact(transport, { senderId, contact: await msg.getContact(), botContactNames });
+    loadSenderContact(transport, { senderId, contact: await loadMessageContact(msg), botContactNames });
 
   const result = await processIncomingMessage(
     {
@@ -624,9 +634,9 @@ async function handleWaMessage(rawMsg, {
       isGroup: Boolean(chat.isGroup),
       isChannel: Boolean(chat.isChannel),
       type: msg.type,
-      isMe: Boolean(contact.isMe),
-      pushName: msg.notifyName || (msg._data && msg._data.notifyName) || contact.pushname || contact.name,
-      contactName: (sender && sender.name) || contact.name || contact.pushname,
+      isMe: Boolean(contact && contact.isMe),
+      pushName: msg.notifyName || (msg._data && msg._data.notifyName) || (contact && (contact.pushname || contact.name)),
+      contactName: (sender && sender.name) || (contact && (contact.name || contact.pushname)),
       body: msg.body || '',
       isForwarded: msg.isForwarded === true,
       chatId,
