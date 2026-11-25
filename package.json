@@ -11,6 +11,7 @@
     "wa-bridge:build": "node scripts/build-wa-bridge.js",
     "test": "node scripts/run-tests.js",
     "test:e2e": "node scripts/e2e-mock-http.js",
+    "test:e2e:mini-wa": "node scripts/mini-wa-smoke.js",
     "test:e2e:boot": "node scripts/e2e-boot-qr.js",
     "test:e2e:boot:whatsmeow": "node scripts/e2e-boot-qr.js --transport whatsmeow",
     "stub": "node stub-jevlike.js",

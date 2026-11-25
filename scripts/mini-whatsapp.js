@@ -290,6 +290,9 @@ async function runCli(argv = process.argv.slice(2)) {
 
   process.once('SIGINT', () => void shutdown().finally(() => process.exit(0)));
   process.once('SIGTERM', () => void shutdown().finally(() => process.exit(0)));
+  if (process.connected) {
+    process.once('disconnect', () => void shutdown().finally(() => process.exit(0)));
+  }
 }
 
 if (require.main === module) {
