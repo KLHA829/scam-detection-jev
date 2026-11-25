@@ -13,7 +13,7 @@ You need **Node.js 20+**, **Python 3.11+** (3.10 works; 3.11 is preferred), a Wh
 
 Copy [`.env.example`](.env.example) to `.env`. Product invariants live in [AGENTS.md](AGENTS.md). Do not run `npm audit fix` (it downgrades Puppeteer and breaks the bot). See [Known security advisories](#known-security-advisories).
 
-On Windows, install Chromium before `npm start`:
+On Windows/macOS/Linux, the default transport (`WA_TRANSPORT=whatsmeow`) uses the Chromium-free Go sidecar (`wa-bridge/`) instead of Chrome (requires **Go 1.26+**; run `npm run wa-bridge:build` before `npm start`). Install Chrome only if you set `WA_TRANSPORT=wwebjs`:
 
 ```bash
 npx puppeteer browsers install chrome
@@ -91,9 +91,9 @@ Pi 建議 4 GB RAM 以上。`JEVLIKE_DEVICE=cpu` 為預設。
 - `scripts/download_jevlike_ckpt.sh` under git-bash uses a relative `--dir` so native `gh.exe` does not write to `C:\c\Users\...`.
 - Do not run `npm audit fix`. See [Known security advisories](#known-security-advisories).
 
-### WhatsApp transport (`whatsmeow` / Linux)
+### WhatsApp transport (`whatsmeow` default / Linux)
 
-As an alternative to Chromium + `whatsapp-web.js` (`WA_TRANSPORT=wwebjs`), the bot supports a Chromium-free pure-Go `whatsmeow` sidecar (`wa-bridge/`, Linux `amd64`/`arm64`, macOS, and Windows; requires **Go 1.26+** to build):
+By default (`WA_TRANSPORT=whatsmeow`), the bot uses the Chromium-free pure-Go `whatsmeow` sidecar (`wa-bridge/`, Linux `amd64`/`arm64`, macOS, and Windows; requires **Go 1.26+** to build; legacy Chromium + `whatsapp-web.js` remains available with `WA_TRANSPORT=wwebjs`):
 
 ```bash
 # Build native sidecar binary into wa-bridge/wa-bridge (or wa-bridge.exe on Windows)
@@ -102,11 +102,11 @@ npm run wa-bridge:build
 # Cross-compile for Linux from Windows or macOS (writes wa-bridge/wa-bridge-linux-amd64 without overwriting native binary; pass --out or WA_BRIDGE_BIN to customize)
 node scripts/build-wa-bridge.js --goos linux --goarch amd64
 
-# Start bot with auto-managed sidecar (guided mode recommended for first QR test)
-WA_TRANSPORT=whatsmeow WA_BRIDGE_AUTO_START=1 OPERATOR_MODE=guided npm start
+# Start bot with auto-managed sidecar (WA_TRANSPORT=whatsmeow and auto-start are enabled by default when WA_BRIDGE_URL/WA_BRIDGE_TOKEN are unset)
+OPERATOR_MODE=guided npm start
 ```
 
-Session keys and local message cache live in `WA_BRIDGE_DB_PATH` (default `./wa-bridge.db`, `0600` on POSIX) and `WA_BRIDGE_CURSOR_PATH` (default `./wa-bridge-cursor.json`). Keep those files across restarts to avoid re-scanning the QR code. `WA_TRANSPORT` still defaults to `wwebjs` until live `whatsmeow` QR verification is finished.
+Session keys and local message cache live in `WA_BRIDGE_DB_PATH` (default `./wa-bridge.db`, `0600` on POSIX) and `WA_BRIDGE_CURSOR_PATH` (default `./wa-bridge-cursor.json` for standalone sidecars; kept in memory under auto-start unless set). Keep `wa-bridge.db` across restarts to avoid re-scanning the QR code.
 
 ## Point the bot at your API
 
@@ -162,8 +162,8 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `PUPPETEER_EXECUTABLE_PATH` | Unset | Override Puppeteer's browser executable. |
 | `PUPPETEER_NO_SANDBOX` | Unset | Exactly `1` disables Chromium sandboxing. Root already disables it; do not opt in unless required. |
 | `PUPPETEER_SKIP_DOWNLOAD` | Unset | Puppeteer installation option to skip browser download, not a bot behavior flag. |
-| `WA_TRANSPORT` | `wwebjs` | Transport backend: `wwebjs` (Chromium / `whatsapp-web.js`) or `whatsmeow` (Chromium-free `wa-bridge` Go sidecar). |
-| `WA_BRIDGE_AUTO_START` | Off | Set `1` or `true` when `WA_TRANSPORT=whatsmeow` to spawn and supervise the local `wa-bridge` binary automatically. |
+| `WA_TRANSPORT` | `whatsmeow` | Transport backend: `whatsmeow` (Chromium-free `wa-bridge` Go sidecar, default) or `wwebjs` (legacy Chromium / `whatsapp-web.js`). |
+| `WA_BRIDGE_AUTO_START` | Auto (`On` if `WA_BRIDGE_URL`/`WA_BRIDGE_TOKEN` unset) | Spawn and supervise the local `wa-bridge` binary automatically (`1`/`true` forces auto-start; `0`/`false` disables it for an external sidecar). |
 | `WA_BRIDGE_BIN` | `wa-bridge/wa-bridge` (`.exe` on Windows) | Path to the compiled `wa-bridge` binary for `WA_BRIDGE_AUTO_START=1`. |
 | `WA_BRIDGE_URL` | `http://127.0.0.1:8767` | Loopback base URL (`127.0.0.1`, `localhost`, or `::1`) of an external `wa-bridge` process. |
 | `WA_BRIDGE_TOKEN` | Empty | Required bearer token when connecting to an external `wa-bridge`; auto-generated when `WA_BRIDGE_AUTO_START=1` leaves it unset. |
@@ -273,7 +273,7 @@ State files (`wa-bridge.db`, `wa-bridge-cursor.json`, `bot-contact-names.json`, 
 | Path | Role |
 |------|------|
 | `whatsapp-bot.js` | WhatsApp client orchestration, QR, archive, graded block |
-| `lib/wa-transport/` | `WaTransport` boundary (`wwebjs` default, `whatsmeow` HTTP/SSE adapter) |
+| `lib/wa-transport/` | `WaTransport` boundary (`whatsmeow` default HTTP/SSE adapter, `wwebjs` legacy fallback) |
 | `wa-bridge/` | Pure-Go `whatsmeow` + `modernc.org/sqlite` sidecar (Linux/macOS/Windows, no Chromium/CGO) |
 | `lib/handle-incoming.js` | Heuristics, mask, LLM orchestration |
 | `lib/jevlike-client.js` | `createMaskClient`, `/v1/mask` |
