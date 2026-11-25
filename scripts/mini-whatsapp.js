@@ -19,6 +19,7 @@ function parseArgs(argv) {
     token: process.env.WA_BRIDGE_TOKEN || 'mini-wa-token',
     withBot: false,
     withStub: false,
+    isolatedEnv: false,
     stateDir: '',
     noUi: false,
     help: false,
@@ -27,6 +28,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === '--with-bot') args.withBot = true;
     else if (a === '--with-stub') args.withStub = true;
+    else if (a === '--isolated-env') args.isolatedEnv = true;
     else if (a === '--no-ui') args.noUi = true;
     else if (a === '--help' || a === '-h') args.help = true;
     else if (a === '--bridge-port' && i + 1 < argv.length) { args.bridgePort = Number(argv[++i]); }
@@ -71,7 +73,9 @@ function startMockLlmServer() {
 
     let content;
     if (/Cantonese|廣東話/i.test(sys)) {
-      content = '【Stub AI 提示】模擬檢視到可疑誘導／轉帳風險，請先查證對方身分。';
+      content = JSON.stringify({
+        guide: '【Stub AI 提示】模擬檢視到可疑誘導／轉帳風險，請先查證對方身分。',
+      });
     } else if (/投資|高回報|短炒/i.test(usr)) {
       content = JSON.stringify({ action: 'no_action', pitch: true, strong: false, confidence: 0.9, reason: 'stub_pitch' });
     } else if (/驗證碼|login|XXXil/i.test(usr) && !/payme\.hsbc/i.test(usr)) {
@@ -96,6 +100,75 @@ function startMockLlmServer() {
   });
 }
 
+function buildBotEnv({
+  baseEnv = process.env,
+  bridgeUrl,
+  token,
+  stateDir,
+  stubUrl = '',
+  mockLlmUrl = '',
+  isolatedEnv = false,
+}) {
+  /** @type {NodeJS.ProcessEnv} */
+  const botEnv = {
+    ...baseEnv,
+    WA_TRANSPORT: 'whatsmeow',
+    WA_BRIDGE_AUTO_START: '0',
+    WA_BRIDGE_URL: bridgeUrl,
+    WA_BRIDGE_TOKEN: token,
+    WA_BRIDGE_CURSOR_PATH: path.join(stateDir, 'wa-bridge-cursor.json'),
+    OPERATOR_MODE_PATH: path.join(stateDir, 'operator-mode.json'),
+    REVIEW_QUEUE_PATH: path.join(stateDir, 'review-queue.json'),
+    LLM_REVIEW_COOLDOWN_PATH: path.join(stateDir, 'llm-review-cooldown.json'),
+    BOT_CONTACT_NAMES_PATH: path.join(stateDir, 'bot-contact-names.json'),
+    USER_RESTORED_CHATS_PATH: path.join(stateDir, 'user-restored-chats.json'),
+    BLOCK_LOG_PATH: path.join(stateDir, 'blocks.jsonl'),
+    WA_ACTION_GAP_MS: baseEnv.WA_ACTION_GAP_MS || '150',
+  };
+  if (isolatedEnv) {
+    botEnv.OPERATOR_MODE = '';
+    botEnv.BLOCK_ENABLED = 'true';
+    botEnv.HEURISTIC_ENABLED = 'true';
+    botEnv.LLM_REVIEW_ENABLED = '1';
+    botEnv.CONTEXT_LLM_ENABLED = '1';
+    delete botEnv.JEVLIKE_API_KEY;
+  }
+  if (stubUrl) {
+    botEnv.JEVLIKE_BASE_URL = stubUrl;
+  }
+  if (mockLlmUrl) {
+    botEnv.LLM_REVIEW_API_URL = mockLlmUrl;
+    botEnv.LLM_REVIEW_MODEL = 'mini-wa-stub';
+    botEnv.LLM_REVIEW_API_KEY = 'stub';
+    botEnv.LLM_REVIEW_ENABLED = '1';
+    botEnv.CONTEXT_LLM_ENABLED = '1';
+  }
+  return botEnv;
+}
+
+async function stopChildProcess(proc) {
+  if (!proc || proc.exitCode != null) return;
+  const exited = new Promise((resolve) => {
+    proc.once('exit', () => resolve());
+  });
+  try {
+    proc.kill();
+  } catch {}
+  const done = await Promise.race([
+    exited.then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 2500)),
+  ]);
+  if (!done && proc.exitCode == null) {
+    try {
+      proc.kill('SIGKILL');
+    } catch {}
+    await Promise.race([
+      exited,
+      new Promise((resolve) => setTimeout(resolve, 1000)),
+    ]);
+  }
+}
+
 async function runCli(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   if (args.help) {
@@ -106,6 +179,7 @@ async function runCli(argv = process.argv.slice(2)) {
       '  --token <token>        Bearer token for wa-bridge API',
       '  --with-bot             Also spawn whatsapp-bot.js connected to this sandbox',
       '  --with-stub            Also start stub-jevlike + mock OpenAI (for offline UI testing)',
+      '  --isolated-env         Ignore .env policy overrides (for clean smoke runs)',
       '  --state-dir <path>     State directory for spawned bot (default: temp dir)',
       '  --no-ui                Run bridge server only without Web UI server',
       '',
@@ -219,32 +293,21 @@ async function runCli(argv = process.argv.slice(2)) {
       ? path.resolve(process.cwd(), args.stateDir)
       : (tempStateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mini-wa-bot-')));
     fs.mkdirSync(stateDir, { recursive: true });
-    /** @type {NodeJS.ProcessEnv} */
-    const botEnv = {
-      ...process.env,
-      WA_TRANSPORT: 'whatsmeow',
-      WA_BRIDGE_AUTO_START: '0',
-      WA_BRIDGE_URL: sandbox.baseUrl,
-      WA_BRIDGE_TOKEN: sandbox.token,
-      WA_BRIDGE_CURSOR_PATH: path.join(stateDir, 'wa-bridge-cursor.json'),
-      OPERATOR_MODE_PATH: path.join(stateDir, 'operator-mode.json'),
-      REVIEW_QUEUE_PATH: path.join(stateDir, 'review-queue.json'),
-      LLM_REVIEW_COOLDOWN_PATH: path.join(stateDir, 'llm-review-cooldown.json'),
-      BOT_CONTACT_NAMES_PATH: path.join(stateDir, 'bot-contact-names.json'),
-      USER_RESTORED_CHATS_PATH: path.join(stateDir, 'user-restored-chats.json'),
-      BLOCK_LOG_PATH: path.join(stateDir, 'blocks.jsonl'),
-      WA_ACTION_GAP_MS: process.env.WA_ACTION_GAP_MS || '150',
-    };
+    let stubUrl = '';
     if (stubServer) {
       const addr = stubServer.address();
       const stubPort = addr && typeof addr === 'object' ? addr.port : 0;
-      botEnv.JEVLIKE_BASE_URL = `http://127.0.0.1:${stubPort}`;
+      stubUrl = `http://127.0.0.1:${stubPort}`;
     }
-    if (mockLlm) {
-      botEnv.LLM_REVIEW_API_URL = mockLlm.url;
-      botEnv.LLM_REVIEW_MODEL = 'mini-wa-stub';
-      botEnv.LLM_REVIEW_API_KEY = 'stub';
-    }
+    const botEnv = buildBotEnv({
+      baseEnv: process.env,
+      bridgeUrl: sandbox.baseUrl,
+      token: sandbox.token,
+      stateDir,
+      stubUrl,
+      mockLlmUrl: mockLlm ? mockLlm.url : '',
+      isolatedEnv: args.isolatedEnv,
+    });
     botStatus = 'running';
     botProc = spawn(process.execPath, [path.join(__dirname, '..', 'whatsapp-bot.js')], {
       cwd: path.join(__dirname, '..'),
@@ -270,7 +333,7 @@ async function runCli(argv = process.argv.slice(2)) {
 
   const shutdown = async () => {
     unsubscribe();
-    if (botProc && botProc.exitCode == null) botProc.kill();
+    await stopChildProcess(botProc);
     if (uiServer) {
       for (const r of [...uiSseClients]) { try { r.end(); } catch {} }
       if (typeof uiServer.closeAllConnections === 'function') uiServer.closeAllConnections();
@@ -285,7 +348,11 @@ async function runCli(argv = process.argv.slice(2)) {
       await new Promise((resolve) => stubServer.close(() => resolve()));
     }
     await sandbox.close();
-    if (tempStateDir) fs.rmSync(tempStateDir, { recursive: true, force: true });
+    if (tempStateDir) {
+      try {
+        fs.rmSync(tempStateDir, { recursive: true, force: true });
+      } catch {}
+    }
   };
 
   process.once('SIGINT', () => void shutdown().finally(() => process.exit(0)));
@@ -302,4 +369,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseArgs, runCli };
+module.exports = { parseArgs, runCli, startMockLlmServer, buildBotEnv };

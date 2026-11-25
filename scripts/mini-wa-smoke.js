@@ -26,7 +26,7 @@ async function main() {
   const cliPath = path.join(__dirname, 'mini-whatsapp.js');
   const proc = spawn(
     process.execPath,
-    [cliPath, '--bridge-port', '0', '--ui-port', '0', '--with-bot', '--with-stub'],
+    [cliPath, '--bridge-port', '0', '--ui-port', '0', '--with-bot', '--with-stub', '--isolated-env'],
     {
       cwd: path.join(__dirname, '..'),
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
