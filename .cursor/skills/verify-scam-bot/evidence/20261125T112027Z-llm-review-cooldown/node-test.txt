@@ -1,0 +1,274 @@
+TAP version 13
+# [WARN] failed to save pruned LLM review cooldown {"error":"EISDIR: illegal operation on a directory, open 'C:\\\\Users\\\\Aidan\\\\AppData\\\\Local\\\\Temp\\\\llm-cd-prune-fail-081kSQ\\\\cooldown.json.35668.tmp'"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"高回報投資，加我 WhatsApp 了解"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"investment"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [INFO] llm review skipped {"chatId":"85261234567@c.us","skipped":"cooldown"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"你好，請問係陳生嗎？"}
+# [SCAN] llm review no archive {"chatId":"85261234567@c.us","label":"not_scam","ok":true,"reason":"benign"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"高回報投資，加我 WhatsApp 了解"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"investment"}
+# [OK] archived chat (llm_review_scam) {"chatId":"85261234567@c.us","label":"unknown"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":true}
+# [SCAN] context llm {"chatId":"85261234567@c.us","messages":1,"action":"no_action","ok":true,"reason":"benign"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":true}
+# [SCAN] context llm {"chatId":"85261234567@c.us","messages":1,"action":"archive","ok":true,"reason":"investment"}
+# [OK] archived chat (context_llm) {"chatId":"85261234567@c.us","label":"unknown"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"高回報投資，加我 WhatsApp 了解"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"investment"}
+# [OK] archived chat (llm_review_scam) {"chatId":"85261234567@c.us","label":"unknown"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":false}
+# [INFO] llm review skipped {"chatId":"85261234567@c.us","skipped":"cooldown"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":true}
+# [SCAN] context llm {"chatId":"85261234567@c.us","messages":1,"action":"archive","ok":true,"reason":"investment"}
+# [OK] archived chat (context_llm) {"chatId":"85261234567@c.us","label":"unknown"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":true}
+# [INFO] context llm skipped {"chatId":"85261234567@c.us","skipped":"cooldown"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"高回報投資，加我 WhatsApp 了解"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"investment"}
+# [ERROR] archive failed {"chatId":"85261234567@c.us","error":"archive unavailable"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"高回報投資，加我 WhatsApp 了解"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"investment"}
+# [OK] archived chat (llm_review_scam) {"chatId":"85261234567@c.us","label":"unknown"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":true}
+# [SCAN] context llm {"chatId":"85261234567@c.us","messages":1,"action":"archive","ok":true,"reason":"investment"}
+# [ERROR] archive failed {"chatId":"85261234567@c.us","error":"archive unavailable"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":true}
+# [SCAN] context llm {"chatId":"85261234567@c.us","messages":1,"action":"archive","ok":true,"reason":"investment"}
+# [OK] archived chat (context_llm) {"chatId":"85261234567@c.us","label":"unknown"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"高回報投資，加我 WhatsApp 了解"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"investment"}
+# [OK] archived chat (llm_review_scam) {"chatId":"85261234567@c.us","label":"unknown"}
+# [WARN] failed to persist LLM review cooldown {"chatId":"85261234567@c.us","error":"EEXIST: file already exists, mkdir 'C:\\\\Users\\\\Aidan\\\\AppData\\\\Local\\\\Temp\\\\llm-cd-write-fail-UDJ2oM\\\\not-a-directory'"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":true}
+# [SCAN] context llm {"chatId":"85261234567@c.us","messages":1,"action":"archive","ok":true,"reason":"investment"}
+# [OK] archived chat (context_llm) {"chatId":"85261234567@c.us","label":"unknown"}
+# [WARN] failed to persist LLM review cooldown {"chatId":"85261234567@c.us","error":"EEXIST: file already exists, mkdir 'C:\\\\Users\\\\Aidan\\\\AppData\\\\Local\\\\Temp\\\\llm-cd-write-fail-UDJ2oM\\\\not-a-directory'"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"高回報投資，加我 WhatsApp 了解"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"investment"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":true}
+# [SCAN] context llm {"chatId":"85261234567@c.us","messages":1,"action":"archive","ok":true,"reason":"investment"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"高回報投資"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"investment"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"過咗窗口"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"investment"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"高回報投資 chat A"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"investment"}
+# [SCAN] message inbound {"chatId":"85269998888@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85269998888","savedContact":true,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85269998888@c.us","reasons":["primary_review"],"redacted":"高回報投資 chat B"}
+# [SCAN] llm review archive {"chatId":"85269998888@c.us","label":"scam","reason":"investment"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261234567@c.us","reasons":["primary_review"],"redacted":"高回報投資"}
+# [SCAN] llm review archive {"chatId":"85261234567@c.us","label":"scam","reason":"investment"}
+# [OK] archived chat (llm_review_scam) {"chatId":"85261234567@c.us","label":"unknown"}
+# [SCAN] message inbound {"chatId":"85261234567@c.us","scoreSource":"heuristic","heuristic":"malicious_host","digits":"85261234567","savedContact":false,"llmOn":true,"contextOn":false}
+# [OK] archived chat (obvious_scam) {"chatId":"85261234567@c.us","label":"unknown"}
+# Subtest: llm-review-cooldown helpers
+    # Subtest: reads LLM_REVIEW_COOLDOWN_MS with production default when unset
+    ok 1 - reads LLM_REVIEW_COOLDOWN_MS with production default when unset
+      ---
+      duration_ms: 1.0004
+      type: 'test'
+      ...
+    # Subtest: tracks per-chat windows
+    ok 2 - tracks per-chat windows
+      ---
+      duration_ms: 1.1476
+      type: 'test'
+      ...
+    # Subtest: persists across store reload (process restart) until expiry
+    ok 3 - persists across store reload (process restart) until expiry
+      ---
+      duration_ms: 9.8847
+      type: 'test'
+      ...
+    # Subtest: prunes expired chat entries on load
+    ok 4 - prunes expired chat entries on load
+      ---
+      duration_ms: 6.0697
+      type: 'test'
+      ...
+    # Subtest: loads active cooldowns even when pruning the cooldown file cannot be saved
+    ok 5 - loads active cooldowns even when pruning the cooldown file cannot be saved
+      ---
+      duration_ms: 6.4392
+      type: 'test'
+      ...
+    1..5
+ok 1 - llm-review-cooldown helpers
+  ---
+  duration_ms: 25.5419
+  type: 'suite'
+  ...
+# Subtest: processIncomingMessage llm cooldown
+    # Subtest: skips LLM and mask for a second message in the same chat within the window
+    ok 1 - skips LLM and mask for a second message in the same chat within the window
+      ---
+      duration_ms: 44.4383
+      type: 'test'
+      ...
+    # Subtest: does not cooldown-block after a benign review in primary or context mode
+    ok 2 - does not cooldown-block after a benign review in primary or context mode
+      ---
+      duration_ms: 7.5738
+      type: 'test'
+      ...
+    # Subtest: starts cooldown after an archive in primary or context mode
+    ok 3 - starts cooldown after an archive in primary or context mode
+      ---
+      duration_ms: 3.3931
+      type: 'test'
+      ...
+    # Subtest: retries review after an automatic archive fails
+        # Subtest: primary
+        ok 1 - primary
+          ---
+          duration_ms: 3.2235
+          type: 'test'
+          ...
+        # Subtest: context
+        ok 2 - context
+          ---
+          duration_ms: 1.9307
+          type: 'test'
+          ...
+        1..2
+    ok 4 - retries review after an automatic archive fails
+      ---
+      duration_ms: 5.6616
+      type: 'test'
+      ...
+    # Subtest: preserves an automatic archive when the cooldown file cannot be written
+        # Subtest: primary
+        ok 1 - primary
+          ---
+          duration_ms: 2.0495
+          type: 'test'
+          ...
+        # Subtest: context
+        ok 2 - context
+          ---
+          duration_ms: 3.1657
+          type: 'test'
+          ...
+        1..2
+    ok 5 - preserves an automatic archive when the cooldown file cannot be written
+      ---
+      duration_ms: 7.4156
+      type: 'test'
+      ...
+    # Subtest: keeps the guided cooldown while archive is deferred
+        # Subtest: primary
+        ok 1 - primary
+          ---
+          duration_ms: 1.1957
+          type: 'test'
+          ...
+        # Subtest: context
+        ok 2 - context
+          ---
+          duration_ms: 0.9898
+          type: 'test'
+          ...
+        1..2
+    ok 6 - keeps the guided cooldown while archive is deferred
+      ---
+      duration_ms: 2.4998
+      type: 'test'
+      ...
+    # Subtest: calls LLM again after the cooldown window expires
+    ok 7 - calls LLM again after the cooldown window expires
+      ---
+      duration_ms: 1.2678
+      type: 'test'
+      ...
+    # Subtest: does not cooldown-block a different chat
+    ok 8 - does not cooldown-block a different chat
+      ---
+      duration_ms: 1.4982
+      type: 'test'
+      ...
+    # Subtest: still archives on heuristic hard-hit inside the cooldown window
+    ok 9 - still archives on heuristic hard-hit inside the cooldown window
+      ---
+      duration_ms: 4.2075
+      type: 'test'
+      ...
+    1..9
+ok 2 - processIncomingMessage llm cooldown
+  ---
+  duration_ms: 78.6954
+  type: 'suite'
+  ...
+# [SCAN] message inbound {"chatId":"85261117777@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261117777","savedContact":false,"llmOn":true,"contextOn":false}
+# [SCAN] llm review (masked only) {"chatId":"85261117777@c.us","reasons":["primary_review"],"redacted":"請把驗證碼發給我"}
+# [SCAN] llm review archive {"chatId":"85261117777@c.us","label":"scam","reason":"test"}
+# [WARN] failed to persist LLM review cooldown {"chatId":"85261117777@c.us","error":"EEXIST: file already exists, mkdir 'C:\\\\Users\\\\Aidan\\\\AppData\\\\Local\\\\Temp\\\\wa-handlers-SR44ho\\\\not-a-directory'"}
+# [SCAN] message inbound {"chatId":"85261118888@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261118888","savedContact":false,"llmOn":true,"contextOn":true}
+# [SCAN] context llm {"chatId":"85261118888@c.us","messages":1,"action":"archive","ok":true,"reason":"test"}
+# [OK] archived chat (context_llm) {"chatId":"85261118888@c.us","label":"unknown"}
+# [INFO] chat restored by user; model verdicts only alert from now on {"chatId":"85261118888@c.us"}
+# [SCAN] message inbound {"chatId":"85261118888@c.us","scoreSource":"llm_primary","heuristic":null,"digits":"85261118888","savedContact":false,"llmOn":true,"contextOn":true}
+# [SCAN] context llm {"chatId":"85261118888@c.us","messages":1,"action":"archive","ok":true,"reason":"test"}
+# [INFO] chat restored by user; model verdicts only alert from now on {"chatId":"85261118888@c.us"}
+# [INFO] chat restored by user; model verdicts only alert from now on {"chatId":"85261118888@c.us"}
+# [SCAN] message inbound {"chatId":"85261118888@c.us","scoreSource":"heuristic","heuristic":"malicious_host","digits":"85261118888","savedContact":false,"llmOn":true,"contextOn":true}
+# [OK] blocked contact (malicious_host) {"chatId":"85261118888@c.us","digits":"85261118888","contactName":"封鎖·惡意域名","renamed":true,"blocked":true,"muted":true}
+# Subtest: handleWaMessage
+    # Subtest: delivers a guided review and honors its archive vote when cooldown saving fails
+    ok 1 - delivers a guided review and honors its archive vote when cooldown saving fails
+      ---
+      duration_ms: 52.0736
+      type: 'test'
+      ...
+    1..1
+ok 3 - handleWaMessage
+  ---
+  duration_ms: 53.6033
+  type: 'suite'
+  ...
+# Subtest: chats the user restored from the archive
+    # Subtest: does not archive again after the user un-archives a chat the bot archived
+    ok 1 - does not archive again after the user un-archives a chat the bot archived
+      ---
+      duration_ms: 22.9621
+      type: 'test'
+      ...
+    # Subtest: remembers the un-archive after a restart
+    ok 2 - remembers the un-archive after a restart
+      ---
+      duration_ms: 5.8233
+      type: 'test'
+      ...
+    # Subtest: still blocks a curated malicious host in a restored chat
+    ok 3 - still blocks a curated malicious host in a restored chat
+      ---
+      duration_ms: 11.8994
+      type: 'test'
+      ...
+    1..3
+ok 4 - chats the user restored from the archive
+  ---
+  duration_ms: 41.0709
+  type: 'suite'
+  ...
+1..4
+# tests 24
+# suites 4
+# pass 24
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 817.1657

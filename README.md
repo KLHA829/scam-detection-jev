@@ -114,7 +114,9 @@ Session keys and local message cache live in `WA_BRIDGE_DB_PATH` (default `./wa-
 
 Set `LLM_REVIEW_API_URL`, `LLM_REVIEW_MODEL`, and `LLM_REVIEW_API_KEY` when your server needs auth. `LLM_REVIEW_ENABLED` defaults to **true**.
 
-Live inbound order (after filters): link heuristics on the current message, then mask and LLM. **`CONTEXT_LLM_ENABLED` defaults to on** (masked transcript of recent inbound messages). Set `CONTEXT_LLM_ENABLED=0` or `false` for single-message primary LLM only.
+Live inbound order (after filters): link heuristics on the current message, then mask and LLM. **`CONTEXT_LLM_ENABLED` defaults to on** (masked transcript of recent 1:1 messages, including your own marked `user:`). Allowlisted official brand domains stay readable and are named in the prompt; lookalike/unknown domains and PII stay masked (`XXX`). Set `CONTEXT_LLM_ENABLED=0` or `false` for single-message primary LLM only.
+
+On a first message from an unsaved number with no earlier turn, a model archive recommendation acts only on strong evidence (`strong: true`), otherwise holding until the next message; unsolicited investment/trading/health pitches (`pitch: true`) only label an unsaved sender `（可疑推銷）` (and clear the bot-written label on a later confident `no_action` with `pitch: false`). Chats you restore from the archive (`USER_RESTORED_CHATS_PATH`) are routed to your self-chat review card on model verdicts like saved contacts.
 
 If `POST /v1/mask` fails, the bot skips the LLM and does not archive (fail closed). Curated blocklist matches can still archive without the LLM.
 
@@ -151,7 +153,7 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `WA_ACTION_GAP_MS` | `3000` | Gap between queued WhatsApp writes in ms. |
 | `CONTEXT_TURNS` | `4` | In-memory thread window capacity including current text; not a live scoring window. |
 | `CONTEXT_LLM_ENABLED` | On | Use masked recent-message review; `0` or `false` selects single-message review. |
-| `CONTEXT_LLM_MESSAGES` | `10` | Recent inbound message limit including current message; capped at 10. Invalid values or values below 1 use the default. |
+| `CONTEXT_LLM_MESSAGES` | `10` | Recent 1:1 message limit (inbound plus your own messages) including current message; capped at 10. Invalid values or values below 1 use the default. |
 | `LLM_REVIEW_ENABLED` | `true` | Enable LLM judgment; disabling it leaves only heuristic archives. |
 | `LLM_REVIEW_ALL` | `false` | Legacy compatibility flag; no longer affects review enablement or trigger selection. `LLM_REVIEW_ENABLED=false` disables both review paths. |
 | `LLM_REVIEW_API_URL`, `OPENAI_BASE_URL`, `OPENAI_API_BASE` | Empty | First nonempty URL wins, in this order. No implicit OpenAI endpoint; without a URL, review fails closed. Whitespace and one trailing slash are removed. A URL ending in `/chat/completions` is kept; one ending in `/v1` gets `/chat/completions` appended; all others get `/v1/chat/completions` appended (suffix checks are case-insensitive). For other API paths, supply the full URL ending in `/chat/completions`. |
@@ -214,17 +216,21 @@ WhatsApp writes (block, rename, mute, archive, receipts) run one chat at a time 
 ## Run tests
 
 ```bash
+node scripts/ci-static-gates.js
 npm test
 npm run lint
 python -m pip install ruff==0.17.6
 ruff check .
 npm run typecheck
 npm run test:e2e
+npm run test:e2e:mini-wa
+(cd wa-bridge && go vet ./... && go test ./...)   # Linux/macOS CI uses go test -race ./...
+bash scripts/ci-verify-smoke.sh
 ```
 
 `npm test` is offline: in-process stub, no live WhatsApp, no encoder download. GitHub Actions runs it on pull requests and on `main`.
 
-The mocked HTTP E2E test drives the real inbound modules against local mask and LLM servers. Two optional best-effort boot checks wait for the WhatsApp QR event without scanning it: `npm run test:e2e:boot` launches Chromium (`npx puppeteer browsers install chrome` first), while `npm run test:e2e:boot:whatsmeow` builds `wa-bridge/` and verifies Chromium-free QR emission via `whatsmeow` (needs Go 1.26+). CI treats both network-dependent boot checks as best-effort.
+The mocked HTTP E2E test (`test:e2e`) drives the real inbound modules against local mask and LLM servers, and `test:e2e:mini-wa` drives the Mini WhatsApp sandbox UI and bot end-to-end without QR login. Two optional best-effort boot checks wait for the WhatsApp QR event without scanning it: `npm run test:e2e:boot` launches Chromium (`npx puppeteer browsers install chrome` first), while `npm run test:e2e:boot:whatsmeow` builds `wa-bridge/` and verifies Chromium-free QR emission via `whatsmeow` (needs Go 1.26+). CI treats both network-dependent boot checks as best-effort.
 
 Smoke check for mask and dry LLM transport:
 
@@ -262,8 +268,11 @@ State files (`wa-bridge.db`, `wa-bridge-cursor.json`, `bot-contact-names.json`, 
 Run a local Chromium-free fake `wa-bridge` (`whatsmeow` HTTP + SSE protocol) with a WhatsApp-style Web UI so you can test inbound scam messages, edits, Self-Chat Poll cards, `@lid` resolution, contact states, and archive/block actions without scanning a QR code:
 
 ```bash
-# Offline UI + bot + built-in stub mask & LLM:
-npm run mini-wa -- --with-bot --with-stub
+# Offline UI + bot + built-in stub mask & LLM (pass --isolated-env to keep state in a temp dir):
+npm run mini-wa -- --with-bot --with-stub --isolated-env
+
+# Automated Mini WhatsApp end-to-end smoke test:
+npm run test:e2e:mini-wa
 ```
 
 Open `http://127.0.0.1:8787` in your browser. To test against your real `jevlike_serve.py` and real OpenAI-compatible LLM without overwriting your live bot state (`operator-mode.json`, `review-queue.json`, etc.), run `npm run mini-wa` and connect `npm start` using the `Bearer Token` printed in the terminal plus isolated state paths:
@@ -297,6 +306,7 @@ BLOCK_LOG_PATH="$STATE_DIR/blocks.jsonl" npm start
 | `whatsapp-bot.js` | WhatsApp client orchestration, QR, archive, graded block |
 | `lib/wa-transport/` | `WaTransport` boundary (`whatsmeow` default HTTP/SSE adapter, `wwebjs` legacy fallback) |
 | `wa-bridge/` | Pure-Go `whatsmeow` + `modernc.org/sqlite` sidecar (Linux/macOS/Windows, no Chromium/CGO) |
+| `scripts/mini-whatsapp.js`, `lib/mini-whatsapp*.js` | Local `wa-bridge` sandbox + Web UI for testing without QR login |
 | `lib/handle-incoming.js` | Heuristics, mask, LLM orchestration |
 | `lib/jevlike-client.js` | `createMaskClient`, `/v1/mask` |
 | `lib/llm-review.js` | Primary LLM after mask |
