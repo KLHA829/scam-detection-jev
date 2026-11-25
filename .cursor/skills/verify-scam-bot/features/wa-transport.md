@@ -45,6 +45,6 @@ Keep offline verification separate from live-network QR boot smoke and manual Do
 ## Gotchas
 
 - `npm test` covers `lib/wa-transport/*.test.js` and `scripts/build-wa-bridge` via Node tests, not Go tests in `wa-bridge/` or `docker build`.
-- Leaving `WA_TRANSPORT` unset selects `whatsmeow` both locally (`resolveTransportName`) and in `Dockerfile`; pass `WA_TRANSPORT=wwebjs` only if you want legacy Chromium. If `wa-bridge` has not been built yet, auto-start fails fast on `ENOENT` with a prompt to run `npm run wa-bridge:build` or set `WA_TRANSPORT=wwebjs`.
+- Leaving `WA_TRANSPORT` unset selects `whatsmeow` both locally (`resolveTransportName`, unless `.wwebjs_auth/` already exists without `wa-bridge.db` and no bridge env is set) and in `Dockerfile`; pass `WA_TRANSPORT=wwebjs` only if you want legacy Chromium. If `wa-bridge` has not been built yet, auto-start fails fast on `ENOENT` with a prompt to run `npm run wa-bridge:build` or set `WA_TRANSPORT=wwebjs`.
 - `go test -race ./...` needs CGO (`gcc`); on Windows hosts without `gcc`, run `go test -v ./...` alongside `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"`.
 - On Windows, `scripts/e2e-boot-qr.js` and local loopback tests can occasionally hit a transient `WSAEADDRINUSE` port race when binding ephemeral sockets immediately before handing a port to `wa-bridge`.
