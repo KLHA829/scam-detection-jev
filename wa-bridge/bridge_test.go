@@ -563,7 +563,32 @@ func TestHTTPAndSSEServer(t *testing.T) {
 	if err != nil || res.StatusCode != http.StatusOK {
 		t.Fatalf("GET /health = (%v, %v)", res, err)
 	}
+	var unauthHealth HealthStatus
+	if err := json.NewDecoder(res.Body).Decode(&unauthHealth); err != nil {
+		t.Fatalf("decode unauth /health: %v", err)
+	}
 	_ = res.Body.Close()
+	if unauthHealth.SelfWid != "" || unauthHealth.SelfLid != "" {
+		t.Fatalf("unauthenticated /health must omit selfWid/selfLid, got %+v", unauthHealth)
+	}
+
+	authHealthReq, err := http.NewRequest(http.MethodGet, srv.URL+"/health", nil)
+	if err != nil {
+		t.Fatalf("new auth /health request: %v", err)
+	}
+	authHealthReq.Header.Set("Authorization", "Bearer secret-token")
+	authHealthRes, err := http.DefaultClient.Do(authHealthReq)
+	if err != nil || authHealthRes.StatusCode != http.StatusOK {
+		t.Fatalf("authenticated GET /health = (%v, %v)", authHealthRes, err)
+	}
+	var authHealth HealthStatus
+	if err := json.NewDecoder(authHealthRes.Body).Decode(&authHealth); err != nil {
+		t.Fatalf("decode auth /health: %v", err)
+	}
+	_ = authHealthRes.Body.Close()
+	if authHealth.SelfWid == "" {
+		t.Fatalf("authenticated /health should include selfWid, got %+v", authHealth)
+	}
 
 	unauth, err := http.Get(srv.URL + "/v1/contact?id=85261230001@c.us")
 	if err != nil || unauth.StatusCode != http.StatusUnauthorized {

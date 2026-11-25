@@ -69,9 +69,23 @@ func isLoopbackHost(host string) bool {
 }
 
 func NewBridgeHandler(backend BridgeBackend, token string) http.Handler {
+	hasValidAuth := func(r *http.Request) bool {
+		if token == "" {
+			return false
+		}
+		auth := r.Header.Get("Authorization")
+		got := strings.TrimPrefix(auth, "Bearer ")
+		return got != auth && subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, backend.Health())
+		status := backend.Health()
+		if !hasValidAuth(r) {
+			status.SelfWid = ""
+			status.SelfLid = ""
+		}
+		writeJSON(w, http.StatusOK, status)
 	})
 
 	authed := func(h http.HandlerFunc) http.HandlerFunc {
@@ -80,8 +94,7 @@ func NewBridgeHandler(backend BridgeBackend, token string) http.Handler {
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "bridge token not configured"})
 				return
 			}
-			got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if got == r.Header.Get("Authorization") || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+			if !hasValidAuth(r) {
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 				return
 			}
