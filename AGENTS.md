@@ -5,6 +5,10 @@ archive/ignore on each 1:1 DM, archives curated blocklist matches without the LL
 on the maintained malicious-host list. Human docs: [README.md](README.md), [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md),
 [SCORING_RUBRIC.md](SCORING_RUBRIC.md) (decision rubric; jevlike score is lab-only).
 
+## Pull requests
+
+- Each PR solves exactly one problem. Do not bundle several problems into one PR, and do not split one problem across several PRs.
+
 ## Where things live
 
 | Path | Role |
