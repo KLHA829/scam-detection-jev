@@ -543,6 +543,7 @@ func TestHTTPAndSSEServer(t *testing.T) {
 			LoggedIn:       true,
 			ContactsSynced: true,
 			SelfWid:        "85299990000@c.us",
+			SelfLid:        "1234567890@lid",
 		},
 	}
 
@@ -586,8 +587,8 @@ func TestHTTPAndSSEServer(t *testing.T) {
 		t.Fatalf("decode auth /health: %v", err)
 	}
 	_ = authHealthRes.Body.Close()
-	if authHealth.SelfWid == "" {
-		t.Fatalf("authenticated /health should include selfWid, got %+v", authHealth)
+	if authHealth.SelfWid == "" || authHealth.SelfLid == "" {
+		t.Fatalf("authenticated /health should include selfWid and selfLid, got %+v", authHealth)
 	}
 
 	unauth, err := http.Get(srv.URL + "/v1/contact?id=85261230001@c.us")
