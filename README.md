@@ -264,7 +264,15 @@ Run a local Chromium-free fake `wa-bridge` (`whatsmeow` HTTP + SSE protocol) wit
 npm run mini-wa -- --with-bot --with-stub
 ```
 
-Open `http://127.0.0.1:8787` in your browser. To test against your real `jevlike_serve.py` and real OpenAI-compatible LLM, run `npm run mini-wa` and connect `npm start` with `WA_TRANSPORT=whatsmeow WA_BRIDGE_AUTO_START=0 WA_BRIDGE_URL=http://127.0.0.1:8767 WA_BRIDGE_TOKEN=mini-wa-token`.
+Open `http://127.0.0.1:8787` in your browser. To test against your real `jevlike_serve.py` and real OpenAI-compatible LLM without overwriting your live bot state (`operator-mode.json`, `review-queue.json`, etc.), run `npm run mini-wa` and connect `npm start` using the `Bearer Token` printed in the terminal plus isolated state paths:
+
+```bash
+WA_TRANSPORT=whatsmeow WA_BRIDGE_AUTO_START=0 WA_BRIDGE_URL=http://127.0.0.1:8767 WA_BRIDGE_TOKEN=<printed-token> \
+WA_BRIDGE_CURSOR_PATH=/tmp/mini-wa/cursor.json OPERATOR_MODE_PATH=/tmp/mini-wa/operator-mode.json \
+REVIEW_QUEUE_PATH=/tmp/mini-wa/review-queue.json LLM_REVIEW_COOLDOWN_PATH=/tmp/mini-wa/cooldown.json \
+BOT_CONTACT_NAMES_PATH=/tmp/mini-wa/bot-contact-names.json USER_RESTORED_CHATS_PATH=/tmp/mini-wa/restored.json \
+BLOCK_LOG_PATH=/tmp/mini-wa/blocks.jsonl npm start
+```
 
 ## Optional agent smoke (no QR)
 

@@ -4,6 +4,7 @@
 
 require('dotenv/config');
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
@@ -16,7 +17,7 @@ function parseArgs(argv) {
   const args = {
     bridgePort: Number(process.env.WA_BRIDGE_PORT || 8767),
     uiPort: Number(process.env.MINI_WA_UI_PORT || 8787),
-    token: process.env.WA_BRIDGE_TOKEN || 'mini-wa-token',
+    token: process.env.WA_BRIDGE_TOKEN || crypto.randomBytes(24).toString('hex'),
     withBot: false,
     withStub: false,
     isolatedEnv: false,
@@ -76,6 +77,24 @@ function startMockLlmServer() {
       content = JSON.stringify({
         guide: '【Stub AI 提示】模擬檢視到可疑誘導／轉帳風險，請先查證對方身分。',
       });
+    } else if (/"label"\s*:/.test(sys)) {
+      if (/驗證碼|login|XXXil/i.test(usr) && !/payme\.hsbc/i.test(usr)) {
+        content = JSON.stringify({
+          label: 'scam',
+          confidence: 0.93,
+          signals: ['stub_lure'],
+          should_archive: true,
+          reason: 'stub_lure',
+        });
+      } else {
+        content = JSON.stringify({
+          label: 'not_scam',
+          confidence: 0.9,
+          signals: [],
+          should_archive: false,
+          reason: 'stub_benign',
+        });
+      }
     } else if (/投資|高回報|短炒/i.test(usr)) {
       content = JSON.stringify({ action: 'no_action', pitch: true, strong: false, confidence: 0.9, reason: 'stub_pitch' });
     } else if (/驗證碼|login|XXXil/i.test(usr) && !/payme\.hsbc/i.test(usr)) {
@@ -143,9 +162,35 @@ function buildBotEnv({
     botEnv.LLM_REVIEW_MODEL = 'mini-wa-stub';
     botEnv.LLM_REVIEW_API_KEY = 'stub';
     botEnv.LLM_REVIEW_ENABLED = '1';
-    botEnv.CONTEXT_LLM_ENABLED = '1';
+    if (isolatedEnv || baseEnv.CONTEXT_LLM_ENABLED === undefined || baseEnv.CONTEXT_LLM_ENABLED === '') {
+      botEnv.CONTEXT_LLM_ENABLED = '1';
+    }
   }
   return botEnv;
+}
+
+function isAllowedLoopbackHost(hostHeader, expectedPort) {
+  if (typeof hostHeader !== 'string' || !hostHeader.trim()) return false;
+  try {
+    const parsed = new URL(`http://${hostHeader.trim()}`);
+    const hostname = parsed.hostname.toLowerCase();
+    const port = parsed.port ? Number(parsed.port) : 80;
+    if (expectedPort && port !== Number(expectedPort)) return false;
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedUiOrigin(originHeader, expectedPort) {
+  if (typeof originHeader !== 'string' || !originHeader.trim()) return true;
+  try {
+    const parsed = new URL(originHeader.trim());
+    if (parsed.protocol !== 'http:') return false;
+    return isAllowedLoopbackHost(parsed.host, expectedPort);
+  } catch {
+    return false;
+  }
 }
 
 async function stopChildProcess(proc) {
@@ -223,9 +268,15 @@ async function runCli(argv = process.argv.slice(2)) {
 
   let uiServer = null;
   let uiUrl = '';
+  let boundUiPort = args.uiPort;
   if (!args.noUi) {
     const html = renderMiniWhatsAppHtml();
     uiServer = http.createServer(async (req, res) => {
+      if (!isAllowedLoopbackHost(req.headers.host, boundUiPort)) {
+        res.writeHead(403, { 'content-type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ error: 'forbidden host' }));
+        return;
+      }
       const url = new URL(req.url || '/', 'http://127.0.0.1');
       if (req.method === 'GET' && url.pathname === '/') {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -247,6 +298,20 @@ async function runCli(argv = process.argv.slice(2)) {
         res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ sandbox: sandbox.snapshot(), botStatus, botLogs }));
         return;
+      }
+      if (req.method === 'POST') {
+        const fetchSite = String(req.headers['sec-fetch-site'] || '').trim().toLowerCase();
+        if ((fetchSite && fetchSite !== 'same-origin' && fetchSite !== 'none') || !isAllowedUiOrigin(req.headers.origin, boundUiPort)) {
+          res.writeHead(403, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: 'forbidden origin' }));
+          return;
+        }
+        const ct = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+        if (ct !== 'application/json') {
+          res.writeHead(415, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: 'application/json required' }));
+          return;
+        }
       }
       try {
         const body = await readJson(req);
@@ -278,6 +343,7 @@ async function runCli(argv = process.argv.slice(2)) {
       uiServer.listen(args.uiPort, '127.0.0.1', () => {
         const addr = uiServer.address();
         const port = addr && typeof addr === 'object' ? addr.port : args.uiPort;
+        boundUiPort = port;
         uiUrl = `http://127.0.0.1:${port}`;
         resolve();
       });
@@ -371,4 +437,11 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseArgs, runCli, startMockLlmServer, buildBotEnv };
+module.exports = {
+  parseArgs,
+  runCli,
+  startMockLlmServer,
+  buildBotEnv,
+  isAllowedLoopbackHost,
+  isAllowedUiOrigin,
+};
