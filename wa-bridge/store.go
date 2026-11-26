@@ -71,6 +71,10 @@ CREATE TABLE IF NOT EXISTS bridge_bot_contact_labels (
 	label_name TEXT NOT NULL,
 	PRIMARY KEY (jid, key_id)
 );
+
+CREATE TABLE IF NOT EXISTS bridge_unreconciled_contacts (
+	jid TEXT PRIMARY KEY
+);
 `
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		return nil, fmt.Errorf("init bridge schema: %w", err)
@@ -435,4 +439,41 @@ func (s *BridgeStore) DeleteBotContactLabel(ctx context.Context, jid string, key
 		return fmt.Errorf("delete bot contact label: %w", err)
 	}
 	return nil
+}
+
+func (s *BridgeStore) MarkUnreconciledContact(ctx context.Context, jid string) error {
+	if s == nil || s.db == nil || jid == "" {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO bridge_unreconciled_contacts (jid) VALUES (?) ON CONFLICT(jid) DO NOTHING`, jid)
+	if err != nil {
+		return fmt.Errorf("mark unreconciled contact: %w", err)
+	}
+	return nil
+}
+
+func (s *BridgeStore) ClearUnreconciledContact(ctx context.Context, jid string) error {
+	if s == nil || s.db == nil || jid == "" {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM bridge_unreconciled_contacts WHERE jid = ?`, jid)
+	if err != nil {
+		return fmt.Errorf("clear unreconciled contact: %w", err)
+	}
+	return nil
+}
+
+func (s *BridgeStore) HasUnreconciledContact(ctx context.Context, jid string) (bool, error) {
+	if s == nil || s.db == nil || jid == "" {
+		return false, nil
+	}
+	var found int
+	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM bridge_unreconciled_contacts WHERE jid = ? LIMIT 1`, jid).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("query unreconciled contact: %w", err)
+	}
+	return true, nil
 }
