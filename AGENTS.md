@@ -73,6 +73,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 ## Current state — 2026-11-26
 
 - Default transport is `whatsmeow` (`WA_TRANSPORT=whatsmeow`, `WA_BRIDGE_AUTO_START` on when `WA_BRIDGE_URL`/`WA_BRIDGE_TOKEN` are unset); set `WA_TRANSPORT=wwebjs` for legacy Chromium.
+- The whatsmeow bridge reads both legacy `contact` and newer `lid_contact` app-state mutations into the contact store, including after app-state recovery. Contact sync or recovery failures keep the saved-status gate unknown/fail-closed, so the bot only sends the review card and never auto-archives, blocks or labels when status cannot be determined (2026-11-26).
 - `CONTEXT_LLM_ENABLED` (default **on**) reviews masked 1:1 transcripts (inbound + `user:` messages), unmasks allowlisted `officialHosts` domains in prompts, requires `strong: true` on first unsaved message, and labels unsolicited pitches `（可疑推銷）` via `BOT_CONTACT_NAMES_PATH` (removed on confident `no_action` with `pitch: false`).
 - Chats restored from archive (`USER_RESTORED_CHATS_PATH`), whether seen live or reconciled from a whatsmeow full sync, and `@lid` / unknown-saved-status contacts go to the self-chat review card instead of auto-archive/block.
 - `/v1/mask` chunks messages longer than `context_tokens` (96) with overlapping windows; `jevlike_serve.py` does not read `.env` (export `JEVLIKE_MASK_CKPT`).

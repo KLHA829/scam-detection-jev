@@ -55,6 +55,11 @@ CREATE TABLE IF NOT EXISTS bridge_messages (
 CREATE INDEX IF NOT EXISTS idx_bridge_messages_chat_ts ON bridge_messages(chat_jid, ts_unix DESC);
 CREATE INDEX IF NOT EXISTS idx_bridge_messages_ts ON bridge_messages(ts_unix);
 
+CREATE TABLE IF NOT EXISTS bridge_meta (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS bridge_archive_state (
 	our_jid TEXT NOT NULL DEFAULT '',
 	chat_jid TEXT NOT NULL,
@@ -356,4 +361,45 @@ func (s *BridgeStore) GetLastChatMessage(ctx context.Context, chatJID string) (S
 	out.FromMe = fromMe != 0
 	out.Timestamp = time.Unix(tsUnix, 0)
 	return out, true, nil
+}
+
+func (s *BridgeStore) GetMeta(ctx context.Context, key string) (string, bool, error) {
+	if key == "" {
+		return "", false, nil
+	}
+	var val string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM bridge_meta WHERE key = ?`, key).Scan(&val)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("get meta %q: %w", key, err)
+	}
+	return val, true, nil
+}
+
+func (s *BridgeStore) SetMeta(ctx context.Context, key, value string) error {
+	if key == "" {
+		return errors.New("meta key is required")
+	}
+	_, err := s.db.ExecContext(
+		ctx,
+		`INSERT INTO bridge_meta(key, value) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		key, value,
+	)
+	if err != nil {
+		return fmt.Errorf("set meta %q: %w", key, err)
+	}
+	return nil
+}
+
+func (s *BridgeStore) DeleteMeta(ctx context.Context, key string) error {
+	if key == "" {
+		return errors.New("meta key is required")
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM bridge_meta WHERE key = ?`, key); err != nil {
+		return fmt.Errorf("delete meta %q: %w", key, err)
+	}
+	return nil
 }
