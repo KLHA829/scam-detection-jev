@@ -162,16 +162,17 @@ type WhatsmeowBridge struct {
 	onSyncAttemptDone func(gen uint64, fullSync bool, err error)
 	syncRetryWake     chan struct{}
 
-	mu                sync.RWMutex
-	connected         bool
-	loggedIn          bool
-	readyEmitted      bool
-	contactsSynced    bool
-	connGen           uint64
-	syncEpoch         uint64
-	syncAttemptActive bool
-	syncNeedsRetry    bool
-	syncNeedsFull     bool
+	mu                  sync.RWMutex
+	connected           bool
+	loggedIn            bool
+	readyEmitted        bool
+	contactsSynced      bool
+	connGen             uint64
+	syncEpoch           uint64
+	syncAttemptActive   bool
+	bridgeFetchInFlight bool
+	syncNeedsRetry      bool
+	syncNeedsFull       bool
 
 	archiveMu          sync.Mutex
 	putArchiveQueue    map[string][]putArchiveTransition
@@ -428,14 +429,19 @@ func (b *WhatsmeowBridge) syncContacts(ctx context.Context, gen uint64) {
 		if !b.isGenActive(gen) {
 			return
 		}
-		b.mu.RLock()
+		b.mu.Lock()
 		fullSync := b.syncNeedsFull
 		startEpoch := b.syncEpoch
-		b.mu.RUnlock()
+		b.bridgeFetchInFlight = true
+		b.mu.Unlock()
 
 		syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		err := b.fetchContactsFn(syncCtx, fullSync)
 		cancel()
+
+		b.mu.Lock()
+		b.bridgeFetchInFlight = false
+		b.mu.Unlock()
 		if err == nil {
 			if !b.completeContactSyncAttempt(gen, startEpoch) {
 				continue
@@ -601,7 +607,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 			}
 			if b.connected && b.loggedIn && !b.contactsSynced && b.syncNeedsRetry {
 				if b.syncAttemptActive {
-					if evt.Recovery {
+					if evt.Recovery || !b.bridgeFetchInFlight {
 						select {
 						case b.syncRetryWake <- struct{}{}:
 						default:

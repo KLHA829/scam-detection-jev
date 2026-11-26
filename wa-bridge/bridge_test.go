@@ -652,6 +652,69 @@ func TestContactWriteObserverSurfacesLegacyAndLIDWriteErrorsBounded(t *testing.T
 	}
 }
 
+func TestIndependentAppStateSyncCompleteWakesFinalAttempt(t *testing.T) {
+	ctx := context.Background()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "key-catchup-final.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	defer func() { _ = bridge.Close() }()
+
+	var calls int
+	var mu sync.Mutex
+	onFinal := make(chan struct{})
+	releaseFinal := make(chan struct{})
+	bridge.syncRetryDelay = time.Millisecond
+	bridge.fetchContactsFn = func(_ context.Context, _ bool) error {
+		mu.Lock()
+		calls++
+		n := calls
+		mu.Unlock()
+		if n == maxSyncAttempts {
+			close(onFinal)
+			<-releaseFinal
+			return errors.New("err key not found")
+		}
+		if n < maxSyncAttempts {
+			return errors.New("err key not found")
+		}
+		return nil
+	}
+
+	bridge.mu.Lock()
+	bridge.connected = true
+	bridge.loggedIn = true
+	bridge.connGen = 1
+	bridge.syncAttemptActive = true
+	bridge.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		bridge.syncContacts(ctx, 1)
+		close(done)
+	}()
+
+	<-onFinal
+	// Simulate an independent whatsmeow key-share AppStateSyncComplete (Recovery=false)
+	// arriving after the bridge's final fetch finishes (bridgeFetchInFlight=false)
+	// before syncContacts retires the attempt.
+	bridge.mu.Lock()
+	bridge.syncNeedsRetry = true
+	bridge.bridgeFetchInFlight = false
+	bridge.mu.Unlock()
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow, Recovery: false})
+	close(releaseFinal)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for key-share catch-up retry")
+	}
+	if !bridge.Health().ContactsSynced {
+		t.Fatal("independent AppStateSyncComplete during final attempt must wake a retry and reopen contact gate")
+	}
+}
+
 func TestPairSuccessInvalidatesContactImportRevision(t *testing.T) {
 	ctx := context.Background()
 	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "pair-import-revision.db"), "ERROR")
