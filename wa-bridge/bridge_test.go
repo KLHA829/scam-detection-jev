@@ -1438,4 +1438,25 @@ INSERT INTO bridge_archive_state (chat_jid, archived, updated_at) VALUES ('85261
 	if archived, found, err := migratedStore.GetArchiveState(ctx, selfJID.String(), "85261003333@c.us"); err != nil || !found || archived {
 		t.Fatalf("expected migrated baseline preserved for selfJID, got (%v, %v, %v)", archived, found, err)
 	}
+
+	// 5. Interrupted upgrade recovery copies leftover old rows without dropping rows already in the new table.
+	if _, err := bridge.db.ExecContext(ctx, `
+INSERT OR REPLACE INTO bridge_archive_state (our_jid, chat_jid, archived, updated_at) VALUES (?, '85261004444@c.us', 0, 12346);
+CREATE TABLE bridge_archive_state_old (
+	chat_jid TEXT PRIMARY KEY,
+	archived INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+INSERT INTO bridge_archive_state_old (chat_jid, archived, updated_at) VALUES ('85261005555@c.us', 0, 12347);`, selfJID.String()); err != nil {
+		t.Fatalf("seed interrupted bridge_archive_state migration: %v", err)
+	}
+	recoveredStore, err := NewBridgeStore(ctx, bridge.db)
+	if err != nil {
+		t.Fatalf("NewBridgeStore interrupted migration recovery: %v", err)
+	}
+	for _, chatID := range []string{"85261004444@c.us", "85261005555@c.us"} {
+		if archived, found, err := recoveredStore.GetArchiveState(ctx, selfJID.String(), chatID); err != nil || !found || archived {
+			t.Fatalf("expected recovered baseline for %s, got (%v, %v, %v)", chatID, archived, found, err)
+		}
+	}
 }
