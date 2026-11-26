@@ -680,6 +680,83 @@ func TestLiveWriteErrorForcesFullReplayOnReconnect(t *testing.T) {
 	}
 }
 
+func TestGetContactFallsBackFromPNToSavedLIDAndSkipsEmptyReconcile(t *testing.T) {
+	ctx := context.Background()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "pn-lid-fallback.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	defer func() { _ = bridge.Close() }()
+
+	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
+	}
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
+	}
+	bridge.ensureContactWritesWrapped()
+
+	pnJID := types.NewJID("85261234567", types.DefaultUserServer)
+	lidJID := types.NewJID("9001", types.HiddenUserServer)
+	if err := bridge.client.Store.LIDs.PutLIDMapping(ctx, lidJID, pnJID); err != nil {
+		t.Fatalf("PutLIDMapping: %v", err)
+	}
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, lidJID, "Mum", "Mum"); err != nil {
+		t.Fatalf("PutContactName(lid): %v", err)
+	}
+
+	// Empty reconcile (e.g., empty fetch with 0 seen contacts) must not wipe cached saved names.
+	if err := bridge.reconcileDeletedContacts(ctx, nil); err != nil {
+		t.Fatalf("reconcileDeletedContacts(empty): %v", err)
+	}
+
+	bridge.mu.Lock()
+	bridge.connected = true
+	bridge.loggedIn = true
+	bridge.connGen = 1
+	bridge.mu.Unlock()
+	bridge.markContactsSyncedForGen(1)
+
+	pnResp, err := bridge.GetContact(ctx, pnJID.String())
+	if err != nil {
+		t.Fatalf("GetContact(pn): %v", err)
+	}
+	if pnResp.IsMyContact == nil || !*pnResp.IsMyContact || pnResp.Name != "Mum" {
+		t.Fatalf("PN lookup for contact saved only under mapped LID must stay protected, got %+v", pnResp)
+	}
+
+	// While full-sync tracking stays active through reconcileDeletedContacts, a live save is recorded in seen and preserved.
+	liveLID := types.NewJID("9002", types.HiddenUserServer)
+	bridge.contactWrites.startFullSyncTracking()
+	_ = bridge.client.Store.Contacts.PutContactName(ctx, lidJID, "Mum", "Mum")
+	bridge.handleEvent(&events.AppState{
+		Index: []string{appstate.IndexLIDContact, liveLID.String()},
+		SyncActionValue: &waSyncAction.SyncActionValue{
+			LidContactAction: &waSyncAction.LidContactAction{
+				FullName:  proto.String("Live Save"),
+				FirstName: proto.String("Live Save"),
+			},
+		},
+	})
+	if err := bridge.reconcileDeletedContacts(ctx, nil); err != nil {
+		t.Fatalf("reconcileDeletedContacts(live): %v", err)
+	}
+	bridge.contactWrites.finishFullSyncTracking()
+
+	liveResp, err := bridge.GetContact(ctx, liveLID.String())
+	if err != nil {
+		t.Fatalf("GetContact(liveLID): %v", err)
+	}
+	if liveResp.IsMyContact == nil || !*liveResp.IsMyContact || liveResp.Name != "Live Save" {
+		t.Fatalf("live save during active tracking must not be erased by reconcileDeletedContacts, got %+v", liveResp)
+	}
+}
+
 type failingContactNameStore struct {
 	store.ContactStore
 	err error

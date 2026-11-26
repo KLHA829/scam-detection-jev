@@ -105,6 +105,23 @@ func (w *contactWriteObserver) finishFullSyncTracking() map[string]struct{} {
 	return seen
 }
 
+func (w *contactWriteObserver) snapshotSeenCount() int {
+	w.mu.Lock()
+	n := len(w.seen)
+	w.mu.Unlock()
+	return n
+}
+
+func (w *contactWriteObserver) wasSeen(id string) bool {
+	if id == "" {
+		return false
+	}
+	w.mu.Lock()
+	_, ok := w.seen[id]
+	w.mu.Unlock()
+	return ok
+}
+
 func (w *contactWriteObserver) record(err error) {
 	if err == nil {
 		return
@@ -309,7 +326,14 @@ func (b *WhatsmeowBridge) shouldForceFullContactImport(ctx context.Context, requ
 }
 
 func (b *WhatsmeowBridge) reconcileDeletedContacts(ctx context.Context, seen map[string]struct{}) error {
-	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil || seen == nil {
+	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
+		return nil
+	}
+	seenCount := len(seen)
+	if seenCount == 0 && b.contactWrites != nil {
+		seenCount = b.contactWrites.snapshotSeenCount()
+	}
+	if seenCount == 0 {
 		return nil
 	}
 	all, err := b.client.Store.Contacts.GetAllContacts(ctx)
@@ -320,7 +344,11 @@ func (b *WhatsmeowBridge) reconcileDeletedContacts(ctx context.Context, seen map
 		if strings.TrimSpace(info.FullName) == "" && strings.TrimSpace(info.FirstName) == "" {
 			continue
 		}
-		if _, ok := seen[canonicalJID(jid)]; ok {
+		id := canonicalJID(jid)
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		if b.contactWrites != nil && b.contactWrites.wasSeen(id) {
 			continue
 		}
 		if err := b.client.Store.Contacts.PutContactName(ctx, jid, "", ""); err != nil {
@@ -360,12 +388,8 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 	}
 	fetchErr := b.client.FetchAppState(ctx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
 	var writeErr error
-	var seen map[string]struct{}
 	if b.contactWrites != nil {
 		writeErr = b.contactWrites.takeErrForAttempt(attemptID)
-		if fullSync {
-			seen = b.contactWrites.finishFullSyncTracking()
-		}
 	}
 	if fetchErr != nil {
 		return fmt.Errorf("fetch contact app state: %w", fetchErr)
@@ -377,7 +401,7 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 		b.contactWrites.clearPriorErr(attemptID)
 	}
 	if fullSync {
-		if err := b.reconcileDeletedContacts(ctx, seen); err != nil {
+		if err := b.reconcileDeletedContacts(ctx, nil); err != nil {
 			return err
 		}
 	}
@@ -1136,6 +1160,23 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 				}
 				if strings.TrimSpace(info.PushName) == "" {
 					info.PushName = pnInfo.PushName
+				}
+			}
+		}
+	}
+	if jid.Server == types.DefaultUserServer && savedName == "" && b.client.Store.LIDs != nil {
+		if lid, err := b.client.Store.LIDs.GetLIDForPN(ctx, jid); err == nil && !lid.IsEmpty() {
+			if lidInfo, err := b.client.Store.Contacts.GetContact(ctx, lid); err == nil {
+				lidSaved := strings.TrimSpace(lidInfo.FullName)
+				if lidSaved == "" {
+					lidSaved = strings.TrimSpace(lidInfo.FirstName)
+				}
+				if lidSaved != "" {
+					info.FullName = lidInfo.FullName
+					info.FirstName = lidInfo.FirstName
+				}
+				if strings.TrimSpace(info.PushName) == "" {
+					info.PushName = lidInfo.PushName
 				}
 			}
 		}
