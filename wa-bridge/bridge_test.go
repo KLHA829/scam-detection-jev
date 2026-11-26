@@ -576,6 +576,45 @@ func TestReconcileDeletedContactsPreservesPushName(t *testing.T) {
 	}
 }
 
+func TestObsoleteFetchAttemptCannotSwallowNewAttemptWriteError(t *testing.T) {
+	ctx := context.Background()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "attempt-err.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	defer func() { _ = bridge.Close() }()
+
+	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
+	}
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
+	}
+
+	bridge.ensureContactWritesWrapped()
+	oldAttempt := bridge.contactWrites.beginAttempt()
+	newAttempt := bridge.contactWrites.beginAttempt()
+
+	writeFail := errors.New("sqlite write failed")
+	bridge.contactWrites.ContactStore = failingContactNameStore{
+		ContactStore: bridge.contactWrites.ContactStore,
+		err:          writeFail,
+	}
+	_ = bridge.contactWrites.PutContactName(ctx, types.NewJID("555000999", types.HiddenUserServer), "Mum", "Mum")
+
+	if swallowed := bridge.contactWrites.takeErrForAttempt(oldAttempt); swallowed != nil {
+		t.Fatalf("obsolete attempt %d must not drain write error from attempt %d, got %v", oldAttempt, newAttempt, swallowed)
+	}
+	if actual := bridge.contactWrites.takeErrForAttempt(newAttempt); !errors.Is(actual, writeFail) {
+		t.Fatalf("expected new attempt %d to observe writeFail, got %v", newAttempt, actual)
+	}
+}
+
 type failingContactNameStore struct {
 	store.ContactStore
 	err error

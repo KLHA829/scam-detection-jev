@@ -63,10 +63,22 @@ func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat type
 
 type contactWriteObserver struct {
 	store.ContactStore
-	mu       sync.Mutex
-	err      error
-	tracking bool
-	seen     map[string]struct{}
+	mu        sync.Mutex
+	attemptID uint64
+	err       error
+	errID     uint64
+	tracking  bool
+	seen      map[string]struct{}
+}
+
+func (w *contactWriteObserver) beginAttempt() uint64 {
+	w.mu.Lock()
+	w.attemptID++
+	id := w.attemptID
+	w.err = nil
+	w.errID = 0
+	w.mu.Unlock()
+	return id
 }
 
 func (w *contactWriteObserver) startFullSyncTracking() {
@@ -90,8 +102,9 @@ func (w *contactWriteObserver) record(err error) {
 		return
 	}
 	w.mu.Lock()
-	if w.err == nil {
+	if w.err == nil || w.errID != w.attemptID {
 		w.err = err
+		w.errID = w.attemptID
 	}
 	w.mu.Unlock()
 }
@@ -133,9 +146,20 @@ func (w *contactWriteObserver) PutAllContactNames(ctx context.Context, contacts 
 
 func (w *contactWriteObserver) takeErr() error {
 	w.mu.Lock()
+	id := w.attemptID
+	w.mu.Unlock()
+	return w.takeErrForAttempt(id)
+}
+
+func (w *contactWriteObserver) takeErrForAttempt(attemptID uint64) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.err == nil || w.errID != attemptID {
+		return nil
+	}
 	err := w.err
 	w.err = nil
-	w.mu.Unlock()
+	w.errID = 0
 	return err
 }
 
@@ -149,6 +173,7 @@ type WhatsmeowBridge struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	fetchContactsFn   func(ctx context.Context, fullSync bool) error
+	contactFetchMu    sync.Mutex
 	contactWrites     *contactWriteObserver
 	syncRetryDelay    time.Duration
 	onSyncAttemptDone func(gen uint64, fullSync bool, err error)
@@ -305,20 +330,27 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 	if b.client == nil || b.client.Store == nil {
 		return errNotReady
 	}
+	b.contactFetchMu.Lock()
+	defer b.contactFetchMu.Unlock()
+
 	var err error
 	fullSync, err = b.shouldForceFullContactImport(ctx, fullSync)
 	if err != nil {
 		return err
 	}
-	if fullSync && b.contactWrites != nil {
-		b.contactWrites.startFullSyncTracking()
-		defer b.contactWrites.finishFullSyncTracking()
+	var attemptID uint64
+	if b.contactWrites != nil {
+		attemptID = b.contactWrites.beginAttempt()
+		if fullSync {
+			b.contactWrites.startFullSyncTracking()
+			defer b.contactWrites.finishFullSyncTracking()
+		}
 	}
 	fetchErr := b.client.FetchAppState(ctx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
 	var writeErr error
 	var seen map[string]struct{}
 	if b.contactWrites != nil {
-		writeErr = b.contactWrites.takeErr()
+		writeErr = b.contactWrites.takeErrForAttempt(attemptID)
 		if fullSync {
 			seen = b.contactWrites.finishFullSyncTracking()
 		}
