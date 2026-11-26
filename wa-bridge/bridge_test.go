@@ -22,6 +22,7 @@ import (
 	"go.mau.fi/whatsmeow/proto/waAdv"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waServerSync"
 	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -225,6 +226,122 @@ func TestContactSyncFailClosedGate(t *testing.T) {
 	)
 	if !selfResp.IsMe {
 		t.Fatalf("expected IsMe=true for selfWid, got %+v", selfResp)
+	}
+}
+
+func TestLidContactMutationSavedInFullSync(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "lid-contact-sync.db")
+
+	bridge, err := NewWhatsmeowBridge(ctx, dbPath, "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	defer func() { _ = bridge.Close() }()
+
+	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
+	}
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
+	}
+
+	lidJID := types.NewJID("555000333", types.HiddenUserServer)
+	mutations := []appstate.Mutation{{
+		Operation: waServerSync.SyncdMutation_SET,
+		Index:     []string{appstate.IndexLIDContact, lidJID.String()},
+		Action: &waSyncAction.SyncActionValue{
+			LidContactAction: &waSyncAction.LidContactAction{
+				FullName:  proto.String("Mum"),
+				FirstName: proto.String("Mum"),
+			},
+		},
+	}}
+	if err := bridge.collectContactAppStateMutations(ctx, mutations, true); err != nil {
+		t.Fatalf("collectContactAppStateMutations: %v", err)
+	}
+
+	bridge.mu.Lock()
+	bridge.connected = true
+	bridge.loggedIn = true
+	bridge.connGen = 1
+	bridge.mu.Unlock()
+	bridge.markContactsSyncedForGen(1)
+
+	contact, err := bridge.GetContact(ctx, lidJID.String())
+	if err != nil {
+		t.Fatalf("GetContact(lid): %v", err)
+	}
+	if contact.IsMyContact == nil || !*contact.IsMyContact || contact.Name != "Mum" {
+		t.Fatalf("saved lid_contact mutation must read as saved/Mum, got %+v", contact)
+	}
+
+	incrementalLID := types.NewJID("555000444", types.HiddenUserServer)
+	incrementalMutations := []appstate.Mutation{{
+		Operation: waServerSync.SyncdMutation_SET,
+		Index:     []string{appstate.IndexLIDContact, incrementalLID.String()},
+		Action: &waSyncAction.SyncActionValue{
+			LidContactAction: &waSyncAction.LidContactAction{
+				FullName:  proto.String("Auntie"),
+				FirstName: proto.String("Auntie"),
+			},
+		},
+	}}
+	if err := bridge.collectContactAppStateMutations(ctx, incrementalMutations, false); err != nil {
+		t.Fatalf("collectContactAppStateMutations incremental: %v", err)
+	}
+	incrementalContact, err := bridge.GetContact(ctx, incrementalLID.String())
+	if err != nil {
+		t.Fatalf("GetContact(incremental lid): %v", err)
+	}
+	if incrementalContact.IsMyContact == nil || !*incrementalContact.IsMyContact || incrementalContact.Name != "Auntie" {
+		t.Fatalf("incremental lid_contact mutation must read as saved/Auntie, got %+v", incrementalContact)
+	}
+}
+
+func TestContactRecoveryResyncsFailClosed(t *testing.T) {
+	ctx := context.Background()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "contact-recovery.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	defer func() { _ = bridge.Close() }()
+
+	type fetchResult struct {
+		fullSync      bool
+		syncedAtFetch bool
+	}
+	fetchDone := make(chan fetchResult, 1)
+	bridge.fetchContactsFn = func(_ context.Context, fullSync bool) error {
+		fetchDone <- fetchResult{fullSync: fullSync, syncedAtFetch: bridge.Health().ContactsSynced}
+		return nil
+	}
+	bridge.mu.Lock()
+	bridge.connected = true
+	bridge.loggedIn = true
+	bridge.connGen = 1
+	bridge.contactsSynced = true
+	bridge.mu.Unlock()
+
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow, Recovery: true})
+	select {
+	case res := <-fetchDone:
+		if !res.fullSync {
+			t.Fatal("recovery must force a full contact resync")
+		}
+		if res.syncedAtFetch {
+			t.Fatal("recovery must close the contact gate while refetching")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for recovery contact resync")
+	}
+	if !bridge.Health().ContactsSynced {
+		t.Fatal("successful recovery resync should reopen the contact gate")
 	}
 }
 

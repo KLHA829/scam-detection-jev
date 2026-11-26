@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,18 +61,21 @@ func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat type
 }
 
 type WhatsmeowBridge struct {
-	db                *sql.DB
-	store             *BridgeStore
-	rawChatSettings   store.ChatSettingsStore
-	client            *whatsmeow.Client
-	hub               *EventHub
-	log               waLog.Logger
-	ctx               context.Context
-	cancel            context.CancelFunc
-	fetchContactsFn   func(ctx context.Context, fullSync bool) error
-	syncRetryDelay    time.Duration
-	onSyncAttemptDone func(gen uint64, fullSync bool, err error)
-	syncRetryWake     chan struct{}
+	db                          *sql.DB
+	store                       *BridgeStore
+	rawChatSettings             store.ChatSettingsStore
+	client                      *whatsmeow.Client
+	hub                         *EventHub
+	log                         waLog.Logger
+	ctx                         context.Context
+	cancel                      context.CancelFunc
+	fetchContactsFn             func(ctx context.Context, fullSync bool) error
+	appStateProc                *appstate.Processor
+	contactFetchMu              sync.Mutex
+	contactAppStateBackoffUntil time.Time
+	syncRetryDelay              time.Duration
+	onSyncAttemptDone           func(gen uint64, fullSync bool, err error)
+	syncRetryWake               chan struct{}
 
 	mu                sync.RWMutex
 	connected         bool
@@ -159,24 +163,131 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 
 	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
 	bridge := &WhatsmeowBridge{
-		db:             db,
-		store:          bridgeStore,
-		hub:            NewEventHub(),
-		log:            logger,
-		ctx:            bridgeCtx,
-		cancel:         bridgeCancel,
-		syncRetryDelay: defaultSyncRetryDelay,
-		syncRetryWake:  make(chan struct{}, 1),
+		db:              db,
+		store:           bridgeStore,
+		hub:             NewEventHub(),
+		log:             logger,
+		ctx:             bridgeCtx,
+		cancel:          bridgeCancel,
+		syncRetryDelay:  defaultSyncRetryDelay,
+		syncRetryWake:   make(chan struct{}, 1),
 		putArchiveQueue: make(map[string][]putArchiveTransition),
+		appStateProc:    appstate.NewProcessor(deviceStore, logger.Sub("appstate")),
 	}
 	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
 	bridge.client = cli
 	bridge.ensureChatSettingsWrapped()
-	bridge.fetchContactsFn = func(fetchCtx context.Context, fullSync bool) error {
-		return cli.FetchAppState(fetchCtx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
-	}
+	bridge.fetchContactsFn = bridge.fetchContactAppState
 	cli.AddEventHandler(bridge.handleEvent)
 	return bridge, nil
+}
+
+func normalizeLidContactMutations(mutations []appstate.Mutation) []appstate.Mutation {
+	var normalized []appstate.Mutation
+	for i, mutation := range mutations {
+		if len(mutation.Index) == 0 || mutation.Index[0] != appstate.IndexLIDContact {
+			continue
+		}
+		if normalized == nil {
+			normalized = append([]appstate.Mutation(nil), mutations...)
+		}
+		converted := mutation
+		converted.Index = append([]string(nil), mutation.Index...)
+		converted.Index[0] = appstate.IndexContact
+		lidAction := mutation.Action.GetLidContactAction()
+		contactAction := &waSyncAction.ContactAction{}
+		if lidAction != nil {
+			contactAction.FullName = lidAction.FullName
+			contactAction.FirstName = lidAction.FirstName
+			contactAction.Username = lidAction.Username
+			contactAction.Birthday = lidAction.Birthday
+		}
+		action := &waSyncAction.SyncActionValue{ContactAction: contactAction}
+		if mutation.Action != nil {
+			action.Timestamp = mutation.Action.Timestamp
+		}
+		converted.Action = action
+		normalized[i] = converted
+	}
+	if normalized != nil {
+		return normalized
+	}
+	return mutations
+}
+
+func (b *WhatsmeowBridge) collectContactAppStateMutations(ctx context.Context, mutations []appstate.Mutation, fullSync bool) error {
+	return b.client.DangerousInternals().CollectEventsToDispatch(
+		ctx,
+		appstate.WAPatchCriticalUnblockLow,
+		normalizeLidContactMutations(mutations),
+		fullSync,
+		nil,
+	)
+}
+
+// fetchContactAppState mirrors whatsmeow's contact sync, with the mutation
+// stream visible to the bridge so lid_contact rows are not dropped before
+// whatsmeow's bulk contact write.
+func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync bool) error {
+	if b.client == nil || b.client.Store == nil || b.appStateProc == nil {
+		return errNotReady
+	}
+	b.contactFetchMu.Lock()
+	defer b.contactFetchMu.Unlock()
+
+	name := appstate.WAPatchCriticalUnblockLow
+	if until := b.contactAppStateBackoffUntil; time.Now().Before(until) {
+		return fmt.Errorf("%w: not fetching %s until %s", whatsmeow.ErrAppStateRateLimited, name, until.Format(time.RFC3339))
+	}
+	if fullSync {
+		if err := b.client.Store.AppState.DeleteAppStateVersion(ctx, string(name)); err != nil {
+			return fmt.Errorf("reset app state %s version: %w", name, err)
+		}
+	}
+	version, hash, err := b.client.Store.AppState.GetAppStateVersion(ctx, string(name))
+	if err != nil {
+		return fmt.Errorf("get app state %s version: %w", name, err)
+	}
+	if version == 0 {
+		fullSync = true
+	}
+
+	state := appstate.HashState{Version: version, Hash: hash}
+	hasMore := true
+	wantSnapshot := fullSync
+	for hasMore {
+		patches, err := b.client.DangerousInternals().FetchAppStatePatches(ctx, name, state.Version, wantSnapshot)
+		if err != nil {
+			var iqErr *whatsmeow.IQError
+			if errors.As(err, &iqErr) && iqErr.Code == 429 && iqErr.ErrorNode != nil {
+				if backoff := iqErr.ErrorNode.AttrGetter().OptionalInt("backoff"); backoff > 0 {
+					b.contactAppStateBackoffUntil = time.Now().Add(time.Duration(backoff) * time.Second)
+				}
+			}
+			return fmt.Errorf("fetch app state %s patches: %w", name, err)
+		}
+		if !wantSnapshot && patches.Snapshot != nil {
+			return fmt.Errorf("server unexpectedly returned snapshot for %s without asking", name)
+		}
+		if patches.Snapshot != nil && state != (appstate.HashState{}) {
+			return fmt.Errorf("unexpected non-empty input state (v%d) for %s when applying snapshot", state.Version, name)
+		}
+		wantSnapshot = false
+		hasMore = patches.HasMorePatches
+
+		mutations, newState, err := b.appStateProc.DecodePatches(ctx, patches, state, true)
+		if err != nil {
+			if errors.Is(err, appstate.ErrKeyNotFound) {
+				b.client.DangerousInternals().RequestMissingAppStateKeys(context.WithoutCancel(ctx), patches)
+			}
+			return fmt.Errorf("decode app state %s patches: %w", name, err)
+		}
+		if err := b.collectContactAppStateMutations(ctx, mutations, fullSync); err != nil {
+			return fmt.Errorf("apply contact app state %s mutations: %w", name, err)
+		}
+		state = newState
+	}
+	return nil
 }
 
 func (b *WhatsmeowBridge) Start(ctx context.Context) error {
@@ -387,6 +498,11 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		if evt.Name == appstate.WAPatchCriticalUnblockLow {
 			var retryGen uint64
 			b.mu.Lock()
+			if evt.Recovery {
+				b.contactsSynced = false
+				b.syncNeedsRetry = true
+				b.syncNeedsFull = true
+			}
 			if b.connected && b.loggedIn && !b.contactsSynced && b.syncNeedsRetry {
 				if b.syncAttemptActive {
 					select {
