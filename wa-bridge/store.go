@@ -138,17 +138,50 @@ func ensureBridgeArchiveStateColumns(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("iterate bridge_archive_state columns: %w", err)
 	}
 	if !hasOurJID {
-		if _, err := db.ExecContext(ctx, `
-DROP TABLE bridge_archive_state;
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin bridge_archive_state migration: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if _, err := tx.ExecContext(ctx, `
+ALTER TABLE bridge_archive_state RENAME TO bridge_archive_state_old;
 CREATE TABLE bridge_archive_state (
 	our_jid TEXT NOT NULL DEFAULT '',
 	chat_jid TEXT NOT NULL,
 	archived INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL,
 	PRIMARY KEY (our_jid, chat_jid)
-);`); err != nil {
+);
+INSERT INTO bridge_archive_state (our_jid, chat_jid, archived, updated_at)
+SELECT COALESCE((SELECT jid FROM whatsmeow_device LIMIT 1), ''), chat_jid, archived, updated_at
+FROM bridge_archive_state_old;
+DROP TABLE bridge_archive_state_old;`); err != nil {
 			return fmt.Errorf("migrate bridge_archive_state.our_jid: %w", err)
 		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit bridge_archive_state migration: %w", err)
+		}
+	}
+	var oldTable string
+	err = db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name='bridge_archive_state_old'`).Scan(&oldTable)
+	if err == nil && oldTable == "bridge_archive_state_old" {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin bridge_archive_state_old recovery: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if _, err := tx.ExecContext(ctx, `
+INSERT OR IGNORE INTO bridge_archive_state (our_jid, chat_jid, archived, updated_at)
+SELECT COALESCE((SELECT jid FROM whatsmeow_device LIMIT 1), ''), chat_jid, archived, updated_at
+FROM bridge_archive_state_old;
+DROP TABLE bridge_archive_state_old;`); err != nil {
+			return fmt.Errorf("recover bridge_archive_state_old: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit bridge_archive_state_old recovery: %w", err)
+		}
+	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("check bridge_archive_state_old: %w", err)
 	}
 	return nil
 }
