@@ -54,11 +54,22 @@ CREATE TABLE IF NOT EXISTS bridge_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_bridge_messages_chat_ts ON bridge_messages(chat_jid, ts_unix DESC);
 CREATE INDEX IF NOT EXISTS idx_bridge_messages_ts ON bridge_messages(ts_unix);
+
+CREATE TABLE IF NOT EXISTS bridge_archive_state (
+	our_jid TEXT NOT NULL DEFAULT '',
+	chat_jid TEXT NOT NULL,
+	archived INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL,
+	PRIMARY KEY (our_jid, chat_jid)
+);
 `
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		return nil, fmt.Errorf("init bridge schema: %w", err)
 	}
 	if err := ensureBridgeMessagesColumns(ctx, db); err != nil {
+		return nil, err
+	}
+	if err := ensureBridgeArchiveStateColumns(ctx, db); err != nil {
 		return nil, err
 	}
 	return &BridgeStore{db: db}, nil
@@ -95,6 +106,105 @@ func ensureBridgeMessagesColumns(ctx context.Context, db *sql.DB) error {
 		if _, err := db.ExecContext(ctx, `ALTER TABLE bridge_messages ADD COLUMN msg_type TEXT NOT NULL DEFAULT 'unknown'`); err != nil {
 			return fmt.Errorf("migrate bridge_messages.msg_type: %w", err)
 		}
+	}
+	return nil
+}
+
+func ensureBridgeArchiveStateColumns(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(bridge_archive_state)`)
+	if err != nil {
+		return fmt.Errorf("inspect bridge_archive_state schema: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	hasOurJID := false
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			colType    string
+			notNull    int
+			defaultVal sql.NullString
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultVal, &pk); err != nil {
+			return fmt.Errorf("scan bridge_archive_state column: %w", err)
+		}
+		if name == "our_jid" {
+			hasOurJID = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate bridge_archive_state columns: %w", err)
+	}
+	if !hasOurJID {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin bridge_archive_state migration: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if _, err := tx.ExecContext(ctx, `
+ALTER TABLE bridge_archive_state RENAME TO bridge_archive_state_old;
+CREATE TABLE bridge_archive_state (
+	our_jid TEXT NOT NULL DEFAULT '',
+	chat_jid TEXT NOT NULL,
+	archived INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL,
+	PRIMARY KEY (our_jid, chat_jid)
+);
+INSERT INTO bridge_archive_state (our_jid, chat_jid, archived, updated_at)
+SELECT COALESCE((SELECT jid FROM whatsmeow_device LIMIT 1), ''), chat_jid, archived, updated_at
+FROM bridge_archive_state_old;
+DROP TABLE bridge_archive_state_old;`); err != nil {
+			return fmt.Errorf("migrate bridge_archive_state.our_jid: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit bridge_archive_state migration: %w", err)
+		}
+	}
+	var oldTable string
+	err = db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name='bridge_archive_state_old'`).Scan(&oldTable)
+	if err == nil && oldTable == "bridge_archive_state_old" {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin bridge_archive_state_old recovery: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if _, err := tx.ExecContext(ctx, `
+INSERT OR IGNORE INTO bridge_archive_state (our_jid, chat_jid, archived, updated_at)
+SELECT COALESCE((SELECT jid FROM whatsmeow_device LIMIT 1), ''), chat_jid, archived, updated_at
+FROM bridge_archive_state_old;
+DROP TABLE bridge_archive_state_old;`); err != nil {
+			return fmt.Errorf("recover bridge_archive_state_old: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit bridge_archive_state_old recovery: %w", err)
+		}
+	} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("check bridge_archive_state_old: %w", err)
+	}
+	return nil
+}
+
+func (s *BridgeStore) GetArchiveState(ctx context.Context, ourJID, chatJID string) (bool, bool, error) {
+	var archived bool
+	err := s.db.QueryRowContext(ctx, `SELECT archived FROM bridge_archive_state WHERE our_jid=$1 AND chat_jid=$2`, ourJID, chatJID).Scan(&archived)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, fmt.Errorf("get archive state: %w", err)
+	}
+	return archived, true, nil
+}
+
+func (s *BridgeStore) PutArchiveState(ctx context.Context, ourJID, chatJID string, archived bool) error {
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO bridge_archive_state (our_jid, chat_jid, archived, updated_at) VALUES ($1, $2, $3, $4)
+ON CONFLICT(our_jid, chat_jid) DO UPDATE SET archived=excluded.archived, updated_at=excluded.updated_at
+`, ourJID, chatJID, archived, time.Now().Unix())
+	if err != nil {
+		return fmt.Errorf("put archive state: %w", err)
 	}
 	return nil
 }
