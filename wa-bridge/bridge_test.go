@@ -1373,20 +1373,24 @@ func TestBridgeArchiveTrackingEdgeCases(t *testing.T) {
 	bridge.handleEvent(&events.PairSuccess{})
 	<-ch // authenticated
 
-	// 1. Upgraded DB: legacy whatsmeow_chat_settings row with archived=false and no mute/pin
-	// must not emit a false restore when replayed without a bridge_archive_state row.
-	legacyJID := types.NewJID("85261001111", types.DefaultUserServer)
-	if err := bridge.rawChatSettingsStore().PutArchived(ctx, legacyJID, false); err != nil {
-		t.Fatalf("raw PutArchived legacy row: %v", err)
+	// 1. Previously unpinned chat (whatsmeow_chat_settings row with archived=false, pinned=false,
+	// muted_until=0 and no bridge_archive_state row) must still emit a restore on first PutArchived(false).
+	unpinnedJID := types.NewJID("85261001111", types.DefaultUserServer)
+	if err := bridge.rawChatSettingsStore().PutPinned(ctx, unpinnedJID, false); err != nil {
+		t.Fatalf("raw PutPinned unpinned row: %v", err)
 	}
-	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, legacyJID, false); err != nil {
-		t.Fatalf("PutArchived legacy replay: %v", err)
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, unpinnedJID, false); err != nil {
+		t.Fatalf("PutArchived after unpin: %v", err)
 	}
 	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchRegularLow})
 	select {
-	case unexpected := <-ch:
-		t.Fatalf("upgraded already-unarchived row must not emit false restore, got %+v", unexpected)
-	case <-time.After(30 * time.Millisecond):
+	case evt := <-ch:
+		data, _ := evt.Data.(map[string]any)
+		if evt.Type != "chat_archived" || data["chatId"] != "85261001111@c.us" || data["archived"] != false || data["wasArchived"] != true {
+			t.Fatalf("expected restore for previously unpinned chat, got %+v", evt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for restore after unpin")
 	}
 
 	// 2. Secondary putArchiveState failure must still enqueue and emit the restore on sync completion.
@@ -1411,8 +1415,27 @@ func TestBridgeArchiveTrackingEdgeCases(t *testing.T) {
 		t.Fatal("timed out waiting for restore after secondary write failure")
 	}
 
-	// 3. Device scoping: bridge_archive_state baselines are isolated per our_jid.
-	if foundArchived, found, err := bridge.store.GetArchiveState(ctx, "85299990002@s.whatsapp.net", canonicalJID(legacyJID)); err != nil || found || foundArchived {
-		t.Fatalf("expected other device JID to have no archive baseline, got (%v, %v, %v)", foundArchived, found, err)
+	// 3. Device scoping: bridge_archive_state baselines are isolated per full device JID (including :AD).
+	if foundArchived, found, err := bridge.store.GetArchiveState(ctx, "85299990001:2@s.whatsapp.net", canonicalJID(unpinnedJID)); err != nil || found || foundArchived {
+		t.Fatalf("expected other linked device JID to have no archive baseline, got (%v, %v, %v)", foundArchived, found, err)
+	}
+
+	// 4. Schema upgrade from 3-column bridge_archive_state preserves existing baselines.
+	if _, err := bridge.db.ExecContext(ctx, `
+DROP TABLE bridge_archive_state;
+CREATE TABLE bridge_archive_state (
+	chat_jid TEXT PRIMARY KEY,
+	archived INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+INSERT INTO bridge_archive_state (chat_jid, archived, updated_at) VALUES ('85261003333@c.us', 0, 12345);`); err != nil {
+		t.Fatalf("seed legacy 3-column bridge_archive_state: %v", err)
+	}
+	migratedStore, err := NewBridgeStore(ctx, bridge.db)
+	if err != nil {
+		t.Fatalf("NewBridgeStore migration: %v", err)
+	}
+	if archived, found, err := migratedStore.GetArchiveState(ctx, selfJID.String(), "85261003333@c.us"); err != nil || !found || archived {
+		t.Fatalf("expected migrated baseline preserved for selfJID, got (%v, %v, %v)", archived, found, err)
 	}
 }

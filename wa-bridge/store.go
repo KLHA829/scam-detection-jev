@@ -139,14 +139,18 @@ func ensureBridgeArchiveStateColumns(ctx context.Context, db *sql.DB) error {
 	}
 	if !hasOurJID {
 		if _, err := db.ExecContext(ctx, `
-DROP TABLE bridge_archive_state;
+ALTER TABLE bridge_archive_state RENAME TO bridge_archive_state_old;
 CREATE TABLE bridge_archive_state (
 	our_jid TEXT NOT NULL DEFAULT '',
 	chat_jid TEXT NOT NULL,
 	archived INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL,
 	PRIMARY KEY (our_jid, chat_jid)
-);`); err != nil {
+);
+INSERT INTO bridge_archive_state (our_jid, chat_jid, archived, updated_at)
+SELECT COALESCE((SELECT jid FROM whatsmeow_device LIMIT 1), ''), chat_jid, archived, updated_at
+FROM bridge_archive_state_old;
+DROP TABLE bridge_archive_state_old;`); err != nil {
 			return fmt.Errorf("migrate bridge_archive_state.our_jid: %w", err)
 		}
 	}
