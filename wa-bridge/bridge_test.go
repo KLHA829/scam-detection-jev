@@ -345,6 +345,123 @@ func TestContactRecoveryResyncsFailClosed(t *testing.T) {
 	}
 }
 
+func TestLidContactLiveAppStateEventSaved(t *testing.T) {
+	ctx := context.Background()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "lid-appstate-event.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	defer func() { _ = bridge.Close() }()
+
+	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
+	}
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
+	}
+
+	bridge.mu.Lock()
+	bridge.connected = true
+	bridge.loggedIn = true
+	bridge.connGen = 1
+	bridge.mu.Unlock()
+	bridge.markContactsSyncedForGen(1)
+
+	lidJID := types.NewJID("555000777", types.HiddenUserServer)
+	bridge.handleEvent(&events.AppState{
+		Index: []string{appstate.IndexLIDContact, lidJID.String()},
+		SyncActionValue: &waSyncAction.SyncActionValue{
+			LidContactAction: &waSyncAction.LidContactAction{
+				FullName:  proto.String("Live Mum"),
+				FirstName: proto.String("Live Mum"),
+			},
+		},
+	})
+
+	contact, err := bridge.GetContact(ctx, lidJID.String())
+	if err != nil {
+		t.Fatalf("GetContact(live lid): %v", err)
+	}
+	if contact.IsMyContact == nil || !*contact.IsMyContact || contact.Name != "Live Mum" {
+		t.Fatalf("live AppState lid_contact event must save contact as saved/Live Mum, got %+v", contact)
+	}
+}
+
+func TestContactRecoveryDuringInflightSyncForcesFullResync(t *testing.T) {
+	ctx := context.Background()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "recovery-inflight.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	defer func() { _ = bridge.Close() }()
+
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	type attempt struct {
+		fullSync      bool
+		syncedAtStart bool
+	}
+	attempts := make(chan attempt, 4)
+	var callNum int
+	var callMu sync.Mutex
+
+	bridge.fetchContactsFn = func(_ context.Context, fullSync bool) error {
+		callMu.Lock()
+		callNum++
+		n := callNum
+		callMu.Unlock()
+		attempts <- attempt{fullSync: fullSync, syncedAtStart: bridge.Health().ContactsSynced}
+		if n == 1 {
+			close(firstStarted)
+			<-releaseFirst
+		}
+		return nil
+	}
+
+	bridge.mu.Lock()
+	bridge.connected = true
+	bridge.loggedIn = true
+	bridge.connGen = 1
+	bridge.syncAttemptActive = true
+	bridge.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		bridge.syncContacts(bridge.ctx, 1)
+		close(done)
+	}()
+
+	<-firstStarted
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow, Recovery: true})
+	close(releaseFirst)
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for syncContacts to finish recovery resync")
+	}
+
+	close(attempts)
+	var got []attempt
+	for a := range attempts {
+		got = append(got, a)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 sync attempts (initial + forced full recovery), got %d: %+v", len(got), got)
+	}
+	if !got[1].fullSync || got[1].syncedAtStart {
+		t.Fatalf("second attempt after inflight recovery must be fullSync=true with ContactsSynced=false, got %+v", got[1])
+	}
+	if !bridge.Health().ContactsSynced {
+		t.Fatal("expected ContactsSynced=true after recovery resync completes")
+	}
+}
+
 func TestBuildContactLabelPatch(t *testing.T) {
 	target := types.NewJID("85261234567", types.DefaultUserServer)
 

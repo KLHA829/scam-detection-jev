@@ -83,6 +83,7 @@ type WhatsmeowBridge struct {
 	readyEmitted      bool
 	contactsSynced    bool
 	connGen           uint64
+	syncEpoch         uint64
 	syncAttemptActive bool
 	syncNeedsRetry    bool
 	syncNeedsFull     bool
@@ -227,7 +228,10 @@ func (b *WhatsmeowBridge) collectContactAppStateMutations(ctx context.Context, m
 
 // fetchContactAppState mirrors whatsmeow's contact sync, with the mutation
 // stream visible to the bridge so lid_contact rows are not dropped before
-// whatsmeow's bulk contact write.
+// whatsmeow's bulk contact write. b.contactFetchMu is separate from
+// whatsmeow's unexported appStateSyncLock; any concurrent version/hash race
+// fails closed and is recovered by syncContacts's fullSync retry, while live
+// incremental lid_contact updates are also handled via *events.AppState.
 func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync bool) error {
 	if b.client == nil || b.client.Store == nil || b.appStateProc == nil {
 		return errNotReady
@@ -349,6 +353,27 @@ func (b *WhatsmeowBridge) markContactsSyncedForGen(gen uint64) {
 	b.mu.Unlock()
 }
 
+func (b *WhatsmeowBridge) completeContactSyncAttempt(gen, startEpoch uint64) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.connected || !b.loggedIn || b.connGen != gen {
+		return true
+	}
+	if b.syncEpoch != startEpoch || b.syncNeedsRetry {
+		b.syncNeedsRetry = false
+		select {
+		case <-b.syncRetryWake:
+		default:
+		}
+		return false
+	}
+	b.contactsSynced = true
+	b.syncAttemptActive = false
+	b.syncNeedsRetry = false
+	b.syncNeedsFull = false
+	return true
+}
+
 func (b *WhatsmeowBridge) isGenActive(gen uint64) bool {
 	b.mu.RLock()
 	active := b.connected && b.loggedIn && b.connGen == gen
@@ -367,13 +392,16 @@ func (b *WhatsmeowBridge) syncContacts(ctx context.Context, gen uint64) {
 		}
 		b.mu.RLock()
 		fullSync := b.syncNeedsFull
+		startEpoch := b.syncEpoch
 		b.mu.RUnlock()
 
 		syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		err := b.fetchContactsFn(syncCtx, fullSync)
 		cancel()
 		if err == nil {
-			b.markContactsSyncedForGen(gen)
+			if !b.completeContactSyncAttempt(gen, startEpoch) {
+				continue
+			}
 			if b.onSyncAttemptDone != nil {
 				b.onSyncAttemptDone(gen, fullSync, nil)
 			}
@@ -462,6 +490,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		b.ensureChatSettingsWrapped()
 		b.mu.Lock()
 		b.connGen++
+		b.syncEpoch++
 		gen := b.connGen
 		b.connected = true
 		b.loggedIn = b.client.Store != nil && b.client.Store.ID != nil
@@ -494,11 +523,27 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		b.ensureChatSettingsWrapped()
 		b.hub.Publish(BridgeEvent{Type: "authenticated"})
 
+	case *events.AppState:
+		if len(evt.Index) > 1 && evt.Index[0] == appstate.IndexLIDContact && evt.SyncActionValue != nil {
+			if act := evt.SyncActionValue.GetLidContactAction(); act != nil {
+				if jid, err := types.ParseJID(evt.Index[1]); err == nil && !jid.IsEmpty() && b.client != nil && b.client.Store != nil && b.client.Store.Contacts != nil {
+					ctx := b.ctx
+					if ctx == nil {
+						ctx = context.Background()
+					}
+					if err := b.client.Store.Contacts.PutContactName(ctx, jid, act.GetFirstName(), act.GetFullName()); err != nil {
+						b.log.Warnf("failed to store live lid_contact %s: %v", jid.String(), err)
+					}
+				}
+			}
+		}
+
 	case *events.AppStateSyncComplete:
 		if evt.Name == appstate.WAPatchCriticalUnblockLow {
 			var retryGen uint64
 			b.mu.Lock()
 			if evt.Recovery {
+				b.syncEpoch++
 				b.contactsSynced = false
 				b.syncNeedsRetry = true
 				b.syncNeedsFull = true
