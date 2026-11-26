@@ -21,7 +21,15 @@ import (
 	"go.mau.fi/whatsmeow/proto/waServerSync"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
+	"google.golang.org/protobuf/proto"
 )
+
+type appStateCommittedMutation struct {
+	keyID    []byte
+	indexMAC []byte
+	valueMAC []byte
+}
 
 var errActiveAppStateRecordNotFound = errors.New("active app state record not found for removal")
 
@@ -175,44 +183,14 @@ func (b *WhatsmeowBridge) resolveAppStateKeyIDsForRemove(
 	if latestKeyID == nil {
 		return nil, fmt.Errorf("no app state keys found, creating app state keys is not supported")
 	}
-	var matchingKeys [][]byte
 	matched, err := patchHasActiveMutationWithKey(ctx, cli.Store, patch, latestKeyID)
 	if err != nil {
 		return nil, err
 	}
 	if matched {
-		matchingKeys = append(matchingKeys, latestKeyID)
+		return [][]byte{latestKeyID}, nil
 	}
-	candidateIDs, err := b.listAppStateSyncKeyIDs(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, candidateID := range candidateIDs {
-		if bytes.Equal(candidateID, latestKeyID) {
-			continue
-		}
-		alreadyAdded := false
-		for _, seen := range matchingKeys {
-			if bytes.Equal(seen, candidateID) {
-				alreadyAdded = true
-				break
-			}
-		}
-		if alreadyAdded {
-			continue
-		}
-		matched, err := patchHasActiveMutationWithKey(ctx, cli.Store, patch, candidateID)
-		if err != nil {
-			return nil, err
-		}
-		if matched {
-			matchingKeys = append(matchingKeys, candidateID)
-		}
-	}
-	if len(matchingKeys) == 0 {
-		return nil, fmt.Errorf("%w: %s", errActiveAppStateRecordNotFound, patch.Type)
-	}
-	return matchingKeys, nil
+	return nil, fmt.Errorf("%w: %s", errActiveAppStateRecordNotFound, patch.Type)
 }
 
 func (b *WhatsmeowBridge) hasAnyActiveMutationForPatch(ctx context.Context, patch appstate.PatchInfo) (bool, error) {
@@ -264,6 +242,7 @@ func (b *WhatsmeowBridge) sendAppStateWithOperationAndInternals(
 	if cli == nil || cli.Store == nil {
 		return errNotReady
 	}
+	b.ensureContactWritesWrapped()
 	if operation == waServerSync.SyncdMutation_REMOVE {
 		// Validate ownership and version before resolving keys so conflict-retry tests
 		// and stale-name checks run in the expected order.
@@ -300,6 +279,22 @@ func (b *WhatsmeowBridge) sendAppStateWithOperationAndInternals(
 			surviving, err := b.hasAnyActiveMutationForPatch(ctx, patch)
 			if err != nil || surviving {
 				_ = b.store.MarkUnreconciledContact(ctx, targetJID)
+				if err == nil {
+					if reconcileEvents, syncErr := internals.FetchAppState(ctx, patch.Type, true, false); syncErr == nil {
+						for _, evt := range reconcileEvents {
+							if contactEvt, ok := evt.(*events.Contact); ok {
+								b.handleContactEvent(contactEvt)
+							}
+						}
+						if len(reconcileEvents) > 0 {
+							go func() {
+								for _, evt := range reconcileEvents {
+									internals.DispatchEvent(evt)
+								}
+							}()
+						}
+					}
+				}
 			} else {
 				_ = b.store.ClearUnreconciledContact(ctx, targetJID)
 			}
@@ -318,33 +313,33 @@ func (b *WhatsmeowBridge) sendAppStatePatchWithKeyLoop(
 	allowRetry bool,
 	validateAttempt appStateMutationValidator,
 	internals appStateInternals,
-) ([]byte, error) {
+) (appStateCommittedMutation, error) {
 	cli := b.client
 	for {
 		version, hash, err := cli.Store.AppState.GetAppStateVersion(ctx, string(patch.Type))
 		if err != nil {
-			return nil, err
+			return appStateCommittedMutation{}, err
 		}
 		if validateAttempt != nil {
 			if err := validateAttempt(ctx); err != nil {
-				return nil, err
+				return appStateCommittedMutation{}, err
 			}
 		}
 		keyID := fixedKeyID
 		if len(keyID) == 0 {
 			keyID, err = cli.Store.AppStateKeys.GetLatestAppStateSyncKeyID(ctx)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get latest app state key ID: %w", err)
+				return appStateCommittedMutation{}, fmt.Errorf("failed to get latest app state key ID: %w", err)
 			}
 			if keyID == nil {
-				return nil, fmt.Errorf("no app state keys found, creating app state keys is not supported")
+				return appStateCommittedMutation{}, fmt.Errorf("no app state keys found, creating app state keys is not supported")
 			}
 		}
 		if operation == waServerSync.SyncdMutation_REMOVE && b.store != nil {
 			if targetJID := contactJIDFromPatch(patch); targetJID != "" {
 				botLabels, err := b.store.ListBotContactLabels(ctx, targetJID)
 				if err != nil {
-					return nil, err
+					return appStateCommittedMutation{}, err
 				}
 				for _, rec := range botLabels {
 					if !bytes.Equal(rec.KeyID, keyID) {
@@ -352,10 +347,10 @@ func (b *WhatsmeowBridge) sendAppStatePatchWithKeyLoop(
 					}
 					liveMAC, err := cli.Store.AppState.GetAppStateMutationMAC(ctx, string(patch.Type), rec.IndexMAC)
 					if err != nil {
-						return nil, fmt.Errorf("verify bot contact label MAC: %w", err)
+						return appStateCommittedMutation{}, fmt.Errorf("verify bot contact label MAC: %w", err)
 					}
 					if liveMAC == nil || !bytes.Equal(liveMAC, rec.ValueMAC) {
-						return nil, errContactLabelChanged
+						return appStateCommittedMutation{}, errContactLabelChanged
 					}
 				}
 			}
@@ -364,7 +359,19 @@ func (b *WhatsmeowBridge) sendAppStatePatchWithKeyLoop(
 		state := appstate.HashState{Version: version, Hash: hash}
 		encodedPatch, err := encodeAppStatePatchWithOperation(ctx, cli.Store, keyID, state, patch, operation)
 		if err != nil {
-			return nil, err
+			return appStateCommittedMutation{}, err
+		}
+		var committed appStateCommittedMutation
+		committed.keyID = append([]byte(nil), keyID...)
+		var decodedPatch waServerSync.SyncdPatch
+		if err := proto.Unmarshal(encodedPatch, &decodedPatch); err == nil && len(decodedPatch.GetMutations()) > 0 {
+			rec := decodedPatch.GetMutations()[0].GetRecord()
+			if idx := rec.GetIndex().GetBlob(); len(idx) > 0 {
+				committed.indexMAC = append([]byte(nil), idx...)
+			}
+			if val := rec.GetValue().GetBlob(); len(val) >= 32 {
+				committed.valueMAC = append([]byte(nil), val[len(val)-32:]...)
+			}
 		}
 
 		resp, err := internals.SendIQ(ctx, whatsmeow.DangerousInfoQuery{
@@ -388,12 +395,12 @@ func (b *WhatsmeowBridge) sendAppStatePatchWithKeyLoop(
 			}},
 		})
 		if err != nil {
-			return nil, err
+			return appStateCommittedMutation{}, err
 		}
 
 		respCollection, ok := resp.GetOptionalChildByTag("sync", "collection")
 		if !ok {
-			return nil, &whatsmeow.ElementMissingError{Tag: "collection", In: "app state send response"}
+			return appStateCommittedMutation{}, &whatsmeow.ElementMissingError{Tag: "collection", In: "app state send response"}
 		}
 		if respCollection.AttrGetter().OptionalString("type") == "error" {
 			errorTag, hasErrorTag := respCollection.GetOptionalChildByTag("error")
@@ -406,10 +413,10 @@ func (b *WhatsmeowBridge) sendAppStatePatchWithKeyLoop(
 				var eventsToDispatch []any
 				patches, err := appstate.ParsePatchList(ctx, &respCollection, internals.DownloadExternalAppStateBlob)
 				if err != nil {
-					return nil, fmt.Errorf("%w (also, parsing patches in the response failed: %w)", mainErr, err)
+					return appStateCommittedMutation{}, fmt.Errorf("%w (also, parsing patches in the response failed: %w)", mainErr, err)
 				}
 				if _, err = internals.ApplyAppStatePatches(ctx, patch.Type, state, patches, false, &eventsToDispatch); err != nil {
-					return nil, fmt.Errorf("%w (also, applying patches in the response failed: %w)", mainErr, err)
+					return appStateCommittedMutation{}, fmt.Errorf("%w (also, applying patches in the response failed: %w)", mainErr, err)
 				}
 				go func() {
 					for _, evt := range eventsToDispatch {
@@ -420,12 +427,12 @@ func (b *WhatsmeowBridge) sendAppStatePatchWithKeyLoop(
 				allowRetry = false
 				continue
 			}
-			return nil, mainErr
+			return appStateCommittedMutation{}, mainErr
 		}
 
 		eventsToDispatch, err := internals.FetchAppState(ctx, patch.Type, false, false)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch app state after sending update: %w", err)
+			return appStateCommittedMutation{}, fmt.Errorf("failed to fetch app state after sending update: %w", err)
 		}
 		if operation == waServerSync.SyncdMutation_REMOVE && b.store != nil {
 			if targetJID := contactJIDFromPatch(patch); targetJID != "" {
@@ -437,6 +444,6 @@ func (b *WhatsmeowBridge) sendAppStatePatchWithKeyLoop(
 				internals.DispatchEvent(evt)
 			}
 		}()
-		return keyID, nil
+		return committed, nil
 	}
 }
