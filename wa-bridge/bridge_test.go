@@ -630,7 +630,8 @@ func TestContactWriteObserverSurfacesLegacyAndLIDWriteErrorsBounded(t *testing.T
 	bridge.syncRetryDelay = time.Millisecond
 	bridge.fetchContactsFn = func(_ context.Context, _ bool) error {
 		attempts++
-		bridge.invalidateContactSyncForWriteError(types.NewJID("555000999", types.HiddenUserServer), writeFail)
+		bridge.invalidateContactSyncForWriteError(writeFail)
+		bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow})
 		return writeFail
 	}
 	bridge.mu.Lock()
@@ -1430,19 +1431,26 @@ recovered:
 	}
 	bridge.handleEvent(&events.Connected{})
 	finalDeadline := time.After(2 * time.Second)
-	for {
+	completedAttempts := 0
+	for completedAttempts < maxSyncAttempts {
 		select {
 		case res := <-finalDone:
-			if res.err == nil && res.fullSync {
-				goto wakeRecovered
+			if res.err == nil {
+				t.Fatal("ordinary AppStateSyncComplete during the final failed attempt must not bypass the retry budget")
 			}
+			completedAttempts++
 		case <-finalDeadline:
-			t.Fatal("expected AppStateSyncComplete wake during final attempt to trigger one more fullSync retry")
+			t.Fatalf("timed out waiting for bounded sync attempts, got %d", completedAttempts)
 		}
 	}
-wakeRecovered:
-	if !bridge.Health().ContactsSynced {
-		t.Fatal("expected ContactsSynced=true after final-attempt wake retry")
+	finalMu.Lock()
+	gotFinalAttempts := finalAttemptCount
+	finalMu.Unlock()
+	if gotFinalAttempts != maxSyncAttempts {
+		t.Fatalf("ordinary AppStateSyncComplete wake must not extend attempts beyond %d, got %d", maxSyncAttempts, gotFinalAttempts)
+	}
+	if bridge.Health().ContactsSynced {
+		t.Fatal("expected ContactsSynced=false after bounded final-attempt failure")
 	}
 
 	if err := bridge.store.SaveMessage(ctx, StoredMessage{

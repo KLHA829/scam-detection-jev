@@ -80,6 +80,7 @@ func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat type
 
 type contactWriteObserver struct {
 	store.ContactStore
+	onError   func(error)
 	mu        sync.Mutex
 	attemptID uint64
 	err       error
@@ -109,11 +110,15 @@ func (w *contactWriteObserver) record(err error) {
 		return
 	}
 	w.mu.Lock()
-	if w.err == nil || w.errID != w.attemptID {
+	notify := w.err == nil || w.errID != w.attemptID
+	if notify {
 		w.err = err
 		w.errID = w.attemptID
 	}
 	w.mu.Unlock()
+	if notify && w.onError != nil {
+		w.onError(err)
+	}
 }
 
 func (w *contactWriteObserver) PutContactName(ctx context.Context, user types.JID, fullName, firstName string) error {
@@ -151,6 +156,7 @@ type WhatsmeowBridge struct {
 	cancel            context.CancelFunc
 	fetchContactsFn   func(ctx context.Context, fullSync bool) error
 	contactFetchMu    sync.Mutex
+	contactWritesMu   sync.RWMutex
 	contactWrites     *contactWriteObserver
 	syncRetryDelay    time.Duration
 	onSyncAttemptDone func(gen uint64, fullSync bool, err error)
@@ -296,18 +302,19 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 	if err != nil {
 		return err
 	}
+	contactWrites := b.contactWritesSnapshot()
 	var attemptID uint64
 	var hasPriorErr bool
-	if b.contactWrites != nil {
-		attemptID, hasPriorErr = b.contactWrites.beginAttempt()
+	if contactWrites != nil {
+		attemptID, hasPriorErr = contactWrites.beginAttempt()
 		if hasPriorErr {
 			fullSync = true
 		}
 	}
 	fetchErr := b.client.FetchAppState(ctx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
 	var writeErr error
-	if b.contactWrites != nil {
-		writeErr = b.contactWrites.takeErrForAttempt(attemptID)
+	if contactWrites != nil {
+		writeErr = contactWrites.takeErrForAttempt(attemptID)
 	}
 	if fetchErr != nil {
 		return fmt.Errorf("fetch contact app state: %w", fetchErr)
@@ -315,8 +322,8 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 	if writeErr != nil {
 		return fmt.Errorf("write contact app state: %w", writeErr)
 	}
-	if b.contactWrites != nil && fullSync {
-		b.contactWrites.clearPriorErr(attemptID)
+	if contactWrites != nil && fullSync {
+		contactWrites.clearPriorErr(attemptID)
 	}
 	if b.store != nil {
 		if err := b.store.SetMeta(ctx, metaKeyContactImportRevision, lidContactImportRevision); err != nil {
@@ -574,9 +581,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 					if ctx == nil {
 						ctx = context.Background()
 					}
-					if err := b.client.Store.Contacts.PutContactName(ctx, jid, act.GetFirstName(), act.GetFullName()); err != nil {
-						b.invalidateContactSyncForWriteError(jid, err)
-					}
+					_ = b.client.Store.Contacts.PutContactName(ctx, jid, act.GetFirstName(), act.GetFullName())
 				}
 			}
 		}
@@ -596,9 +601,11 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 			}
 			if b.connected && b.loggedIn && !b.contactsSynced && b.syncNeedsRetry {
 				if b.syncAttemptActive {
-					select {
-					case b.syncRetryWake <- struct{}{}:
-					default:
+					if evt.Recovery {
+						select {
+						case b.syncRetryWake <- struct{}{}:
+						default:
+						}
 					}
 				} else {
 					b.syncAttemptActive = true
@@ -650,8 +657,8 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	}
 }
 
-func (b *WhatsmeowBridge) invalidateContactSyncForWriteError(jid types.JID, writeErr error) {
-	b.log.Warnf("failed to store live lid_contact %s: %v", jid.String(), writeErr)
+func (b *WhatsmeowBridge) invalidateContactSyncForWriteError(writeErr error) {
+	b.log.Warnf("failed to store contact app state: %v", writeErr)
 	var retryGen uint64
 	b.mu.Lock()
 	b.syncEpoch++
@@ -678,15 +685,27 @@ func (b *WhatsmeowBridge) selfDeviceJID() string {
 	return ""
 }
 
+func (b *WhatsmeowBridge) contactWritesSnapshot() *contactWriteObserver {
+	b.contactWritesMu.RLock()
+	observer := b.contactWrites
+	b.contactWritesMu.RUnlock()
+	return observer
+}
+
 func (b *WhatsmeowBridge) ensureContactWritesWrapped() {
 	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
 		return
 	}
+	b.contactWritesMu.Lock()
+	defer b.contactWritesMu.Unlock()
 	if observer, ok := b.client.Store.Contacts.(*contactWriteObserver); ok {
 		b.contactWrites = observer
 		return
 	}
-	observer := &contactWriteObserver{ContactStore: b.client.Store.Contacts}
+	observer := &contactWriteObserver{
+		ContactStore: b.client.Store.Contacts,
+		onError:      b.invalidateContactSyncForWriteError,
+	}
 	b.client.Store.Contacts = observer
 	b.contactWrites = observer
 }
