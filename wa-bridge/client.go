@@ -14,6 +14,7 @@ import (
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waServerSync"
 	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -159,14 +160,14 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 
 	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
 	bridge := &WhatsmeowBridge{
-		db:             db,
-		store:          bridgeStore,
-		hub:            NewEventHub(),
-		log:            logger,
-		ctx:            bridgeCtx,
-		cancel:         bridgeCancel,
-		syncRetryDelay: defaultSyncRetryDelay,
-		syncRetryWake:  make(chan struct{}, 1),
+		db:              db,
+		store:           bridgeStore,
+		hub:             NewEventHub(),
+		log:             logger,
+		ctx:             bridgeCtx,
+		cancel:          bridgeCancel,
+		syncRetryDelay:  defaultSyncRetryDelay,
+		syncRetryWake:   make(chan struct{}, 1),
 		putArchiveQueue: make(map[string][]putArchiveTransition),
 	}
 	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
@@ -1069,6 +1070,40 @@ func (b *WhatsmeowBridge) SetContactLabel(ctx context.Context, phone, name strin
 	if b.client.Store != nil && b.client.Store.Contacts != nil {
 		clean := strings.TrimSpace(name)
 		_ = b.client.Store.Contacts.PutContactName(ctx, target, clean, clean)
+	}
+	return nil
+}
+
+func buildContactRemovalPatch(target types.JID) appstate.PatchInfo {
+	return appstate.PatchInfo{
+		Type: appstate.WAPatchCriticalUnblockLow,
+		Mutations: []appstate.MutationInfo{{
+			Index:   []string{appstate.IndexContact, target.String()},
+			Version: 2,
+			Value: &waSyncAction.SyncActionValue{
+				ContactAction: &waSyncAction.ContactAction{
+					FullName:                 proto.String(""),
+					SaveOnPrimaryAddressbook: proto.Bool(false),
+				},
+			},
+		}},
+	}
+}
+
+func (b *WhatsmeowBridge) DeleteContactLabel(ctx context.Context, phone string) error {
+	if err := b.ensureLoggedIn(); err != nil {
+		return err
+	}
+	digits := digitsOnly(phone)
+	if digits == "" {
+		return fmt.Errorf("%w: invalid phone %q", errBadRequest, phone)
+	}
+	target := types.NewJID(digits, types.DefaultUserServer)
+	if err := b.sendAppStateWithOperation(ctx, buildContactRemovalPatch(target), waServerSync.SyncdMutation_REMOVE, true); err != nil {
+		return fmt.Errorf("send contact removal app state: %w", err)
+	}
+	if b.client.Store != nil && b.client.Store.Contacts != nil {
+		_ = b.client.Store.Contacts.PutContactName(ctx, target, "", "")
 	}
 	return nil
 }

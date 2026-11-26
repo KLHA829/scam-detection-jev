@@ -532,6 +532,10 @@ func (f *fakeBackend) SetContactLabel(_ context.Context, phone, name string) err
 	f.lastCall = "label:" + phone + ":" + name
 	return nil
 }
+func (f *fakeBackend) DeleteContactLabel(_ context.Context, phone string) error {
+	f.lastCall = "unlabel:" + phone
+	return nil
+}
 
 func TestHTTPAndSSEServer(t *testing.T) {
 	backend := &fakeBackend{
@@ -634,6 +638,7 @@ func TestHTTPAndSSEServer(t *testing.T) {
 		{"POST", "/v1/chat/mute", map[string]any{"chatId": "852@c.us", "muted": false}, "unmute:852@c.us"},
 		{"POST", "/v1/contact/block", map[string]any{"id": "852@c.us"}, "block:852@c.us"},
 		{"POST", "/v1/contact/label", map[string]any{"phone": "85261230001", "name": "（可疑推銷）"}, "label:85261230001:（可疑推銷）"},
+		{"DELETE", "/v1/contact/label", map[string]any{"phone": "85261230001"}, "unlabel:85261230001"},
 	} {
 		resp := doReq(tc.method, tc.path, tc.body)
 		if resp.StatusCode != http.StatusOK {

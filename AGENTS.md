@@ -70,7 +70,9 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - `python jevlike_serve.py` (or `npm run jevlike`) in terminal 1 — **PII mask head required**; then `npm start` in terminal 2 with `LLM_REVIEW_*` set.
 - `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — stub worker for offline tests (mask + optional fixed scores).
 
-## Current state (update with the date when it changes) — 2026-11-25
+## Current state (update with the date when it changes) — 2026-11-26
+
+- The whatsmeow transport removes bot-written contact labels through a real contact `REMOVE` app-state mutation (`DELETE /v1/contact/label`), not a blank-name `SET`; `POST /v1/contact/label` remains the low-level `SET` mutation path, and Mini-WhatsApp models the distinction (2026-11-26).
 
 - Runtime `resolveTransportName` now defaults `WA_TRANSPORT` to `whatsmeow` (and `createWhatsmeowTransport` defaults `WA_BRIDGE_AUTO_START` on when `WA_BRIDGE_URL`/`WA_BRIDGE_TOKEN` are unset, retrying transient ephemeral loopback port bind conflicts up to 3 times on startup). Set `WA_TRANSPORT=wwebjs` for the legacy Chromium adapter (2026-11-25).
 - The context, primary and guided-explanation prompts name the allowlisted (official) domains in the masked text, and those domains are not masked, so the model no longer sees `https://payme.XXX` for a real PayMe link and calls it a fake payment page. Lookalike and unknown domains stay masked and add nothing to the prompt; unmasking lookalikes made the model archive warnings that quote a fake domain (2026-11-25).
