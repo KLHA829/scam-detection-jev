@@ -1,10 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -466,6 +465,22 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 
 	case *events.Archive:
 		b.handleArchiveEvent(evt)
+
+	case *events.Contact:
+		b.handleContactEvent(evt)
+	}
+}
+
+func (b *WhatsmeowBridge) handleContactEvent(evt *events.Contact) {
+	if evt == nil || evt.Action == nil || b.store == nil {
+		return
+	}
+	if targetID := evt.JID.ToNonAD().String(); targetID != "" {
+		ctx := b.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		_ = b.store.ClearUnreconciledContact(ctx, targetID)
 	}
 }
 
@@ -1171,12 +1186,15 @@ func (b *WhatsmeowBridge) setContactLabelWithInternals(ctx context.Context, phon
 	}
 	target := types.NewJID(digits, types.DefaultUserServer)
 	patch := buildContactLabelPatch(target, name)
-	keyID, err := b.sendAppStatePatchWithKeyLoop(ctx, patch, waServerSync.SyncdMutation_SET, nil, true, nil, internals)
+	committed, err := b.sendAppStatePatchWithKeyLoop(ctx, patch, waServerSync.SyncdMutation_SET, nil, true, nil, internals)
 	if err != nil {
 		return fmt.Errorf("send contact label app state: %w", err)
 	}
 	clean := strings.TrimSpace(name)
-	b.recordBotContactLabelWithKey(ctx, target, patch, keyID, clean)
+	if !b.recordBotContactLabelIfUnchanged(ctx, target, patch, committed, clean) {
+		// Post-write sync already applied a newer mutation (e.g. a user rename) at this index.
+		return nil
+	}
 	if b.store != nil {
 		_ = b.store.ClearUnreconciledContact(ctx, target.String())
 	}
@@ -1186,24 +1204,27 @@ func (b *WhatsmeowBridge) setContactLabelWithInternals(ctx context.Context, phon
 	return nil
 }
 
-func (b *WhatsmeowBridge) recordBotContactLabelWithKey(ctx context.Context, target types.JID, patch appstate.PatchInfo, keyID []byte, labelName string) {
-	if b.store == nil || b.client == nil || b.client.Store == nil || b.client.Store.AppStateKeys == nil || b.client.Store.AppState == nil || len(patch.Mutations) == 0 || len(keyID) == 0 {
-		return
+func (b *WhatsmeowBridge) recordBotContactLabelIfUnchanged(
+	ctx context.Context,
+	target types.JID,
+	patch appstate.PatchInfo,
+	committed appStateCommittedMutation,
+	labelName string,
+) bool {
+	if b.client == nil || b.client.Store == nil || b.client.Store.AppState == nil || len(committed.keyID) == 0 || len(committed.indexMAC) == 0 || len(committed.valueMAC) == 0 {
+		return true
 	}
-	keyData, err := b.client.Store.AppStateKeys.GetAppStateSyncKey(ctx, keyID)
-	if err != nil || keyData == nil {
-		return
-	}
-	indexBytes, err := json.Marshal(patch.Mutations[0].Index)
+	liveMAC, err := b.client.Store.AppState.GetAppStateMutationMAC(ctx, string(patch.Type), committed.indexMAC)
 	if err != nil {
-		return
+		return false
 	}
-	indexMAC := concatAndHMAC(sha256.New, expandAppStateKeys(keyData.Data).index, indexBytes)
-	valueMAC, err := b.client.Store.AppState.GetAppStateMutationMAC(ctx, string(patch.Type), indexMAC)
-	if err != nil || len(valueMAC) == 0 {
-		return
+	if len(liveMAC) > 0 && !bytes.Equal(liveMAC, committed.valueMAC) {
+		return false
 	}
-	_ = b.store.SaveBotContactLabel(ctx, target.String(), keyID, indexMAC, valueMAC, labelName)
+	if b.store != nil {
+		_ = b.store.SaveBotContactLabel(ctx, target.String(), committed.keyID, committed.indexMAC, committed.valueMAC, labelName)
+	}
+	return true
 }
 
 func buildContactRemovalPatch(target types.JID) appstate.PatchInfo {
