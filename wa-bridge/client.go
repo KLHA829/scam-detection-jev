@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,22 +61,57 @@ func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat type
 	return nil
 }
 
+type contactWriteObserver struct {
+	store.ContactStore
+	mu  sync.Mutex
+	err error
+}
+
+func (w *contactWriteObserver) record(err error) {
+	if err == nil {
+		return
+	}
+	w.mu.Lock()
+	if w.err == nil {
+		w.err = err
+	}
+	w.mu.Unlock()
+}
+
+func (w *contactWriteObserver) PutContactName(ctx context.Context, user types.JID, fullName, firstName string) error {
+	err := w.ContactStore.PutContactName(ctx, user, fullName, firstName)
+	w.record(err)
+	return err
+}
+
+func (w *contactWriteObserver) PutAllContactNames(ctx context.Context, contacts []store.ContactEntry) error {
+	err := w.ContactStore.PutAllContactNames(ctx, contacts)
+	w.record(err)
+	return err
+}
+
+func (w *contactWriteObserver) takeErr() error {
+	w.mu.Lock()
+	err := w.err
+	w.err = nil
+	w.mu.Unlock()
+	return err
+}
+
 type WhatsmeowBridge struct {
-	db                          *sql.DB
-	store                       *BridgeStore
-	rawChatSettings             store.ChatSettingsStore
-	client                      *whatsmeow.Client
-	hub                         *EventHub
-	log                         waLog.Logger
-	ctx                         context.Context
-	cancel                      context.CancelFunc
-	fetchContactsFn             func(ctx context.Context, fullSync bool) error
-	appStateProc                *appstate.Processor
-	contactFetchMu              sync.Mutex
-	contactAppStateBackoffUntil time.Time
-	syncRetryDelay              time.Duration
-	onSyncAttemptDone           func(gen uint64, fullSync bool, err error)
-	syncRetryWake               chan struct{}
+	db                *sql.DB
+	store             *BridgeStore
+	rawChatSettings   store.ChatSettingsStore
+	client            *whatsmeow.Client
+	hub               *EventHub
+	log               waLog.Logger
+	ctx               context.Context
+	cancel            context.CancelFunc
+	fetchContactsFn   func(ctx context.Context, fullSync bool) error
+	contactWrites     *contactWriteObserver
+	syncRetryDelay    time.Duration
+	onSyncAttemptDone func(gen uint64, fullSync bool, err error)
+	syncRetryWake     chan struct{}
 
 	mu                sync.RWMutex
 	connected         bool
@@ -175,57 +209,15 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 		syncRetryDelay:  defaultSyncRetryDelay,
 		syncRetryWake:   make(chan struct{}, 1),
 		putArchiveQueue: make(map[string][]putArchiveTransition),
-		appStateProc:    appstate.NewProcessor(deviceStore, logger.Sub("appstate")),
 	}
 	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
+	cli.EmitAppStateEventsOnFullSync = true
 	bridge.client = cli
+	bridge.ensureContactWritesWrapped()
 	bridge.ensureChatSettingsWrapped()
 	bridge.fetchContactsFn = bridge.fetchContactAppState
 	cli.AddEventHandler(bridge.handleEvent)
 	return bridge, nil
-}
-
-func normalizeLidContactMutations(mutations []appstate.Mutation) []appstate.Mutation {
-	var normalized []appstate.Mutation
-	for i, mutation := range mutations {
-		if len(mutation.Index) == 0 || mutation.Index[0] != appstate.IndexLIDContact {
-			continue
-		}
-		if normalized == nil {
-			normalized = append([]appstate.Mutation(nil), mutations...)
-		}
-		converted := mutation
-		converted.Index = append([]string(nil), mutation.Index...)
-		converted.Index[0] = appstate.IndexContact
-		lidAction := mutation.Action.GetLidContactAction()
-		contactAction := &waSyncAction.ContactAction{}
-		if lidAction != nil {
-			contactAction.FullName = lidAction.FullName
-			contactAction.FirstName = lidAction.FirstName
-			contactAction.Username = lidAction.Username
-			contactAction.Birthday = lidAction.Birthday
-		}
-		action := &waSyncAction.SyncActionValue{ContactAction: contactAction}
-		if mutation.Action != nil {
-			action.Timestamp = mutation.Action.Timestamp
-		}
-		converted.Action = action
-		normalized[i] = converted
-	}
-	if normalized != nil {
-		return normalized
-	}
-	return mutations
-}
-
-func (b *WhatsmeowBridge) collectContactAppStateMutations(ctx context.Context, mutations []appstate.Mutation, fullSync bool) error {
-	return b.client.DangerousInternals().CollectEventsToDispatch(
-		ctx,
-		appstate.WAPatchCriticalUnblockLow,
-		normalizeLidContactMutations(mutations),
-		fullSync,
-		nil,
-	)
 }
 
 func (b *WhatsmeowBridge) shouldForceFullContactImport(ctx context.Context, requestedFullSync bool) (bool, error) {
@@ -242,75 +234,29 @@ func (b *WhatsmeowBridge) shouldForceFullContactImport(ctx context.Context, requ
 	return !found || rev != lidContactImportRevision, nil
 }
 
-// fetchContactAppState mirrors whatsmeow's contact sync, with the mutation
-// stream visible to the bridge so lid_contact rows are not dropped before
-// whatsmeow's bulk contact write. b.contactFetchMu is separate from
-// whatsmeow's unexported appStateSyncLock; any concurrent version/hash race
-// fails closed and is recovered by syncContacts's fullSync retry, while live
-// incremental lid_contact updates are also handled via *events.AppState.
+// fetchContactAppState uses whatsmeow's locked fetch-and-apply path. Full-sync
+// app-state events stay enabled so lid_contact rows reach handleEvent instead
+// of being dropped by whatsmeow's legacy contact dispatcher; the contact store
+// observer turns per-row write failures back into a failed sync.
 func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync bool) error {
-	if b.client == nil || b.client.Store == nil || b.appStateProc == nil {
+	if b.client == nil || b.client.Store == nil {
 		return errNotReady
-	}
-	b.contactFetchMu.Lock()
-	defer b.contactFetchMu.Unlock()
-
-	name := appstate.WAPatchCriticalUnblockLow
-	if until := b.contactAppStateBackoffUntil; time.Now().Before(until) {
-		return fmt.Errorf("%w: not fetching %s until %s", whatsmeow.ErrAppStateRateLimited, name, until.Format(time.RFC3339))
 	}
 	var err error
 	fullSync, err = b.shouldForceFullContactImport(ctx, fullSync)
 	if err != nil {
 		return err
 	}
-	if fullSync {
-		if err := b.client.Store.AppState.DeleteAppStateVersion(ctx, string(name)); err != nil {
-			return fmt.Errorf("reset app state %s version: %w", name, err)
-		}
+	fetchErr := b.client.FetchAppState(ctx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
+	var writeErr error
+	if b.contactWrites != nil {
+		writeErr = b.contactWrites.takeErr()
 	}
-	version, hash, err := b.client.Store.AppState.GetAppStateVersion(ctx, string(name))
-	if err != nil {
-		return fmt.Errorf("get app state %s version: %w", name, err)
+	if fetchErr != nil {
+		return fmt.Errorf("fetch contact app state: %w", fetchErr)
 	}
-	if version == 0 {
-		fullSync = true
-	}
-
-	state := appstate.HashState{Version: version, Hash: hash}
-	hasMore := true
-	wantSnapshot := fullSync
-	for hasMore {
-		patches, err := b.client.DangerousInternals().FetchAppStatePatches(ctx, name, state.Version, wantSnapshot)
-		if err != nil {
-			var iqErr *whatsmeow.IQError
-			if errors.As(err, &iqErr) && iqErr.Code == 429 && iqErr.ErrorNode != nil {
-				if backoff := iqErr.ErrorNode.AttrGetter().OptionalInt("backoff"); backoff > 0 {
-					b.contactAppStateBackoffUntil = time.Now().Add(time.Duration(backoff) * time.Second)
-				}
-			}
-			return fmt.Errorf("fetch app state %s patches: %w", name, err)
-		}
-		if !wantSnapshot && patches.Snapshot != nil {
-			return fmt.Errorf("server unexpectedly returned snapshot for %s without asking", name)
-		}
-		if patches.Snapshot != nil && state != (appstate.HashState{}) {
-			return fmt.Errorf("unexpected non-empty input state (v%d) for %s when applying snapshot", state.Version, name)
-		}
-		wantSnapshot = false
-		hasMore = patches.HasMorePatches
-
-		mutations, newState, err := b.appStateProc.DecodePatches(ctx, patches, state, true)
-		if err != nil {
-			if errors.Is(err, appstate.ErrKeyNotFound) {
-				b.client.DangerousInternals().RequestMissingAppStateKeys(context.WithoutCancel(ctx), patches)
-			}
-			return fmt.Errorf("decode app state %s patches: %w", name, err)
-		}
-		if err := b.collectContactAppStateMutations(ctx, mutations, fullSync); err != nil {
-			return fmt.Errorf("apply contact app state %s mutations: %w", name, err)
-		}
-		state = newState
+	if writeErr != nil {
+		return fmt.Errorf("write contact app state: %w", writeErr)
 	}
 	if b.store != nil {
 		if err := b.store.SetMeta(ctx, metaKeyContactImportRevision, lidContactImportRevision); err != nil {
@@ -387,6 +333,10 @@ func (b *WhatsmeowBridge) completeContactSyncAttempt(gen, startEpoch uint64) boo
 	}
 	if b.syncEpoch != startEpoch {
 		return false
+	}
+	select {
+	case <-b.syncRetryWake:
+	default:
 	}
 	b.contactsSynced = true
 	b.syncAttemptActive = false
@@ -508,6 +458,7 @@ func (b *WhatsmeowBridge) Health() HealthStatus {
 func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	switch evt := rawEvt.(type) {
 	case *events.Connected:
+		b.ensureContactWritesWrapped()
 		b.ensureChatSettingsWrapped()
 		b.mu.Lock()
 		b.connGen++
@@ -541,10 +492,21 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		}
 
 	case *events.PairSuccess:
+		b.ensureContactWritesWrapped()
 		b.ensureChatSettingsWrapped()
+		if b.store != nil {
+			ctx := b.ctx
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			if err := b.store.DeleteMeta(ctx, metaKeyContactImportRevision); err != nil {
+				b.log.Warnf("failed to invalidate contact import revision after pairing: %v", err)
+			}
+		}
 		b.hub.Publish(BridgeEvent{Type: "authenticated"})
 
 	case *events.AppState:
+		b.ensureContactWritesWrapped()
 		if len(evt.Index) > 1 && evt.Index[0] == appstate.IndexLIDContact && evt.SyncActionValue != nil {
 			if act := evt.SyncActionValue.GetLidContactAction(); act != nil {
 				if jid, err := types.ParseJID(evt.Index[1]); err == nil && !jid.IsEmpty() && b.client != nil && b.client.Store != nil && b.client.Store.Contacts != nil {
@@ -623,6 +585,19 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	case *events.Archive:
 		b.handleArchiveEvent(evt)
 	}
+}
+
+func (b *WhatsmeowBridge) ensureContactWritesWrapped() {
+	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
+		return
+	}
+	if observer, ok := b.client.Store.Contacts.(*contactWriteObserver); ok {
+		b.contactWrites = observer
+		return
+	}
+	observer := &contactWriteObserver{ContactStore: b.client.Store.Contacts}
+	b.client.Store.Contacts = observer
+	b.contactWrites = observer
 }
 
 func (b *WhatsmeowBridge) ensureChatSettingsWrapped() {

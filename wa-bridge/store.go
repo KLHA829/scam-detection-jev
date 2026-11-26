@@ -283,3 +283,13 @@ func (s *BridgeStore) SetMeta(ctx context.Context, key, value string) error {
 	}
 	return nil
 }
+
+func (s *BridgeStore) DeleteMeta(ctx context.Context, key string) error {
+	if key == "" {
+		return errors.New("meta key is required")
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM bridge_meta WHERE key = ?`, key); err != nil {
+		return fmt.Errorf("delete meta %q: %w", key, err)
+	}
+	return nil
+}

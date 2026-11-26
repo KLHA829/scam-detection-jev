@@ -22,8 +22,8 @@ import (
 	"go.mau.fi/whatsmeow/proto/waAdv"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
-	"go.mau.fi/whatsmeow/proto/waServerSync"
 	"go.mau.fi/whatsmeow/proto/waSyncAction"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
@@ -251,20 +251,23 @@ func TestLidContactMutationSavedInFullSync(t *testing.T) {
 		t.Fatalf("save device store: %v", err)
 	}
 
-	lidJID := types.NewJID("555000333", types.HiddenUserServer)
-	mutations := []appstate.Mutation{{
-		Operation: waServerSync.SyncdMutation_SET,
-		Index:     []string{appstate.IndexLIDContact, lidJID.String()},
-		Action: &waSyncAction.SyncActionValue{
-			LidContactAction: &waSyncAction.LidContactAction{
-				FullName:  proto.String("Mum"),
-				FirstName: proto.String("Mum"),
-			},
-		},
-	}}
-	if err := bridge.collectContactAppStateMutations(ctx, mutations, true); err != nil {
-		t.Fatalf("collectContactAppStateMutations: %v", err)
+	if !bridge.client.EmitAppStateEventsOnFullSync {
+		t.Fatal("full sync must emit app-state events so lid_contact rows reach the bridge")
 	}
+	emitLidContact := func(jid types.JID, name string) {
+		bridge.handleEvent(&events.AppState{
+			Index: []string{appstate.IndexLIDContact, jid.String()},
+			SyncActionValue: &waSyncAction.SyncActionValue{
+				LidContactAction: &waSyncAction.LidContactAction{
+					FullName:  proto.String(name),
+					FirstName: proto.String(name),
+				},
+			},
+		})
+	}
+
+	lidJID := types.NewJID("555000333", types.HiddenUserServer)
+	emitLidContact(lidJID, "Mum")
 
 	bridge.mu.Lock()
 	bridge.connected = true
@@ -282,19 +285,7 @@ func TestLidContactMutationSavedInFullSync(t *testing.T) {
 	}
 
 	incrementalLID := types.NewJID("555000444", types.HiddenUserServer)
-	incrementalMutations := []appstate.Mutation{{
-		Operation: waServerSync.SyncdMutation_SET,
-		Index:     []string{appstate.IndexLIDContact, incrementalLID.String()},
-		Action: &waSyncAction.SyncActionValue{
-			LidContactAction: &waSyncAction.LidContactAction{
-				FullName:  proto.String("Auntie"),
-				FirstName: proto.String("Auntie"),
-			},
-		},
-	}}
-	if err := bridge.collectContactAppStateMutations(ctx, incrementalMutations, false); err != nil {
-		t.Fatalf("collectContactAppStateMutations incremental: %v", err)
-	}
+	emitLidContact(incrementalLID, "Auntie")
 	incrementalContact, err := bridge.GetContact(ctx, incrementalLID.String())
 	if err != nil {
 		t.Fatalf("GetContact(incremental lid): %v", err)
@@ -517,6 +508,57 @@ func TestUpgradeFromNonzeroAppStateVersionForcesFullLidReplay(t *testing.T) {
 	}
 	if forceAfterReplay {
 		t.Fatal("after lid_contact_import_revision is persisted, incremental sync should not force full replay")
+	}
+}
+
+type failingContactNameStore struct {
+	store.ContactStore
+	err error
+}
+
+func (f failingContactNameStore) PutContactName(context.Context, types.JID, string, string) error {
+	return f.err
+}
+
+func (f failingContactNameStore) PutAllContactNames(context.Context, []store.ContactEntry) error {
+	return f.err
+}
+
+func TestContactWriteObserverRecordsWriteErrors(t *testing.T) {
+	writeErr := errors.New("contact write failed")
+	observer := &contactWriteObserver{ContactStore: failingContactNameStore{err: writeErr}}
+	if err := observer.PutContactName(context.Background(), types.NewJID("85261234567", types.DefaultUserServer), "Mum", "Mum"); !errors.Is(err, writeErr) {
+		t.Fatalf("PutContactName error = %v, want %v", err, writeErr)
+	}
+	if err := observer.takeErr(); !errors.Is(err, writeErr) {
+		t.Fatalf("takeErr = %v, want recorded %v", err, writeErr)
+	}
+	if err := observer.takeErr(); err != nil {
+		t.Fatalf("takeErr after drain = %v, want nil", err)
+	}
+}
+
+func TestPairSuccessInvalidatesContactImportRevision(t *testing.T) {
+	ctx := context.Background()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "pair-import-revision.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	defer func() { _ = bridge.Close() }()
+
+	if err := bridge.store.SetMeta(ctx, metaKeyContactImportRevision, lidContactImportRevision); err != nil {
+		t.Fatalf("SetMeta: %v", err)
+	}
+	bridge.handleEvent(&events.PairSuccess{})
+	if _, found, err := bridge.store.GetMeta(ctx, metaKeyContactImportRevision); err != nil || found {
+		t.Fatalf("PairSuccess must invalidate the prior contact import revision, found=%v err=%v", found, err)
+	}
+	force, err := bridge.shouldForceFullContactImport(ctx, false)
+	if err != nil {
+		t.Fatalf("shouldForceFullContactImport: %v", err)
+	}
+	if !force {
+		t.Fatal("PairSuccess must force a full contact replay")
 	}
 }
 
@@ -1314,8 +1356,8 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 	}
 	defer func() { _ = bridge.Close() }()
 
-	if bridge.client.EmitAppStateEventsOnFullSync {
-		t.Fatal("expected EmitAppStateEventsOnFullSync=false so full sync keeps bulk contact error handling")
+	if !bridge.client.EmitAppStateEventsOnFullSync {
+		t.Fatal("expected EmitAppStateEventsOnFullSync=true so full sync emits lid_contact rows")
 	}
 
 	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
