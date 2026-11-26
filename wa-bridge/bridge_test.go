@@ -519,110 +519,6 @@ func TestUpgradeFromNonzeroAppStateVersionForcesFullLidReplay(t *testing.T) {
 	}
 }
 
-func TestReconcileDeletedContactsPreservesPushName(t *testing.T) {
-	ctx := context.Background()
-	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "reconcile-deleted.db"), "ERROR")
-	if err != nil {
-		t.Fatalf("NewWhatsmeowBridge: %v", err)
-	}
-	defer func() { _ = bridge.Close() }()
-
-	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
-	bridge.client.Store.ID = &selfJID
-	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
-		Details:             []byte("details"),
-		AccountSignatureKey: make([]byte, 32),
-		AccountSignature:    make([]byte, 64),
-		DeviceSignature:     make([]byte, 64),
-	}
-	if err := bridge.client.Store.Save(ctx); err != nil {
-		t.Fatalf("save device store: %v", err)
-	}
-	bridge.ensureContactWritesWrapped()
-
-	deletedJID := types.NewJID("85261119999", types.DefaultUserServer)
-	keptJID := types.NewJID("85261118888", types.DefaultUserServer)
-	if err := bridge.client.Store.Contacts.PutContactName(ctx, deletedJID, "Pat", "Pat"); err != nil {
-		t.Fatalf("PutContactName(deleted): %v", err)
-	}
-	if _, _, err := bridge.client.Store.Contacts.PutPushName(ctx, deletedJID, "PatPush"); err != nil {
-		t.Fatalf("PutPushName(deleted): %v", err)
-	}
-	if err := bridge.client.Store.Contacts.PutContactName(ctx, keptJID, "Kept", "Kept"); err != nil {
-		t.Fatalf("PutContactName(kept): %v", err)
-	}
-
-	bridge.contactWrites.startFullSyncTracking()
-	if err := bridge.client.Store.Contacts.PutContactName(ctx, keptJID, "Kept", "Kept"); err != nil {
-		t.Fatalf("PutContactName(kept replay): %v", err)
-	}
-	seen := bridge.contactWrites.finishFullSyncTracking()
-	if err := bridge.reconcileDeletedContacts(ctx, seen); err != nil {
-		t.Fatalf("reconcileDeletedContacts: %v", err)
-	}
-
-	bridge.mu.Lock()
-	bridge.connected = true
-	bridge.loggedIn = true
-	bridge.connGen = 1
-	bridge.mu.Unlock()
-	bridge.markContactsSyncedForGen(1)
-
-	deletedResp, err := bridge.GetContact(ctx, deletedJID.String())
-	if err != nil {
-		t.Fatalf("GetContact(deleted): %v", err)
-	}
-	if deletedResp.IsMyContact == nil || *deletedResp.IsMyContact || deletedResp.Name != "" || deletedResp.Pushname != "PatPush" {
-		t.Fatalf("deleted contact must be cleared to unsaved while preserving pushname, got %+v", deletedResp)
-	}
-	keptResp, err := bridge.GetContact(ctx, keptJID.String())
-	if err != nil {
-		t.Fatalf("GetContact(kept): %v", err)
-	}
-	if keptResp.IsMyContact == nil || !*keptResp.IsMyContact || keptResp.Name != "Kept" {
-		t.Fatalf("kept contact must remain saved, got %+v", keptResp)
-	}
-}
-
-func TestObsoleteFetchAttemptCannotSwallowNewAttemptWriteError(t *testing.T) {
-	ctx := context.Background()
-	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "attempt-err.db"), "ERROR")
-	if err != nil {
-		t.Fatalf("NewWhatsmeowBridge: %v", err)
-	}
-	defer func() { _ = bridge.Close() }()
-
-	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
-	bridge.client.Store.ID = &selfJID
-	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
-		Details:             []byte("details"),
-		AccountSignatureKey: make([]byte, 32),
-		AccountSignature:    make([]byte, 64),
-		DeviceSignature:     make([]byte, 64),
-	}
-	if err := bridge.client.Store.Save(ctx); err != nil {
-		t.Fatalf("save device store: %v", err)
-	}
-
-	bridge.ensureContactWritesWrapped()
-	oldAttempt := bridge.contactWrites.beginAttempt()
-	newAttempt := bridge.contactWrites.beginAttempt()
-
-	writeFail := errors.New("sqlite write failed")
-	bridge.contactWrites.ContactStore = failingContactNameStore{
-		ContactStore: bridge.contactWrites.ContactStore,
-		err:          writeFail,
-	}
-	_ = bridge.contactWrites.PutContactName(ctx, types.NewJID("555000999", types.HiddenUserServer), "Mum", "Mum")
-
-	if swallowed := bridge.contactWrites.takeErrForAttempt(oldAttempt); swallowed != nil {
-		t.Fatalf("obsolete attempt %d must not drain write error from attempt %d, got %v", oldAttempt, newAttempt, swallowed)
-	}
-	if actual := bridge.contactWrites.takeErrForAttempt(newAttempt); !errors.Is(actual, writeFail) {
-		t.Fatalf("expected new attempt %d to observe writeFail, got %v", newAttempt, actual)
-	}
-}
-
 type failingContactNameStore struct {
 	store.ContactStore
 	err error
@@ -636,17 +532,60 @@ func (f failingContactNameStore) PutAllContactNames(context.Context, []store.Con
 	return f.err
 }
 
-func TestContactWriteObserverRecordsWriteErrors(t *testing.T) {
-	writeErr := errors.New("contact write failed")
-	observer := &contactWriteObserver{ContactStore: failingContactNameStore{err: writeErr}}
-	if err := observer.PutContactName(context.Background(), types.NewJID("85261234567", types.DefaultUserServer), "Mum", "Mum"); !errors.Is(err, writeErr) {
-		t.Fatalf("PutContactName error = %v, want %v", err, writeErr)
+func TestLidContactWriteFailureInvalidatesInflightSync(t *testing.T) {
+	ctx := context.Background()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "lid-write-error.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
 	}
-	if err := observer.takeErr(); !errors.Is(err, writeErr) {
-		t.Fatalf("takeErr = %v, want recorded %v", err, writeErr)
+	defer func() { _ = bridge.Close() }()
+
+	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
 	}
-	if err := observer.takeErr(); err != nil {
-		t.Fatalf("takeErr after drain = %v, want nil", err)
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
+	}
+
+	rawContacts := bridge.client.Store.Contacts
+	writeFail := errors.New("sqlite write failed")
+	bridge.client.Store.Contacts = failingContactNameStore{ContactStore: rawContacts, err: writeFail}
+
+	bridge.mu.Lock()
+	bridge.connected = true
+	bridge.loggedIn = true
+	bridge.connGen = 1
+	bridge.contactsSynced = true
+	bridge.syncAttemptActive = true
+	startEpoch := bridge.syncEpoch
+	bridge.mu.Unlock()
+
+	lidJID := types.NewJID("555000999", types.HiddenUserServer)
+	bridge.handleEvent(&events.AppState{
+		Index: []string{appstate.IndexLIDContact, lidJID.String()},
+		SyncActionValue: &waSyncAction.SyncActionValue{
+			LidContactAction: &waSyncAction.LidContactAction{
+				FullName:  proto.String("Mum"),
+				FirstName: proto.String("Mum"),
+			},
+		},
+	})
+
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+	if bridge.contactsSynced {
+		t.Fatal("write failure must keep contactsSynced=false")
+	}
+	if !bridge.syncNeedsFull || !bridge.syncNeedsRetry {
+		t.Fatalf("write failure must force a full retry, needsFull=%v needsRetry=%v", bridge.syncNeedsFull, bridge.syncNeedsRetry)
+	}
+	if bridge.syncEpoch == startEpoch {
+		t.Fatal("write failure must invalidate the in-flight sync epoch")
 	}
 }
 
