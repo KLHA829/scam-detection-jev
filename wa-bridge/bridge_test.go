@@ -319,10 +319,15 @@ func TestContactRecoveryResyncsFailClosed(t *testing.T) {
 		syncedAtFetch bool
 	}
 	fetchDone := make(chan fetchResult, 1)
+	attemptDone := make(chan error, 1)
 	bridge.fetchContactsFn = func(_ context.Context, fullSync bool) error {
 		fetchDone <- fetchResult{fullSync: fullSync, syncedAtFetch: bridge.Health().ContactsSynced}
 		return nil
 	}
+	// The gate reopens in completeContactSyncAttempt after the fetch returns, so
+	// the completion signal must come from onSyncAttemptDone rather than the
+	// fetch itself.
+	bridge.onSyncAttemptDone = func(_ uint64, _ bool, err error) { attemptDone <- err }
 	bridge.mu.Lock()
 	bridge.connected = true
 	bridge.loggedIn = true
@@ -341,6 +346,14 @@ func TestContactRecoveryResyncsFailClosed(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for recovery contact resync")
+	}
+	select {
+	case err := <-attemptDone:
+		if err != nil {
+			t.Fatalf("recovery resync attempt failed: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for recovery resync completion")
 	}
 	if !bridge.Health().ContactsSynced {
 		t.Fatal("successful recovery resync should reopen the contact gate")
