@@ -422,6 +422,7 @@ func TestSendAppStateConflictRetryRevalidatesOwnership(t *testing.T) {
 
 type captureSendInternals struct {
 	bridge      *WhatsmeowBridge
+	clearTarget types.JID
 	sentPatches [][]byte
 }
 
@@ -471,6 +472,11 @@ func (c *captureSendInternals) FetchAppState(ctx context.Context, name appstate.
 			if len(removedIndexMACs) > 0 {
 				if err := c.bridge.client.Store.AppState.DeleteAppStateMutationMACs(ctx, string(name), removedIndexMACs); err != nil {
 					return nil, err
+				}
+				if !c.clearTarget.IsEmpty() && c.bridge.client.Store.Contacts != nil {
+					if err := c.bridge.client.Store.Contacts.PutContactName(ctx, c.clearTarget, "", ""); err != nil {
+						return nil, err
+					}
 				}
 			}
 		}
@@ -622,7 +628,7 @@ func TestSendAppStateRemoveAfterKeyRotationClearsAllMatchingKeys(t *testing.T) {
 		t.Fatalf("put bot label: %v", err)
 	}
 
-	internals := &captureSendInternals{bridge: bridge}
+	internals := &captureSendInternals{bridge: bridge, clearTarget: target}
 	err = bridge.deleteContactLabelWithSender(ctx, "85261234567", "（可疑推銷）", func(
 		sendCtx context.Context,
 		p appstate.PatchInfo,

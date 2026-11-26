@@ -209,8 +209,20 @@ func (b *WhatsmeowBridge) sendAppStateWithOperationAndInternals(
 		if err != nil {
 			return err
 		}
-		for _, keyID := range keyIDs {
-			if err := b.sendAppStatePatchWithKeyLoop(ctx, patch, operation, keyID, allowRetry, validateAttempt, internals); err != nil {
+		for i, keyID := range keyIDs {
+			attemptValidator := validateAttempt
+			if i > 0 && validateAttempt != nil {
+				// Previous REMOVE in this batch may have already cleared the local contact
+				// name via FetchAppState; still abort if a user saved a different name.
+				attemptValidator = func(validateCtx context.Context) error {
+					err := validateAttempt(validateCtx)
+					if errors.Is(err, errContactLabelAlreadyCleared) {
+						return nil
+					}
+					return err
+				}
+			}
+			if err := b.sendAppStatePatchWithKeyLoop(ctx, patch, operation, keyID, allowRetry, attemptValidator, internals); err != nil {
 				return err
 			}
 		}

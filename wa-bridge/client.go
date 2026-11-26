@@ -1167,7 +1167,10 @@ func buildContactRemovalPatch(target types.JID) appstate.PatchInfo {
 	}
 }
 
-var errContactLabelChanged = errors.New("contact label changed before removal retry")
+var (
+	errContactLabelChanged        = errors.New("contact label changed before removal retry")
+	errContactLabelAlreadyCleared = errors.New("contact label already cleared")
+)
 
 func savedNameFromContactInfo(info types.ContactInfo) string {
 	savedName := strings.TrimSpace(info.FullName)
@@ -1209,13 +1212,17 @@ func (b *WhatsmeowBridge) deleteContactLabelWithSender(ctx context.Context, phon
 		if err != nil {
 			return fmt.Errorf("read contact before removal retry: %w", err)
 		}
-		if savedNameFromContactInfo(latestInfo) != expectedName {
+		got := savedNameFromContactInfo(latestInfo)
+		if got == "" {
+			return errContactLabelAlreadyCleared
+		}
+		if got != expectedName {
 			return errContactLabelChanged
 		}
 		return nil
 	}
 	if err := send(ctx, buildContactRemovalPatch(target), waServerSync.SyncdMutation_REMOVE, true, validateAttempt); err != nil {
-		if errors.Is(err, errContactLabelChanged) {
+		if errors.Is(err, errContactLabelChanged) || errors.Is(err, errContactLabelAlreadyCleared) {
 			b.log.Infof("contact label removal skipped for %s because the contact name changed", target)
 			return nil
 		}
