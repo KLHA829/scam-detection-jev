@@ -1644,9 +1644,11 @@ func TestDeleteContactLabelRebuildRestoresSurvivingUserName(t *testing.T) {
 
 	rebuildCalls := make(chan bool, 4)
 	rebuildDone := make(chan error, 4)
+	fetchGate := make(chan struct{})
 	bridge.onSyncAttemptDone = func(_ uint64, _ bool, err error) { rebuildDone <- err }
 	bridge.fetchContactsFn = func(_ context.Context, fullSync bool) error {
 		rebuildCalls <- fullSync
+		<-fetchGate
 		if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "Alice", "Alice"); err != nil {
 			return err
 		}
@@ -1667,6 +1669,7 @@ func TestDeleteContactLabelRebuildRestoresSurvivingUserName(t *testing.T) {
 	if err := runDeleteContactLabelWithInternals(ctx, bridge, internals); err != nil {
 		t.Fatalf("deleteContactLabelWithSender: %v", err)
 	}
+	close(fetchGate)
 	awaitRebuildSignals(t, rebuildCalls, rebuildDone)
 
 	resp, err := bridge.GetContact(ctx, target.String())
@@ -1685,9 +1688,11 @@ func TestDeleteContactLabelStaysUnknownWhenSurvivingRecordNameBlank(t *testing.T
 
 	rebuildCalls := make(chan bool, 4)
 	rebuildDone := make(chan error, 4)
+	fetchGate := make(chan struct{})
 	bridge.onSyncAttemptDone = func(_ uint64, _ bool, err error) { rebuildDone <- err }
 	bridge.fetchContactsFn = func(_ context.Context, fullSync bool) error {
 		rebuildCalls <- fullSync
+		<-fetchGate
 		if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "", ""); err != nil {
 			return err
 		}
@@ -1705,6 +1710,7 @@ func TestDeleteContactLabelStaysUnknownWhenSurvivingRecordNameBlank(t *testing.T
 	if err := runDeleteContactLabelWithInternals(ctx, bridge, internals); err != nil {
 		t.Fatalf("deleteContactLabelWithSender: %v", err)
 	}
+	close(fetchGate)
 	awaitRebuildSignals(t, rebuildCalls, rebuildDone)
 
 	resp, err := bridge.GetContact(ctx, target.String())
@@ -1730,9 +1736,11 @@ func TestDeleteContactLabelClearsMarkerAfterVerifiedRebuildOmitsTarget(t *testin
 
 	rebuildCalls := make(chan bool, 4)
 	rebuildDone := make(chan error, 4)
+	fetchGate := make(chan struct{})
 	bridge.onSyncAttemptDone = func(_ uint64, _ bool, err error) { rebuildDone <- err }
 	bridge.fetchContactsFn = func(fetchCtx context.Context, fullSync bool) error {
 		rebuildCalls <- fullSync
+		<-fetchGate
 		// A verified full rebuild resets the collection and the snapshot holds
 		// no record for the target, so the surviving MACs are gone for good.
 		if err := bridge.client.Store.AppState.DeleteAppStateVersion(fetchCtx, string(patchInfo.Type)); err != nil {
@@ -1757,6 +1765,7 @@ func TestDeleteContactLabelClearsMarkerAfterVerifiedRebuildOmitsTarget(t *testin
 	if err := runDeleteContactLabelWithInternals(ctx, bridge, internals); err != nil {
 		t.Fatalf("deleteContactLabelWithSender: %v", err)
 	}
+	close(fetchGate)
 	awaitRebuildSignals(t, rebuildCalls, rebuildDone)
 
 	resp, err := bridge.GetContact(ctx, target.String())
@@ -1776,6 +1785,7 @@ func TestDeleteContactLabelStaysFailClosedUntilRebuildVerifies(t *testing.T) {
 
 	bridge.syncRetryDelay = time.Hour
 	releaseFetch := make(chan struct{})
+	fetchGate := make(chan struct{})
 	fetchCalls := make(chan bool, 4)
 	var fetchMu sync.Mutex
 	fetchCount := 0
@@ -1785,6 +1795,7 @@ func TestDeleteContactLabelStaysFailClosedUntilRebuildVerifies(t *testing.T) {
 		n := fetchCount
 		fetchMu.Unlock()
 		fetchCalls <- fullSync
+		<-fetchGate
 		if n == 1 {
 			// Mirror whatsmeow's destructive full fetch: the version row is
 			// deleted (cascading to the mutation MACs) before the snapshot
@@ -1822,6 +1833,7 @@ func TestDeleteContactLabelStaysFailClosedUntilRebuildVerifies(t *testing.T) {
 	if err := runDeleteContactLabelWithInternals(ctx, bridge, internals); err != nil {
 		t.Fatalf("deleteContactLabelWithSender: %v", err)
 	}
+	close(fetchGate)
 
 	// The removal invalidates contact authority before the destructive rebuild
 	// and the failed snapshot download must not reopen the saved-status gate.
