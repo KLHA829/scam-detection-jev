@@ -32,6 +32,8 @@ const (
 	defaultSyncRetryDelay        = 2 * time.Second
 	maxSyncAttempts              = 5
 	maxArchiveTransitionsPerChat = 64
+	metaKeyContactImportRevision = "lid_contact_import_revision"
+	lidContactImportRevision     = "1"
 )
 
 type putArchiveTransition struct {
@@ -79,6 +81,73 @@ func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat type
 	return nil
 }
 
+type contactWriteObserver struct {
+	store.ContactStore
+	onError   func(error)
+	mu        sync.Mutex
+	attemptID uint64
+	err       error
+	errID     uint64
+}
+
+func (w *contactWriteObserver) beginAttempt() (uint64, bool) {
+	w.mu.Lock()
+	hasPriorErr := w.err != nil
+	w.attemptID++
+	id := w.attemptID
+	w.mu.Unlock()
+	return id, hasPriorErr
+}
+
+func (w *contactWriteObserver) clearPriorErr(attemptID uint64) {
+	w.mu.Lock()
+	if w.err != nil && w.errID < attemptID {
+		w.err = nil
+		w.errID = 0
+	}
+	w.mu.Unlock()
+}
+
+func (w *contactWriteObserver) record(err error) {
+	if err == nil {
+		return
+	}
+	w.mu.Lock()
+	notify := w.err == nil || w.errID != w.attemptID
+	if notify {
+		w.err = err
+		w.errID = w.attemptID
+	}
+	w.mu.Unlock()
+	if notify && w.onError != nil {
+		w.onError(err)
+	}
+}
+
+func (w *contactWriteObserver) PutContactName(ctx context.Context, user types.JID, fullName, firstName string) error {
+	err := w.ContactStore.PutContactName(ctx, user, fullName, firstName)
+	w.record(err)
+	return err
+}
+
+func (w *contactWriteObserver) PutAllContactNames(ctx context.Context, contacts []store.ContactEntry) error {
+	err := w.ContactStore.PutAllContactNames(ctx, contacts)
+	w.record(err)
+	return err
+}
+
+func (w *contactWriteObserver) takeErrForAttempt(attemptID uint64) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.err == nil || w.errID != attemptID {
+		return nil
+	}
+	err := w.err
+	w.err = nil
+	w.errID = 0
+	return err
+}
+
 type WhatsmeowBridge struct {
 	db                *sql.DB
 	store             *BridgeStore
@@ -89,19 +158,24 @@ type WhatsmeowBridge struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	fetchContactsFn   func(ctx context.Context, fullSync bool) error
+	contactFetchMu    sync.Mutex
+	contactWritesMu   sync.RWMutex
+	contactWrites     *contactWriteObserver
 	syncRetryDelay    time.Duration
 	onSyncAttemptDone func(gen uint64, fullSync bool, err error)
 	syncRetryWake     chan struct{}
 
-	mu                sync.RWMutex
-	connected         bool
-	loggedIn          bool
-	readyEmitted      bool
-	contactsSynced    bool
-	connGen           uint64
-	syncAttemptActive bool
-	syncNeedsRetry    bool
-	syncNeedsFull     bool
+	mu                  sync.RWMutex
+	connected           bool
+	loggedIn            bool
+	readyEmitted        bool
+	contactsSynced      bool
+	connGen             uint64
+	syncEpoch           uint64
+	syncAttemptActive   bool
+	bridgeFetchInFlight bool
+	syncNeedsRetry      bool
+	syncNeedsFull       bool
 
 	archiveMu          sync.Mutex
 	putArchiveQueue    map[string][]putArchiveTransition
@@ -192,13 +266,75 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 		archiveSyncPending: make(map[string]bool),
 	}
 	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
+	cli.EmitAppStateEventsOnFullSync = true
 	bridge.client = cli
+	bridge.ensureContactWritesWrapped()
 	bridge.ensureChatSettingsWrapped()
-	bridge.fetchContactsFn = func(fetchCtx context.Context, fullSync bool) error {
-		return cli.FetchAppState(fetchCtx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
-	}
+	bridge.fetchContactsFn = bridge.fetchContactAppState
 	cli.AddEventHandler(bridge.handleEvent)
 	return bridge, nil
+}
+
+func (b *WhatsmeowBridge) shouldForceFullContactImport(ctx context.Context, requestedFullSync bool) (bool, error) {
+	if requestedFullSync {
+		return true, nil
+	}
+	if b.store == nil {
+		return false, nil
+	}
+	rev, found, err := b.store.GetMeta(ctx, metaKeyContactImportRevision)
+	if err != nil {
+		return false, err
+	}
+	return !found || rev != lidContactImportRevision, nil
+}
+
+// fetchContactAppState uses whatsmeow's locked fetch-and-apply path. Full-sync
+// app-state events stay enabled so lid_contact rows reach handleEvent instead
+// of being dropped by whatsmeow's legacy contact dispatcher; contactWriteObserver
+// surfaces both legacy and lid_contact write failures so failed imports stay
+// fail-closed, bounded by syncContacts retries, and do not mark revision complete.
+func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync bool) error {
+	if b.client == nil || b.client.Store == nil {
+		return errNotReady
+	}
+	b.contactFetchMu.Lock()
+	defer b.contactFetchMu.Unlock()
+
+	var err error
+	fullSync, err = b.shouldForceFullContactImport(ctx, fullSync)
+	if err != nil {
+		return err
+	}
+	contactWrites := b.contactWritesSnapshot()
+	var attemptID uint64
+	var hasPriorErr bool
+	if contactWrites != nil {
+		attemptID, hasPriorErr = contactWrites.beginAttempt()
+		if hasPriorErr {
+			fullSync = true
+		}
+	}
+	fetchErr := b.client.FetchAppState(ctx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
+	var writeErr error
+	if contactWrites != nil {
+		writeErr = contactWrites.takeErrForAttempt(attemptID)
+	}
+	if fetchErr != nil {
+		return fmt.Errorf("fetch contact app state: %w", fetchErr)
+	}
+	if writeErr != nil {
+		return fmt.Errorf("write contact app state: %w", writeErr)
+	}
+	if contactWrites != nil && fullSync {
+		contactWrites.clearPriorErr(attemptID)
+	}
+	if b.store != nil {
+		if err := b.store.SetMeta(ctx, metaKeyContactImportRevision, lidContactImportRevision); err != nil {
+			return fmt.Errorf("persist contact import revision: %w", err)
+		}
+	}
+	return nil
 }
 
 func (b *WhatsmeowBridge) Start(ctx context.Context) error {
@@ -260,6 +396,26 @@ func (b *WhatsmeowBridge) markContactsSyncedForGen(gen uint64) {
 	b.mu.Unlock()
 }
 
+func (b *WhatsmeowBridge) completeContactSyncAttempt(gen, startEpoch uint64) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.connected || !b.loggedIn || b.connGen != gen {
+		return true
+	}
+	if b.syncEpoch != startEpoch {
+		return false
+	}
+	select {
+	case <-b.syncRetryWake:
+	default:
+	}
+	b.contactsSynced = true
+	b.syncAttemptActive = false
+	b.syncNeedsRetry = false
+	b.syncNeedsFull = false
+	return true
+}
+
 func (b *WhatsmeowBridge) isGenActive(gen uint64) bool {
 	b.mu.RLock()
 	active := b.connected && b.loggedIn && b.connGen == gen
@@ -276,15 +432,23 @@ func (b *WhatsmeowBridge) syncContacts(ctx context.Context, gen uint64) {
 		if !b.isGenActive(gen) {
 			return
 		}
-		b.mu.RLock()
+		b.mu.Lock()
 		fullSync := b.syncNeedsFull
-		b.mu.RUnlock()
+		startEpoch := b.syncEpoch
+		b.bridgeFetchInFlight = true
+		b.mu.Unlock()
 
 		syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		err := b.fetchContactsFn(syncCtx, fullSync)
 		cancel()
+
+		b.mu.Lock()
+		b.bridgeFetchInFlight = false
+		b.mu.Unlock()
 		if err == nil {
-			b.markContactsSyncedForGen(gen)
+			if !b.completeContactSyncAttempt(gen, startEpoch) {
+				continue
+			}
 			if b.onSyncAttemptDone != nil {
 				b.onSyncAttemptDone(gen, fullSync, nil)
 			}
@@ -370,9 +534,11 @@ func (b *WhatsmeowBridge) Health() HealthStatus {
 func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	switch evt := rawEvt.(type) {
 	case *events.Connected:
+		b.ensureContactWritesWrapped()
 		b.ensureChatSettingsWrapped()
 		b.mu.Lock()
 		b.connGen++
+		b.syncEpoch++
 		gen := b.connGen
 		b.connected = true
 		b.loggedIn = b.client.Store != nil && b.client.Store.ID != nil
@@ -402,8 +568,32 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		}
 
 	case *events.PairSuccess:
+		b.ensureContactWritesWrapped()
 		b.ensureChatSettingsWrapped()
+		if b.store != nil {
+			ctx := b.ctx
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			if err := b.store.DeleteMeta(ctx, metaKeyContactImportRevision); err != nil {
+				b.log.Warnf("failed to invalidate contact import revision after pairing: %v", err)
+			}
+		}
 		b.hub.Publish(BridgeEvent{Type: "authenticated"})
+
+	case *events.AppState:
+		b.ensureContactWritesWrapped()
+		if len(evt.Index) > 1 && evt.Index[0] == appstate.IndexLIDContact && evt.SyncActionValue != nil {
+			if act := evt.SyncActionValue.GetLidContactAction(); act != nil {
+				if jid, err := types.ParseJID(evt.Index[1]); err == nil && !jid.IsEmpty() && b.client != nil && b.client.Store != nil && b.client.Store.Contacts != nil {
+					ctx := b.ctx
+					if ctx == nil {
+						ctx = context.Background()
+					}
+					_ = b.client.Store.Contacts.PutContactName(ctx, jid, act.GetFirstName(), act.GetFullName())
+				}
+			}
+		}
 
 	case *events.AppStateSyncComplete:
 		if evt.Name == appstate.WAPatchRegularLow {
@@ -412,11 +602,19 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		if evt.Name == appstate.WAPatchCriticalUnblockLow {
 			var retryGen uint64
 			b.mu.Lock()
+			if evt.Recovery {
+				b.syncEpoch++
+				b.contactsSynced = false
+				b.syncNeedsRetry = true
+				b.syncNeedsFull = true
+			}
 			if b.connected && b.loggedIn && !b.contactsSynced && b.syncNeedsRetry {
 				if b.syncAttemptActive {
-					select {
-					case b.syncRetryWake <- struct{}{}:
-					default:
+					if evt.Recovery || !b.bridgeFetchInFlight {
+						select {
+						case b.syncRetryWake <- struct{}{}:
+						default:
+						}
 					}
 				} else {
 					b.syncAttemptActive = true
@@ -484,11 +682,57 @@ func (b *WhatsmeowBridge) handleContactEvent(evt *events.Contact) {
 	}
 }
 
+func (b *WhatsmeowBridge) invalidateContactSyncForWriteError(writeErr error) {
+	b.log.Warnf("failed to store contact app state: %v", writeErr)
+	var retryGen uint64
+	b.mu.Lock()
+	b.syncEpoch++
+	b.contactsSynced = false
+	b.syncNeedsRetry = true
+	b.syncNeedsFull = true
+	if b.connected && b.loggedIn {
+		if !b.syncAttemptActive {
+			b.syncAttemptActive = true
+			b.syncNeedsRetry = false
+			retryGen = b.connGen
+		}
+	}
+	b.mu.Unlock()
+	if retryGen != 0 {
+		go b.syncContacts(b.ctx, retryGen)
+	}
+}
+
 func (b *WhatsmeowBridge) selfDeviceJID() string {
 	if b.client != nil && b.client.Store != nil && b.client.Store.ID != nil {
 		return b.client.Store.ID.String()
 	}
 	return ""
+}
+
+func (b *WhatsmeowBridge) contactWritesSnapshot() *contactWriteObserver {
+	b.contactWritesMu.RLock()
+	observer := b.contactWrites
+	b.contactWritesMu.RUnlock()
+	return observer
+}
+
+func (b *WhatsmeowBridge) ensureContactWritesWrapped() {
+	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
+		return
+	}
+	b.contactWritesMu.Lock()
+	defer b.contactWritesMu.Unlock()
+	if observer, ok := b.client.Store.Contacts.(*contactWriteObserver); ok {
+		b.contactWrites = observer
+		return
+	}
+	observer := &contactWriteObserver{
+		ContactStore: b.client.Store.Contacts,
+		onError:      b.invalidateContactSyncForWriteError,
+	}
+	b.client.Store.Contacts = observer
+	b.contactWrites = observer
 }
 
 func (b *WhatsmeowBridge) ensureChatSettingsWrapped() {
