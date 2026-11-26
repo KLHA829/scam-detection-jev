@@ -52,7 +52,7 @@ type BridgeBackend interface {
 	MuteChat(ctx context.Context, chatID string, muted bool) error
 	BlockContact(ctx context.Context, id string, blocked bool) error
 	SetContactLabel(ctx context.Context, phone, name string) error
-	DeleteContactLabel(ctx context.Context, phone string) error
+	DeleteContactLabel(ctx context.Context, phone, expectedName string) error
 }
 
 func normalizeBindHost(host string) string {
@@ -338,7 +338,8 @@ func NewBridgeHandler(backend BridgeBackend, token string) http.Handler {
 
 	mux.HandleFunc("DELETE /v1/contact/label", authed(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Phone string `json:"phone"`
+			Phone        string `json:"phone"`
+			ExpectedName string `json:"expectedName"`
 		}
 		if !decodeJSONBody(w, r, &req) {
 			return
@@ -347,7 +348,11 @@ func NewBridgeHandler(backend BridgeBackend, token string) http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "phone is required"})
 			return
 		}
-		if err := backend.DeleteContactLabel(r.Context(), req.Phone); err != nil {
+		if strings.TrimSpace(req.ExpectedName) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "expectedName is required"})
+			return
+		}
+		if err := backend.DeleteContactLabel(r.Context(), req.Phone, req.ExpectedName); err != nil {
 			writeJSON(w, statusForError(err), map[string]string{"error": err.Error()})
 			return
 		}

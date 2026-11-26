@@ -22,6 +22,7 @@ import (
 	"go.mau.fi/whatsmeow/proto/waAdv"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waServerSync"
 	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -247,6 +248,129 @@ func TestBuildContactLabelPatch(t *testing.T) {
 	clearAct := clearPatch.Mutations[0].Value.GetContactAction()
 	if clearAct.GetFullName() != "" || clearAct.GetFirstName() != "" || clearAct.GetSaveOnPrimaryAddressbook() {
 		t.Fatalf("unexpected clear ContactAction: %+v", clearAct)
+	}
+}
+
+func newLoggedInTestBridge(t *testing.T, ctx context.Context) *WhatsmeowBridge {
+	t.Helper()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "whatsmeow.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	t.Cleanup(func() { _ = bridge.Close() })
+
+	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
+	}
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
+	}
+	bridge.mu.Lock()
+	bridge.connected = true
+	bridge.loggedIn = true
+	bridge.mu.Unlock()
+	return bridge
+}
+
+func TestDeleteContactLabelSkipsRetryWhenConflictSyncsUserRename(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "（可疑推銷）", "（可疑推銷）"); err != nil {
+		t.Fatalf("put bot label: %v", err)
+	}
+
+	senderCalls := 0
+	sendAfterConflictRename := func(
+		sendCtx context.Context,
+		_ appstate.PatchInfo,
+		_ waServerSync.SyncdMutation_SyncdOperation,
+		_ bool,
+		validateRetry appStateRetryValidator,
+	) error {
+		senderCalls++
+		if senderCalls > 1 {
+			t.Fatalf("removal retry ran after the contact was renamed")
+		}
+		if err := bridge.client.Store.Contacts.PutContactName(sendCtx, target, "Delivery driver", "Delivery driver"); err != nil {
+			t.Fatalf("simulate conflict-synced user rename: %v", err)
+		}
+		return validateRetry(sendCtx)
+	}
+
+	if err := bridge.deleteContactLabelWithSender(ctx, target.User, "（可疑推銷）", appStateOperationSender(sendAfterConflictRename)); err != nil {
+		t.Fatalf("deleteContactLabelWithSender: %v", err)
+	}
+	info, err := bridge.client.Store.Contacts.GetContact(ctx, target)
+	if err != nil {
+		t.Fatalf("read renamed contact: %v", err)
+	}
+	if info.FullName != "Delivery driver" || info.FirstName != "Delivery driver" {
+		t.Fatalf("user rename must survive skipped removal, got %+v", info)
+	}
+}
+
+func TestDeleteContactLabelClearsOnlyMatchingBotLabel(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "（可疑推銷）", "（可疑推銷）"); err != nil {
+		t.Fatalf("put bot label: %v", err)
+	}
+
+	senderCalls := 0
+	sendSuccessfully := appStateOperationSender(func(
+		sendCtx context.Context,
+		_ appstate.PatchInfo,
+		_ waServerSync.SyncdMutation_SyncdOperation,
+		_ bool,
+		validateRetry appStateRetryValidator,
+	) error {
+		senderCalls++
+		if validateRetry == nil {
+			t.Fatalf("delete contact sender did not receive retry validator")
+		}
+		if err := validateRetry(sendCtx); err != nil {
+			t.Fatalf("unchanged bot label should pass retry validation: %v", err)
+		}
+		return nil
+	})
+	if err := bridge.deleteContactLabelWithSender(ctx, target.User, "（可疑推銷）", sendSuccessfully); err != nil {
+		t.Fatalf("deleteContactLabelWithSender: %v", err)
+	}
+	if senderCalls != 1 {
+		t.Fatalf("sender calls = %d, want 1", senderCalls)
+	}
+	info, err := bridge.client.Store.Contacts.GetContact(ctx, target)
+	if err != nil {
+		t.Fatalf("read cleared contact: %v", err)
+	}
+	if info.FullName != "" || info.FirstName != "" {
+		t.Fatalf("matching bot label should be cleared locally, got %+v", info)
+	}
+
+	renamedTarget := types.NewJID("85261234568", types.DefaultUserServer)
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, renamedTarget, "Delivery driver", "Delivery driver"); err != nil {
+		t.Fatalf("put user-renamed contact: %v", err)
+	}
+	if err := bridge.deleteContactLabelWithSender(ctx, renamedTarget.User, "（可疑推銷）", sendSuccessfully); err != nil {
+		t.Fatalf("deleteContactLabelWithSender renamed contact: %v", err)
+	}
+	if senderCalls != 1 {
+		t.Fatalf("sender ran for a contact that no longer has the bot label")
+	}
+	renamedInfo, err := bridge.client.Store.Contacts.GetContact(ctx, renamedTarget)
+	if err != nil {
+		t.Fatalf("read user-renamed contact: %v", err)
+	}
+	if renamedInfo.FullName != "Delivery driver" || renamedInfo.FirstName != "Delivery driver" {
+		t.Fatalf("user-renamed contact must survive skipped removal, got %+v", renamedInfo)
 	}
 }
 
@@ -532,8 +656,8 @@ func (f *fakeBackend) SetContactLabel(_ context.Context, phone, name string) err
 	f.lastCall = "label:" + phone + ":" + name
 	return nil
 }
-func (f *fakeBackend) DeleteContactLabel(_ context.Context, phone string) error {
-	f.lastCall = "unlabel:" + phone
+func (f *fakeBackend) DeleteContactLabel(_ context.Context, phone, expectedName string) error {
+	f.lastCall = "unlabel:" + phone + ":" + expectedName
 	return nil
 }
 
@@ -638,7 +762,7 @@ func TestHTTPAndSSEServer(t *testing.T) {
 		{"POST", "/v1/chat/mute", map[string]any{"chatId": "852@c.us", "muted": false}, "unmute:852@c.us"},
 		{"POST", "/v1/contact/block", map[string]any{"id": "852@c.us"}, "block:852@c.us"},
 		{"POST", "/v1/contact/label", map[string]any{"phone": "85261230001", "name": "（可疑推銷）"}, "label:85261230001:（可疑推銷）"},
-		{"DELETE", "/v1/contact/label", map[string]any{"phone": "85261230001"}, "unlabel:85261230001"},
+		{"DELETE", "/v1/contact/label", map[string]any{"phone": "85261230001", "expectedName": "（可疑推銷）"}, "unlabel:85261230001:（可疑推銷）"},
 	} {
 		resp := doReq(tc.method, tc.path, tc.body)
 		if resp.StatusCode != http.StatusOK {

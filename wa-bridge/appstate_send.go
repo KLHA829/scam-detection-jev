@@ -18,6 +18,16 @@ import (
 	"go.mau.fi/whatsmeow/types"
 )
 
+type appStateRetryValidator func(ctx context.Context) error
+
+type appStateOperationSender func(
+	ctx context.Context,
+	patch appstate.PatchInfo,
+	operation waServerSync.SyncdMutation_SyncdOperation,
+	allowRetry bool,
+	validateRetry appStateRetryValidator,
+) error
+
 // sendAppStateWithOperation mirrors whatsmeow.Client.SendAppState, including
 // conflict recovery, while allowing REMOVE mutations. whatsmeow's public patch
 // encoder hard-codes SET, so contact removals cannot go through that path.
@@ -26,6 +36,7 @@ func (b *WhatsmeowBridge) sendAppStateWithOperation(
 	patch appstate.PatchInfo,
 	operation waServerSync.SyncdMutation_SyncdOperation,
 	allowRetry bool,
+	validateRetry appStateRetryValidator,
 ) error {
 	cli := b.client
 	if cli == nil || cli.Store == nil {
@@ -99,7 +110,12 @@ func (b *WhatsmeowBridge) sendAppStateWithOperation(
 					internals.DispatchEvent(evt)
 				}
 			}()
-			return b.sendAppStateWithOperation(ctx, patch, operation, false)
+			if validateRetry != nil {
+				if err := validateRetry(ctx); err != nil {
+					return err
+				}
+			}
+			return b.sendAppStateWithOperation(ctx, patch, operation, false, validateRetry)
 		}
 		return mainErr
 	}

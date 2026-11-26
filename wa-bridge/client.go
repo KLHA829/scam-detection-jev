@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1090,7 +1091,21 @@ func buildContactRemovalPatch(target types.JID) appstate.PatchInfo {
 	}
 }
 
-func (b *WhatsmeowBridge) DeleteContactLabel(ctx context.Context, phone string) error {
+var errContactLabelChanged = errors.New("contact label changed before removal retry")
+
+func savedNameFromContactInfo(info types.ContactInfo) string {
+	savedName := strings.TrimSpace(info.FullName)
+	if savedName == "" {
+		savedName = strings.TrimSpace(info.FirstName)
+	}
+	return savedName
+}
+
+func (b *WhatsmeowBridge) DeleteContactLabel(ctx context.Context, phone, expectedName string) error {
+	return b.deleteContactLabelWithSender(ctx, phone, expectedName, b.sendAppStateWithOperation)
+}
+
+func (b *WhatsmeowBridge) deleteContactLabelWithSender(ctx context.Context, phone, expectedName string, send appStateOperationSender) error {
 	if err := b.ensureLoggedIn(); err != nil {
 		return err
 	}
@@ -1098,12 +1113,38 @@ func (b *WhatsmeowBridge) DeleteContactLabel(ctx context.Context, phone string) 
 	if digits == "" {
 		return fmt.Errorf("%w: invalid phone %q", errBadRequest, phone)
 	}
+	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
+		return errNotReady
+	}
+	expectedName = strings.TrimSpace(expectedName)
+	if expectedName == "" {
+		return fmt.Errorf("%w: expectedName is required", errBadRequest)
+	}
 	target := types.NewJID(digits, types.DefaultUserServer)
-	if err := b.sendAppStateWithOperation(ctx, buildContactRemovalPatch(target), waServerSync.SyncdMutation_REMOVE, true); err != nil {
+	contactInfo, err := b.client.Store.Contacts.GetContact(ctx, target)
+	if err != nil {
+		return fmt.Errorf("read contact before removal: %w", err)
+	}
+	if savedNameFromContactInfo(contactInfo) != expectedName {
+		return nil
+	}
+	validateRetry := func(validateCtx context.Context) error {
+		latestInfo, err := b.client.Store.Contacts.GetContact(validateCtx, target)
+		if err != nil {
+			return fmt.Errorf("read contact before removal retry: %w", err)
+		}
+		if savedNameFromContactInfo(latestInfo) != expectedName {
+			return errContactLabelChanged
+		}
+		return nil
+	}
+	if err := send(ctx, buildContactRemovalPatch(target), waServerSync.SyncdMutation_REMOVE, true, validateRetry); err != nil {
+		if errors.Is(err, errContactLabelChanged) {
+			b.log.Infof("contact label removal skipped for %s because the contact name changed", target)
+			return nil
+		}
 		return fmt.Errorf("send contact removal app state: %w", err)
 	}
-	if b.client.Store != nil && b.client.Store.Contacts != nil {
-		_ = b.client.Store.Contacts.PutContactName(ctx, target, "", "")
-	}
+	_ = b.client.Store.Contacts.PutContactName(ctx, target, "", "")
 	return nil
 }
