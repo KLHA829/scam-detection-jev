@@ -100,7 +100,7 @@ func (m *memoryAppState) GetAppStateMutationMAC(_ context.Context, name string, 
 	return append([]byte(nil), valueMAC...), nil
 }
 
-func decodeAppStateMutationForTest(t *testing.T, encoded []byte) (*waServerSync.SyncdPatch, *waServerSync.SyncdMutation, *waSyncAction.SyncActionData) {
+func decodeAppStateMutationForTest(t *testing.T, encoded []byte) (*waServerSync.SyncdPatch, *waServerSync.SyncdMutation) {
 	t.Helper()
 	var patch waServerSync.SyncdPatch
 	if err := proto.Unmarshal(encoded, &patch); err != nil {
@@ -114,7 +114,7 @@ func decodeAppStateMutationForTest(t *testing.T, encoded []byte) (*waServerSync.
 	if len(blob) < 16+32 {
 		t.Fatalf("mutation blob too short: %d", len(blob))
 	}
-	return &patch, mutation, nil
+	return &patch, mutation
 }
 
 func decryptAppStateMutationForTest(
@@ -205,7 +205,7 @@ func TestEncodeContactRemovalPatchUsesRemoveOperation(t *testing.T) {
 		t.Fatalf("encode removal patch: %v", err)
 	}
 
-	patch, mutation, _ := decodeAppStateMutationForTest(t, encoded)
+	patch, mutation := decodeAppStateMutationForTest(t, encoded)
 	if mutation.GetOperation() != waServerSync.SyncdMutation_REMOVE {
 		t.Fatalf("mutation operation = %s, want REMOVE", mutation.GetOperation())
 	}
@@ -247,7 +247,7 @@ func TestEncodeContactRemovalPatchUsesRemoveOperation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode control SET patch: %v", err)
 	}
-	_, setMutation, _ := decodeAppStateMutationForTest(t, setEncoded)
+	_, setMutation := decodeAppStateMutationForTest(t, setEncoded)
 	if setMutation.GetOperation() != waServerSync.SyncdMutation_SET {
 		t.Fatalf("control mutation operation = %s, want SET", setMutation.GetOperation())
 	}
