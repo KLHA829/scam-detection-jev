@@ -15,6 +15,7 @@ import (
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waServerSync"
 	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -228,6 +229,55 @@ func (b *WhatsmeowBridge) collectContactAppStateMutations(ctx context.Context, m
 	)
 }
 
+func (b *WhatsmeowBridge) checkAppStateVersionUnchanged(ctx context.Context, name appstate.WAPatchName, expectedVersion uint64) error {
+	curVersion, _, err := b.client.Store.AppState.GetAppStateVersion(ctx, string(name))
+	if err != nil {
+		return fmt.Errorf("verify app state %s version: %w", name, err)
+	}
+	if curVersion != expectedVersion {
+		return fmt.Errorf("app state %s version advanced concurrently (%d -> %d); retrying", name, expectedVersion, curVersion)
+	}
+	return nil
+}
+
+func collectSeenContactJIDs(seen map[string]struct{}, mutations []appstate.Mutation) {
+	for _, mutation := range mutations {
+		if mutation.Operation != waServerSync.SyncdMutation_SET || len(mutation.Index) <= 1 {
+			continue
+		}
+		if mutation.Index[0] != appstate.IndexContact && mutation.Index[0] != appstate.IndexLIDContact {
+			continue
+		}
+		if jid, err := types.ParseJID(mutation.Index[1]); err == nil && !jid.IsEmpty() {
+			if id := canonicalJID(jid); id != "" {
+				seen[id] = struct{}{}
+			}
+		}
+	}
+}
+
+func (b *WhatsmeowBridge) reconcileDeletedContacts(ctx context.Context, seen map[string]struct{}) error {
+	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
+		return nil
+	}
+	all, err := b.client.Store.Contacts.GetAllContacts(ctx)
+	if err != nil {
+		return fmt.Errorf("list cached contacts for reconciliation: %w", err)
+	}
+	for jid, info := range all {
+		if strings.TrimSpace(info.FullName) == "" && strings.TrimSpace(info.FirstName) == "" {
+			continue
+		}
+		if _, ok := seen[canonicalJID(jid)]; ok {
+			continue
+		}
+		if err := b.client.Store.Contacts.PutContactName(ctx, jid, "", ""); err != nil {
+			return fmt.Errorf("clear deleted contact %s: %w", jid.String(), err)
+		}
+	}
+	return nil
+}
+
 func (b *WhatsmeowBridge) shouldForceFullContactImport(ctx context.Context, requestedFullSync bool) (bool, error) {
 	if requestedFullSync {
 		return true, nil
@@ -280,6 +330,10 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 	state := appstate.HashState{Version: version, Hash: hash}
 	hasMore := true
 	wantSnapshot := fullSync
+	var seenContacts map[string]struct{}
+	if fullSync {
+		seenContacts = make(map[string]struct{})
+	}
 	for hasMore {
 		patches, err := b.client.DangerousInternals().FetchAppStatePatches(ctx, name, state.Version, wantSnapshot)
 		if err != nil {
@@ -297,6 +351,9 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 		if patches.Snapshot != nil && state != (appstate.HashState{}) {
 			return fmt.Errorf("unexpected non-empty input state (v%d) for %s when applying snapshot", state.Version, name)
 		}
+		if err := b.checkAppStateVersionUnchanged(ctx, name, state.Version); err != nil {
+			return err
+		}
 		wantSnapshot = false
 		hasMore = patches.HasMorePatches
 
@@ -310,7 +367,15 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 		if err := b.collectContactAppStateMutations(ctx, mutations, fullSync); err != nil {
 			return fmt.Errorf("apply contact app state %s mutations: %w", name, err)
 		}
+		if seenContacts != nil {
+			collectSeenContactJIDs(seenContacts, mutations)
+		}
 		state = newState
+	}
+	if seenContacts != nil {
+		if err := b.reconcileDeletedContacts(ctx, seenContacts); err != nil {
+			return err
+		}
 	}
 	if b.store != nil {
 		if err := b.store.SetMeta(ctx, metaKeyContactImportRevision, lidContactImportRevision); err != nil {
@@ -387,6 +452,10 @@ func (b *WhatsmeowBridge) completeContactSyncAttempt(gen, startEpoch uint64) boo
 	}
 	if b.syncEpoch != startEpoch {
 		return false
+	}
+	select {
+	case <-b.syncRetryWake:
+	default:
 	}
 	b.contactsSynced = true
 	b.syncAttemptActive = false
