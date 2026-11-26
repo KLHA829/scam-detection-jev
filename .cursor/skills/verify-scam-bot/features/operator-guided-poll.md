@@ -6,8 +6,7 @@ In guided mode the bot forwards a suspicious DM to the operator's own chat, expl
 
 `node --test lib/guided-latency.test.js` locks slow mask/LLM isolation from other
 chats' archives, same-chat delivery order, exclusive writes with no added pauses,
-concurrent duplicate claims, and retry after delivery produces no poll. `node scripts/bench-guided-latency.js`
-measures the same two-chat path with fixed mask/LLM latency.
+concurrent duplicate claims, and retry after delivery produces no poll.
 
 ## Sub-features
 
@@ -27,7 +26,7 @@ measures the same two-chat path with fixed mask/LLM latency.
 - `sibling-unblock-polls` closes all pending unblock polls for the same chat after successful 解除封鎖 or explicit 保持封鎖. A failed unblock reopens every poll closed by that attempt, allowing a sibling vote to retry; previously closed polls stay closed.
 - `edit-voids-poll` voids the open review poll when the sender edits the message. A vote or quoted reply on the old poll does nothing and gets `呢個投票已作廢`. The edited text is reviewed again and gets a new poll only if it is still suspicious.
 - `edit-during-review` discards the original model verdict and replaces the transcript entry by message ID, even after two rapid edits. `never publishes a saved-contact poll from a model verdict superseded by an edit` in `lib/wa-handlers.test.js` runs in `bin/drive-agents-invariants`.
-- `empty-edit-context` drops the original even when the new body is empty. `lib/context-llm.test.js` locks `drops the original when an edit is empty` and `does not resend the original after an empty edit with 0 earlier messages` / `1 earlier messages`; `bin/drive-mask-before-llm` includes all three. An empty remaining window skips the model; otherwise only remaining messages are reviewed. Compare real-handler transcripts with `node scripts/demo-empty-edit.js [repo-root]`.
+- `empty-edit-context` drops the original even when the new body is empty. `lib/context-llm.test.js` locks `drops the original when an edit is empty` and `does not resend the original after an empty edit with 0 earlier messages` / `1 earlier messages`; `bin/drive-mask-before-llm` includes all three. An empty remaining window skips the model; otherwise only remaining messages are reviewed.
 
 ## How to get to it (user POV)
 

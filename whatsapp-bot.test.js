@@ -7,7 +7,7 @@ const { extractDigits } = require('./lib/lid');
 const { isLidId, phoneLookupId, phoneFromLidMapping, resolveRealNumber } = require('./lib/lid');
 const { shouldIgnoreMessage, isOfficialWhatsAppId } = require('./lib/filters');
 const { matchObviousScam } = require('./lib/link-rules');
-const { decideIncomingAction, resolveIncomingMessageLabel } = require('./lib/decide-incoming');
+const { decideIncomingAction } = require('./lib/decide-incoming');
 const { applyBlockPolicy } = require('./lib/block-policy');
 const { loadRubric, labelFromScore } = require('./lib/score-message');
 const { scoreMessage } = require('./lab/score-message');
@@ -298,24 +298,6 @@ describe('decideIncomingAction matrix', () => {
     assert.equal(blocked.contactName, '封鎖·惡意域名');
   });
 
-});
-
-describe('resolveIncomingMessageLabel', () => {
-  it('promotes malicious URLs to scam; otherwise unknown until LLM', () => {
-    const promoted = resolveIncomingMessageLabel(
-      scoreResult({ label: 'not_scam', score: 2 }),
-      '登入 https://malicious-block-test.invalid/login',
-    );
-    assert.equal(promoted.label, 'scam');
-    assert.equal(promoted.archiveReason, 'obvious_scam');
-
-    const lookalike = resolveIncomingMessageLabel(null, '登入 https://whatsapp-secure.com/login');
-    assert.equal(lookalike.heuristic.id, 'lookalike_domain');
-    assert.equal(lookalike.label, 'unknown');
-    const unknown = resolveIncomingMessageLabel(null, 'hello');
-    assert.equal(unknown.label, 'unknown');
-    assert.equal(unknown.archiveReason, null);
-  });
 });
 
 describe('scoring labels', () => {

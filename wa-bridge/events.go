@@ -44,10 +44,6 @@ func NewEventHub() *EventHub {
 	}
 }
 
-func (h *EventHub) Epoch() string {
-	return h.epoch
-}
-
 func parseEventCursor(cursor, expectedEpoch string) (uint64, bool) {
 	c := strings.TrimSpace(cursor)
 	if c == "" {
