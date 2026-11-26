@@ -589,6 +589,67 @@ func TestLidContactWriteFailureInvalidatesInflightSync(t *testing.T) {
 	}
 }
 
+func TestContactWriteObserverSurfacesLegacyAndLIDWriteErrorsBounded(t *testing.T) {
+	ctx := context.Background()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "observer-write-err.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	defer func() { _ = bridge.Close() }()
+
+	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
+	}
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
+	}
+
+	bridge.ensureContactWritesWrapped()
+	oldAttempt, _ := bridge.contactWrites.beginAttempt()
+	newAttempt, _ := bridge.contactWrites.beginAttempt()
+
+	writeFail := errors.New("sqlite write failed")
+	bridge.contactWrites.ContactStore = failingContactNameStore{
+		ContactStore: bridge.contactWrites.ContactStore,
+		err:          writeFail,
+	}
+	_ = bridge.client.Store.Contacts.PutContactName(ctx, types.NewJID("85261234567", types.DefaultUserServer), "Alice", "Alice")
+	if swallowed := bridge.contactWrites.takeErrForAttempt(oldAttempt); swallowed != nil {
+		t.Fatalf("obsolete attempt %d must not drain write error from attempt %d, got %v", oldAttempt, newAttempt, swallowed)
+	}
+	if actual := bridge.contactWrites.takeErrForAttempt(newAttempt); !errors.Is(actual, writeFail) {
+		t.Fatalf("expected legacy write failure on attempt %d, got %v", newAttempt, actual)
+	}
+
+	var attempts int
+	bridge.syncRetryDelay = time.Millisecond
+	bridge.fetchContactsFn = func(_ context.Context, _ bool) error {
+		attempts++
+		return writeFail
+	}
+	bridge.mu.Lock()
+	bridge.connected = true
+	bridge.loggedIn = true
+	bridge.connGen = 1
+	bridge.syncAttemptActive = true
+	bridge.mu.Unlock()
+	bridge.syncContacts(ctx, 1)
+	if attempts != maxSyncAttempts {
+		t.Fatalf("expected bounded %d syncAttempts on write failure, got %d", maxSyncAttempts, attempts)
+	}
+	if bridge.Health().ContactsSynced {
+		t.Fatal("exhausted write failure retries must leave ContactsSynced=false")
+	}
+	if _, found, err := bridge.store.GetMeta(ctx, metaKeyContactImportRevision); err != nil || found {
+		t.Fatalf("failed import must not persist import revision, got found=%v err=%v", found, err)
+	}
+}
+
 func TestPairSuccessInvalidatesContactImportRevision(t *testing.T) {
 	ctx := context.Background()
 	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "pair-import-revision.db"), "ERROR")
