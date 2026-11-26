@@ -1,1 +1,0 @@
-{"ok":true,"model":"stub-jevlike","encoder":"stub","label":"not_scam","prob_scam":0.04,"prob_not_scam":0.96,"score":4,"options":["not_scam","scam"],"probabilities":[0.96,0.04]}

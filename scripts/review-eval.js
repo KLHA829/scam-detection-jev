@@ -88,7 +88,7 @@ async function main() {
     triggered: 0, called: 0, failed_transport: 0,
     tp: 0, fp: 0, fn: 0, tn: 0,
     fp_archived: 0, fp_blocked: 0, scam_blocked: 0,
-    released_by_llm: 0, redacted_rows: 0,
+    redacted_rows: 0,
     trigger_reasons: {},
   };
   const samples = { fp: [], redacted: [] };
@@ -146,7 +146,6 @@ async function main() {
     });
     const flagged = finalDecision.action !== 'ignore';
     const blocked = finalDecision.action === 'block';
-    if (finalDecision.released) stats.released_by_llm += 1;
 
     if (label === 1) {
       if (flagged) stats.tp += 1; else stats.fn += 1;
@@ -198,7 +197,6 @@ async function main() {
   line('...of those would auto-block', stats.fp_blocked);
   line('precision of a flag', prec === null ? '-' : prec.toFixed(3));
   line('accuracy', out.accuracy.toFixed(3));
-  line('released back by LLM', stats.released_by_llm);
   line('rows where PII was masked', `${stats.redacted_rows}/${stats.called} calls`);
   line('trigger reasons', JSON.stringify(stats.trigger_reasons));
 

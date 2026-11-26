@@ -26,6 +26,7 @@ __pycache__/
 .pytest_cache/
 .huggingface/
 .cursor/skills/verify-scam-bot/run/
+.cursor/skills/verify-scam-bot/evidence/
 models/*.pt
 models/*.bin
 models/*.safetensors
@@ -33,4 +34,4 @@ models/*.onnx
 !models/README.md
 data/corpus/raw/
 
-graphify-out/cache/
+graphify-out/
