@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -914,6 +916,7 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 	}
 
 	resolvedNumber := phoneDigitsFromJID(jid)
+	lookupJID := jid.ToNonAD().String()
 	lidPhoneVerified := jid.Server != types.HiddenUserServer
 	savedName := strings.TrimSpace(info.FullName)
 	if savedName == "" {
@@ -924,6 +927,7 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 			if pnInfo, err := b.client.Store.Contacts.GetContact(ctx, pn); err == nil {
 				lidPhoneVerified = true
 				resolvedNumber = phoneDigitsFromJID(pn)
+				lookupJID = pn.ToNonAD().String()
 				pnSaved := strings.TrimSpace(pnInfo.FullName)
 				if pnSaved == "" {
 					pnSaved = strings.TrimSpace(pnInfo.FirstName)
@@ -935,6 +939,24 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 				if strings.TrimSpace(info.PushName) == "" {
 					info.PushName = pnInfo.PushName
 				}
+			}
+		}
+	}
+
+	finalSaved := savedNameFromContactInfo(info)
+	if b.store != nil && lookupJID != "" {
+		if finalSaved != "" {
+			_ = b.store.ClearUnreconciledContact(ctx, lookupJID)
+		} else if unreconciled, err := b.store.HasUnreconciledContact(ctx, lookupJID); err != nil {
+			lidPhoneVerified = false
+		} else if unreconciled {
+			targetJID, parseErr := types.ParseJID(lookupJID)
+			if parseErr != nil {
+				lidPhoneVerified = false
+			} else if surviving, checkErr := b.hasAnyActiveMutationForPatch(ctx, buildContactRemovalPatch(targetJID)); checkErr != nil || surviving {
+				lidPhoneVerified = false
+			} else {
+				_ = b.store.ClearUnreconciledContact(ctx, lookupJID)
 			}
 		}
 	}
@@ -1136,19 +1158,52 @@ func (b *WhatsmeowBridge) SetContactLabel(ctx context.Context, phone, name strin
 	if err := b.ensureLoggedIn(); err != nil {
 		return err
 	}
+	return b.setContactLabelWithInternals(ctx, phone, name, b.client.DangerousInternals())
+}
+
+func (b *WhatsmeowBridge) setContactLabelWithInternals(ctx context.Context, phone, name string, internals appStateInternals) error {
+	if err := b.ensureLoggedIn(); err != nil {
+		return err
+	}
 	digits := digitsOnly(phone)
 	if digits == "" {
 		return fmt.Errorf("%w: invalid phone %q", errBadRequest, phone)
 	}
 	target := types.NewJID(digits, types.DefaultUserServer)
-	if err := b.client.SendAppState(ctx, buildContactLabelPatch(target, name)); err != nil {
+	patch := buildContactLabelPatch(target, name)
+	keyID, err := b.sendAppStatePatchWithKeyLoop(ctx, patch, waServerSync.SyncdMutation_SET, nil, true, nil, internals)
+	if err != nil {
 		return fmt.Errorf("send contact label app state: %w", err)
 	}
+	clean := strings.TrimSpace(name)
+	b.recordBotContactLabelWithKey(ctx, target, patch, keyID, clean)
+	if b.store != nil {
+		_ = b.store.ClearUnreconciledContact(ctx, target.String())
+	}
 	if b.client.Store != nil && b.client.Store.Contacts != nil {
-		clean := strings.TrimSpace(name)
 		_ = b.client.Store.Contacts.PutContactName(ctx, target, clean, clean)
 	}
 	return nil
+}
+
+func (b *WhatsmeowBridge) recordBotContactLabelWithKey(ctx context.Context, target types.JID, patch appstate.PatchInfo, keyID []byte, labelName string) {
+	if b.store == nil || b.client == nil || b.client.Store == nil || b.client.Store.AppStateKeys == nil || b.client.Store.AppState == nil || len(patch.Mutations) == 0 || len(keyID) == 0 {
+		return
+	}
+	keyData, err := b.client.Store.AppStateKeys.GetAppStateSyncKey(ctx, keyID)
+	if err != nil || keyData == nil {
+		return
+	}
+	indexBytes, err := json.Marshal(patch.Mutations[0].Index)
+	if err != nil {
+		return
+	}
+	indexMAC := concatAndHMAC(sha256.New, expandAppStateKeys(keyData.Data).index, indexBytes)
+	valueMAC, err := b.client.Store.AppState.GetAppStateMutationMAC(ctx, string(patch.Type), indexMAC)
+	if err != nil || len(valueMAC) == 0 {
+		return
+	}
+	_ = b.store.SaveBotContactLabel(ctx, target.String(), keyID, indexMAC, valueMAC, labelName)
 }
 
 func buildContactRemovalPatch(target types.JID) appstate.PatchInfo {
@@ -1167,7 +1222,10 @@ func buildContactRemovalPatch(target types.JID) appstate.PatchInfo {
 	}
 }
 
-var errContactLabelChanged = errors.New("contact label changed before removal retry")
+var (
+	errContactLabelChanged        = errors.New("contact label changed before removal retry")
+	errContactLabelAlreadyCleared = errors.New("contact label already cleared")
+)
 
 func savedNameFromContactInfo(info types.ContactInfo) string {
 	savedName := strings.TrimSpace(info.FullName)
@@ -1209,13 +1267,17 @@ func (b *WhatsmeowBridge) deleteContactLabelWithSender(ctx context.Context, phon
 		if err != nil {
 			return fmt.Errorf("read contact before removal retry: %w", err)
 		}
-		if savedNameFromContactInfo(latestInfo) != expectedName {
+		got := savedNameFromContactInfo(latestInfo)
+		if got == "" {
+			return errContactLabelAlreadyCleared
+		}
+		if got != expectedName {
 			return errContactLabelChanged
 		}
 		return nil
 	}
 	if err := send(ctx, buildContactRemovalPatch(target), waServerSync.SyncdMutation_REMOVE, true, validateAttempt); err != nil {
-		if errors.Is(err, errContactLabelChanged) {
+		if errors.Is(err, errContactLabelChanged) || errors.Is(err, errContactLabelAlreadyCleared) {
 			b.log.Infof("contact label removal skipped for %s because the contact name changed", target)
 			return nil
 		}
