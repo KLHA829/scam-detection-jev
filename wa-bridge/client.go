@@ -1128,7 +1128,7 @@ func (b *WhatsmeowBridge) deleteContactLabelWithSender(ctx context.Context, phon
 	if savedNameFromContactInfo(contactInfo) != expectedName {
 		return nil
 	}
-	validateRetry := func(validateCtx context.Context) error {
+	validateAttempt := func(validateCtx context.Context) error {
 		latestInfo, err := b.client.Store.Contacts.GetContact(validateCtx, target)
 		if err != nil {
 			return fmt.Errorf("read contact before removal retry: %w", err)
@@ -1138,7 +1138,7 @@ func (b *WhatsmeowBridge) deleteContactLabelWithSender(ctx context.Context, phon
 		}
 		return nil
 	}
-	if err := send(ctx, buildContactRemovalPatch(target), waServerSync.SyncdMutation_REMOVE, true, validateRetry); err != nil {
+	if err := send(ctx, buildContactRemovalPatch(target), waServerSync.SyncdMutation_REMOVE, true, validateAttempt); err != nil {
 		if errors.Is(err, errContactLabelChanged) {
 			b.log.Infof("contact label removal skipped for %s because the contact name changed", target)
 			return nil

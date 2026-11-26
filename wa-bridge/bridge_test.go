@@ -24,6 +24,7 @@ import (
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waServerSync"
 	"go.mau.fi/whatsmeow/proto/waSyncAction"
+	wastore "go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
@@ -277,6 +278,39 @@ func newLoggedInTestBridge(t *testing.T, ctx context.Context) *WhatsmeowBridge {
 	return bridge
 }
 
+type versionReadTrackingAppState struct {
+	wastore.AppStateStore
+	read *bool
+}
+
+func (s *versionReadTrackingAppState) GetAppStateVersion(ctx context.Context, name string) (uint64, [128]byte, error) {
+	*s.read = true
+	return s.AppStateStore.GetAppStateVersion(ctx, name)
+}
+
+func TestSendAppStateValidatesAfterReadingVersion(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+
+	readVersion := false
+	bridge.client.Store.AppState = &versionReadTrackingAppState{
+		AppStateStore: bridge.client.Store.AppState,
+		read:          &readVersion,
+	}
+	validationErr := errors.New("validation stopped send")
+	validate := func(context.Context) error {
+		if !readVersion {
+			t.Error("validator ran before reading the current app-state version")
+		}
+		return validationErr
+	}
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	err := bridge.sendAppStateWithOperation(ctx, buildContactRemovalPatch(target), waServerSync.SyncdMutation_REMOVE, true, validate)
+	if !errors.Is(err, validationErr) {
+		t.Fatalf("send error = %v, want validation error", err)
+	}
+}
+
 func TestDeleteContactLabelSkipsRetryWhenConflictSyncsUserRename(t *testing.T) {
 	ctx := context.Background()
 	bridge := newLoggedInTestBridge(t, ctx)
@@ -292,7 +326,7 @@ func TestDeleteContactLabelSkipsRetryWhenConflictSyncsUserRename(t *testing.T) {
 		_ appstate.PatchInfo,
 		_ waServerSync.SyncdMutation_SyncdOperation,
 		_ bool,
-		validateRetry appStateRetryValidator,
+		validateAttempt appStateMutationValidator,
 	) error {
 		senderCalls++
 		if senderCalls > 1 {
@@ -301,7 +335,7 @@ func TestDeleteContactLabelSkipsRetryWhenConflictSyncsUserRename(t *testing.T) {
 		if err := bridge.client.Store.Contacts.PutContactName(sendCtx, target, "Delivery driver", "Delivery driver"); err != nil {
 			t.Fatalf("simulate conflict-synced user rename: %v", err)
 		}
-		return validateRetry(sendCtx)
+		return validateAttempt(sendCtx)
 	}
 
 	if err := bridge.deleteContactLabelWithSender(ctx, target.User, "（可疑推銷）", appStateOperationSender(sendAfterConflictRename)); err != nil {
@@ -330,13 +364,13 @@ func TestDeleteContactLabelClearsOnlyMatchingBotLabel(t *testing.T) {
 		_ appstate.PatchInfo,
 		_ waServerSync.SyncdMutation_SyncdOperation,
 		_ bool,
-		validateRetry appStateRetryValidator,
+		validateAttempt appStateMutationValidator,
 	) error {
 		senderCalls++
-		if validateRetry == nil {
+		if validateAttempt == nil {
 			t.Fatalf("delete contact sender did not receive retry validator")
 		}
-		if err := validateRetry(sendCtx); err != nil {
+		if err := validateAttempt(sendCtx); err != nil {
 			t.Fatalf("unchanged bot label should pass retry validation: %v", err)
 		}
 		return nil

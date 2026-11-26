@@ -18,14 +18,14 @@ import (
 	"go.mau.fi/whatsmeow/types"
 )
 
-type appStateRetryValidator func(ctx context.Context) error
+type appStateMutationValidator func(ctx context.Context) error
 
 type appStateOperationSender func(
 	ctx context.Context,
 	patch appstate.PatchInfo,
 	operation waServerSync.SyncdMutation_SyncdOperation,
 	allowRetry bool,
-	validateRetry appStateRetryValidator,
+	validateAttempt appStateMutationValidator,
 ) error
 
 // sendAppStateWithOperation mirrors whatsmeow.Client.SendAppState, including
@@ -36,7 +36,7 @@ func (b *WhatsmeowBridge) sendAppStateWithOperation(
 	patch appstate.PatchInfo,
 	operation waServerSync.SyncdMutation_SyncdOperation,
 	allowRetry bool,
-	validateRetry appStateRetryValidator,
+	validateAttempt appStateMutationValidator,
 ) error {
 	cli := b.client
 	if cli == nil || cli.Store == nil {
@@ -45,6 +45,11 @@ func (b *WhatsmeowBridge) sendAppStateWithOperation(
 	version, hash, err := cli.Store.AppState.GetAppStateVersion(ctx, string(patch.Type))
 	if err != nil {
 		return err
+	}
+	if validateAttempt != nil {
+		if err := validateAttempt(ctx); err != nil {
+			return err
+		}
 	}
 	latestKeyID, err := cli.Store.AppStateKeys.GetLatestAppStateSyncKeyID(ctx)
 	if err != nil {
@@ -110,12 +115,7 @@ func (b *WhatsmeowBridge) sendAppStateWithOperation(
 					internals.DispatchEvent(evt)
 				}
 			}()
-			if validateRetry != nil {
-				if err := validateRetry(ctx); err != nil {
-					return err
-				}
-			}
-			return b.sendAppStateWithOperation(ctx, patch, operation, false, validateRetry)
+			return b.sendAppStateWithOperation(ctx, patch, operation, false, validateAttempt)
 		}
 		return mainErr
 	}
