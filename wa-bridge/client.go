@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waServerSync"
 	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -80,11 +83,12 @@ func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat type
 
 type contactWriteObserver struct {
 	store.ContactStore
-	onError   func(error)
-	mu        sync.Mutex
-	attemptID uint64
-	err       error
-	errID     uint64
+	onError           func(error)
+	onBulkContactSync func(context.Context, []store.ContactEntry)
+	mu                sync.Mutex
+	attemptID         uint64
+	err               error
+	errID             uint64
 }
 
 func (w *contactWriteObserver) beginAttempt() (uint64, bool) {
@@ -130,6 +134,9 @@ func (w *contactWriteObserver) PutContactName(ctx context.Context, user types.JI
 func (w *contactWriteObserver) PutAllContactNames(ctx context.Context, contacts []store.ContactEntry) error {
 	err := w.ContactStore.PutAllContactNames(ctx, contacts)
 	w.record(err)
+	if err == nil && w.onBulkContactSync != nil {
+		w.onBulkContactSync(ctx, contacts)
+	}
 	return err
 }
 
@@ -295,6 +302,7 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 	if b.client == nil || b.client.Store == nil {
 		return errNotReady
 	}
+	b.ensureContactWritesWrapped()
 	b.contactFetchMu.Lock()
 	defer b.contactFetchMu.Unlock()
 
@@ -660,6 +668,22 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 
 	case *events.Archive:
 		b.handleArchiveEvent(evt)
+
+	case *events.Contact:
+		b.handleContactEvent(evt)
+	}
+}
+
+func (b *WhatsmeowBridge) handleContactEvent(evt *events.Contact) {
+	if evt == nil || evt.Action == nil || b.store == nil {
+		return
+	}
+	if targetID := evt.JID.ToNonAD().String(); targetID != "" {
+		ctx := b.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		_ = b.store.ClearUnreconciledContact(ctx, targetID)
 	}
 }
 
@@ -698,6 +722,17 @@ func (b *WhatsmeowBridge) contactWritesSnapshot() *contactWriteObserver {
 	return observer
 }
 
+func (b *WhatsmeowBridge) reconcileBulkContactSync(ctx context.Context, contacts []store.ContactEntry) {
+	if b.store == nil || len(contacts) == 0 {
+		return
+	}
+	for _, entry := range contacts {
+		if targetID := entry.JID.ToNonAD().String(); targetID != "" {
+			_ = b.store.ClearUnreconciledContact(ctx, targetID)
+		}
+	}
+}
+
 func (b *WhatsmeowBridge) ensureContactWritesWrapped() {
 	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
 		return
@@ -705,12 +740,14 @@ func (b *WhatsmeowBridge) ensureContactWritesWrapped() {
 	b.contactWritesMu.Lock()
 	defer b.contactWritesMu.Unlock()
 	if observer, ok := b.client.Store.Contacts.(*contactWriteObserver); ok {
+		observer.onBulkContactSync = b.reconcileBulkContactSync
 		b.contactWrites = observer
 		return
 	}
 	observer := &contactWriteObserver{
-		ContactStore: b.client.Store.Contacts,
-		onError:      b.invalidateContactSyncForWriteError,
+		ContactStore:      b.client.Store.Contacts,
+		onError:           b.invalidateContactSyncForWriteError,
+		onBulkContactSync: b.reconcileBulkContactSync,
 	}
 	b.client.Store.Contacts = observer
 	b.contactWrites = observer
@@ -1156,6 +1193,7 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 	}
 
 	resolvedNumber := phoneDigitsFromJID(jid)
+	lookupJID := jid.ToNonAD().String()
 	lidPhoneVerified := jid.Server != types.HiddenUserServer
 	savedName := strings.TrimSpace(info.FullName)
 	if savedName == "" {
@@ -1166,6 +1204,7 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 			if pnInfo, err := b.client.Store.Contacts.GetContact(ctx, pn); err == nil {
 				lidPhoneVerified = true
 				resolvedNumber = phoneDigitsFromJID(pn)
+				lookupJID = pn.ToNonAD().String()
 				pnSaved := strings.TrimSpace(pnInfo.FullName)
 				if pnSaved == "" {
 					pnSaved = strings.TrimSpace(pnInfo.FirstName)
@@ -1177,6 +1216,24 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 				if strings.TrimSpace(info.PushName) == "" {
 					info.PushName = pnInfo.PushName
 				}
+			}
+		}
+	}
+
+	finalSaved := savedNameFromContactInfo(info)
+	if b.store != nil && lookupJID != "" {
+		if finalSaved != "" {
+			_ = b.store.ClearUnreconciledContact(ctx, lookupJID)
+		} else if unreconciled, err := b.store.HasUnreconciledContact(ctx, lookupJID); err != nil {
+			lidPhoneVerified = false
+		} else if unreconciled {
+			targetJID, parseErr := types.ParseJID(lookupJID)
+			if parseErr != nil {
+				lidPhoneVerified = false
+			} else if surviving, checkErr := b.hasAnyActiveMutationForPatch(ctx, buildContactRemovalPatch(targetJID)); checkErr != nil || surviving {
+				lidPhoneVerified = false
+			} else {
+				_ = b.store.ClearUnreconciledContact(ctx, lookupJID)
 			}
 		}
 	}
@@ -1378,17 +1435,141 @@ func (b *WhatsmeowBridge) SetContactLabel(ctx context.Context, phone, name strin
 	if err := b.ensureLoggedIn(); err != nil {
 		return err
 	}
+	return b.setContactLabelWithInternals(ctx, phone, name, b.client.DangerousInternals())
+}
+
+func (b *WhatsmeowBridge) setContactLabelWithInternals(ctx context.Context, phone, name string, internals appStateInternals) error {
+	if err := b.ensureLoggedIn(); err != nil {
+		return err
+	}
 	digits := digitsOnly(phone)
 	if digits == "" {
 		return fmt.Errorf("%w: invalid phone %q", errBadRequest, phone)
 	}
 	target := types.NewJID(digits, types.DefaultUserServer)
-	if err := b.client.SendAppState(ctx, buildContactLabelPatch(target, name)); err != nil {
+	patch := buildContactLabelPatch(target, name)
+	committed, err := b.sendAppStatePatchWithKeyLoop(ctx, patch, waServerSync.SyncdMutation_SET, nil, true, nil, internals)
+	if err != nil {
 		return fmt.Errorf("send contact label app state: %w", err)
 	}
+	clean := strings.TrimSpace(name)
+	if !b.recordBotContactLabelIfUnchanged(ctx, target, patch, committed, clean) {
+		// Post-write sync already applied a newer mutation (e.g. a user rename) at this index.
+		return nil
+	}
+	if b.store != nil {
+		_ = b.store.ClearUnreconciledContact(ctx, target.String())
+	}
 	if b.client.Store != nil && b.client.Store.Contacts != nil {
-		clean := strings.TrimSpace(name)
 		_ = b.client.Store.Contacts.PutContactName(ctx, target, clean, clean)
+	}
+	return nil
+}
+
+func (b *WhatsmeowBridge) recordBotContactLabelIfUnchanged(
+	ctx context.Context,
+	target types.JID,
+	patch appstate.PatchInfo,
+	committed appStateCommittedMutation,
+	labelName string,
+) bool {
+	if b.client == nil || b.client.Store == nil || b.client.Store.AppState == nil || len(committed.keyID) == 0 || len(committed.indexMAC) == 0 || len(committed.valueMAC) == 0 {
+		return true
+	}
+	liveMAC, err := b.client.Store.AppState.GetAppStateMutationMAC(ctx, string(patch.Type), committed.indexMAC)
+	if err != nil {
+		return false
+	}
+	if !bytes.Equal(liveMAC, committed.valueMAC) {
+		return false
+	}
+	if b.store != nil {
+		_ = b.store.SaveBotContactLabel(ctx, target.String(), committed.keyID, committed.indexMAC, committed.valueMAC, labelName)
+	}
+	return true
+}
+
+func buildContactRemovalPatch(target types.JID) appstate.PatchInfo {
+	return appstate.PatchInfo{
+		Type: appstate.WAPatchCriticalUnblockLow,
+		Mutations: []appstate.MutationInfo{{
+			Index:   []string{appstate.IndexContact, target.String()},
+			Version: 2,
+			Value: &waSyncAction.SyncActionValue{
+				ContactAction: &waSyncAction.ContactAction{
+					FullName:                 proto.String(""),
+					SaveOnPrimaryAddressbook: proto.Bool(false),
+				},
+			},
+		}},
+	}
+}
+
+var (
+	errContactLabelChanged        = errors.New("contact label changed before removal retry")
+	errContactLabelAlreadyCleared = errors.New("contact label already cleared")
+)
+
+func savedNameFromContactInfo(info types.ContactInfo) string {
+	savedName := strings.TrimSpace(info.FullName)
+	if savedName == "" {
+		savedName = strings.TrimSpace(info.FirstName)
+	}
+	return savedName
+}
+
+func (b *WhatsmeowBridge) DeleteContactLabel(ctx context.Context, phone, expectedName string) error {
+	return b.deleteContactLabelWithSender(ctx, phone, expectedName, b.sendAppStateWithOperation)
+}
+
+func (b *WhatsmeowBridge) deleteContactLabelWithSender(ctx context.Context, phone, expectedName string, send appStateOperationSender) error {
+	if err := b.ensureLoggedIn(); err != nil {
+		return err
+	}
+	digits := digitsOnly(phone)
+	if digits == "" {
+		return fmt.Errorf("%w: invalid phone %q", errBadRequest, phone)
+	}
+	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
+		return errNotReady
+	}
+	expectedName = strings.TrimSpace(expectedName)
+	if expectedName == "" {
+		return fmt.Errorf("%w: expectedName is required", errBadRequest)
+	}
+	target := types.NewJID(digits, types.DefaultUserServer)
+	contactInfo, err := b.client.Store.Contacts.GetContact(ctx, target)
+	if err != nil {
+		return fmt.Errorf("read contact before removal: %w", err)
+	}
+	if savedNameFromContactInfo(contactInfo) != expectedName {
+		return nil
+	}
+	validateAttempt := func(validateCtx context.Context) error {
+		latestInfo, err := b.client.Store.Contacts.GetContact(validateCtx, target)
+		if err != nil {
+			return fmt.Errorf("read contact before removal retry: %w", err)
+		}
+		got := savedNameFromContactInfo(latestInfo)
+		if got == "" {
+			return errContactLabelAlreadyCleared
+		}
+		if got != expectedName {
+			return errContactLabelChanged
+		}
+		return nil
+	}
+	if err := send(ctx, buildContactRemovalPatch(target), waServerSync.SyncdMutation_REMOVE, true, validateAttempt); err != nil {
+		if errors.Is(err, errContactLabelChanged) || errors.Is(err, errContactLabelAlreadyCleared) {
+			b.log.Infof("contact label removal skipped for %s because the contact name changed", target)
+			return nil
+		}
+		return fmt.Errorf("send contact removal app state: %w", err)
+	}
+	if latestInfo, readErr := b.client.Store.Contacts.GetContact(ctx, target); readErr == nil && savedNameFromContactInfo(latestInfo) == expectedName {
+		if surviving, checkErr := b.hasAnyActiveMutationForPatch(ctx, buildContactRemovalPatch(target)); checkErr == nil && !surviving {
+			_ = b.client.Store.Contacts.PutContactName(ctx, target, "", "")
+		}
 	}
 	return nil
 }

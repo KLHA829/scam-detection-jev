@@ -67,6 +67,19 @@ CREATE TABLE IF NOT EXISTS bridge_archive_state (
 	updated_at INTEGER NOT NULL,
 	PRIMARY KEY (our_jid, chat_jid)
 );
+
+CREATE TABLE IF NOT EXISTS bridge_bot_contact_labels (
+	jid TEXT NOT NULL,
+	key_id BLOB NOT NULL,
+	index_mac BLOB NOT NULL,
+	value_mac BLOB NOT NULL,
+	label_name TEXT NOT NULL,
+	PRIMARY KEY (jid, key_id)
+);
+
+CREATE TABLE IF NOT EXISTS bridge_unreconciled_contacts (
+	jid TEXT PRIMARY KEY
+);
 `
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		return nil, fmt.Errorf("init bridge schema: %w", err)
@@ -361,6 +374,113 @@ func (s *BridgeStore) GetLastChatMessage(ctx context.Context, chatJID string) (S
 	out.FromMe = fromMe != 0
 	out.Timestamp = time.Unix(tsUnix, 0)
 	return out, true, nil
+}
+
+type BotContactLabelRecord struct {
+	JID       string
+	KeyID     []byte
+	IndexMAC  []byte
+	ValueMAC  []byte
+	LabelName string
+}
+
+func (s *BridgeStore) SaveBotContactLabel(ctx context.Context, jid string, keyID, indexMAC, valueMAC []byte, labelName string) error {
+	if s == nil || s.db == nil || jid == "" || len(keyID) == 0 || len(indexMAC) == 0 || len(valueMAC) == 0 {
+		return nil
+	}
+	_, err := s.db.ExecContext(
+		ctx,
+		`INSERT INTO bridge_bot_contact_labels (jid, key_id, index_mac, value_mac, label_name)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(jid, key_id) DO UPDATE SET
+			index_mac = excluded.index_mac,
+			value_mac = excluded.value_mac,
+			label_name = excluded.label_name`,
+		jid,
+		keyID,
+		indexMAC,
+		valueMAC,
+		labelName,
+	)
+	if err != nil {
+		return fmt.Errorf("save bot contact label: %w", err)
+	}
+	return nil
+}
+
+func (s *BridgeStore) ListBotContactLabels(ctx context.Context, jid string) ([]BotContactLabelRecord, error) {
+	if s == nil || s.db == nil || jid == "" {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT key_id, index_mac, value_mac, label_name FROM bridge_bot_contact_labels WHERE jid = ?`,
+		jid,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list bot contact labels: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []BotContactLabelRecord
+	for rows.Next() {
+		rec := BotContactLabelRecord{JID: jid}
+		if err := rows.Scan(&rec.KeyID, &rec.IndexMAC, &rec.ValueMAC, &rec.LabelName); err != nil {
+			return nil, fmt.Errorf("scan bot contact label: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate bot contact labels: %w", err)
+	}
+	return out, nil
+}
+
+func (s *BridgeStore) DeleteBotContactLabel(ctx context.Context, jid string, keyID []byte) error {
+	if s == nil || s.db == nil || jid == "" || len(keyID) == 0 {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM bridge_bot_contact_labels WHERE jid = ? AND key_id = ?`, jid, keyID)
+	if err != nil {
+		return fmt.Errorf("delete bot contact label: %w", err)
+	}
+	return nil
+}
+
+func (s *BridgeStore) MarkUnreconciledContact(ctx context.Context, jid string) error {
+	if s == nil || s.db == nil || jid == "" {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO bridge_unreconciled_contacts (jid) VALUES (?) ON CONFLICT(jid) DO NOTHING`, jid)
+	if err != nil {
+		return fmt.Errorf("mark unreconciled contact: %w", err)
+	}
+	return nil
+}
+
+func (s *BridgeStore) ClearUnreconciledContact(ctx context.Context, jid string) error {
+	if s == nil || s.db == nil || jid == "" {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM bridge_unreconciled_contacts WHERE jid = ?`, jid)
+	if err != nil {
+		return fmt.Errorf("clear unreconciled contact: %w", err)
+	}
+	return nil
+}
+
+func (s *BridgeStore) HasUnreconciledContact(ctx context.Context, jid string) (bool, error) {
+	if s == nil || s.db == nil || jid == "" {
+		return false, nil
+	}
+	var found int
+	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM bridge_unreconciled_contacts WHERE jid = ? LIMIT 1`, jid).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("query unreconciled contact: %w", err)
+	}
+	return true, nil
 }
 
 func (s *BridgeStore) GetMeta(ctx context.Context, key string) (string, bool, error) {
