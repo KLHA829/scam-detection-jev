@@ -59,13 +59,13 @@ func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat type
 	if err := w.ChatSettingsStore.PutArchived(ctx, chat, archived); err != nil {
 		return err
 	}
+	if w.onPutArchived != nil && chatID != "" {
+		w.onPutArchived(chatID, prevFound, prevArchived, archived)
+	}
 	if w.putArchiveState != nil && chatID != "" {
 		if err := w.putArchiveState(ctx, chatID, archived); err != nil {
 			return err
 		}
-	}
-	if w.onPutArchived != nil && chatID != "" {
-		w.onPutArchived(chatID, prevFound, prevArchived, archived)
 	}
 	return nil
 }
