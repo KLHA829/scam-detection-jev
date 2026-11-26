@@ -29,6 +29,8 @@ const (
 	defaultSyncRetryDelay        = 2 * time.Second
 	maxSyncAttempts              = 5
 	maxArchiveTransitionsPerChat = 64
+	metaKeyContactImportRevision = "lid_contact_import_revision"
+	lidContactImportRevision     = "1"
 )
 
 type putArchiveTransition struct {
@@ -226,6 +228,20 @@ func (b *WhatsmeowBridge) collectContactAppStateMutations(ctx context.Context, m
 	)
 }
 
+func (b *WhatsmeowBridge) shouldForceFullContactImport(ctx context.Context, requestedFullSync bool) (bool, error) {
+	if requestedFullSync {
+		return true, nil
+	}
+	if b.store == nil {
+		return false, nil
+	}
+	rev, found, err := b.store.GetMeta(ctx, metaKeyContactImportRevision)
+	if err != nil {
+		return false, err
+	}
+	return !found || rev != lidContactImportRevision, nil
+}
+
 // fetchContactAppState mirrors whatsmeow's contact sync, with the mutation
 // stream visible to the bridge so lid_contact rows are not dropped before
 // whatsmeow's bulk contact write. b.contactFetchMu is separate from
@@ -242,6 +258,11 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 	name := appstate.WAPatchCriticalUnblockLow
 	if until := b.contactAppStateBackoffUntil; time.Now().Before(until) {
 		return fmt.Errorf("%w: not fetching %s until %s", whatsmeow.ErrAppStateRateLimited, name, until.Format(time.RFC3339))
+	}
+	var err error
+	fullSync, err = b.shouldForceFullContactImport(ctx, fullSync)
+	if err != nil {
+		return err
 	}
 	if fullSync {
 		if err := b.client.Store.AppState.DeleteAppStateVersion(ctx, string(name)); err != nil {
@@ -290,6 +311,11 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 			return fmt.Errorf("apply contact app state %s mutations: %w", name, err)
 		}
 		state = newState
+	}
+	if b.store != nil {
+		if err := b.store.SetMeta(ctx, metaKeyContactImportRevision, lidContactImportRevision); err != nil {
+			return fmt.Errorf("persist contact import revision: %w", err)
+		}
 	}
 	return nil
 }

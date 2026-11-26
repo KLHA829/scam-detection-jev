@@ -462,6 +462,64 @@ func TestContactRecoveryDuringInflightSyncForcesFullResync(t *testing.T) {
 	}
 }
 
+func TestUpgradeFromNonzeroAppStateVersionForcesFullLidReplay(t *testing.T) {
+	ctx := context.Background()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "upgrade-lid-replay.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	defer func() { _ = bridge.Close() }()
+
+	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
+	}
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
+	}
+
+	if err := bridge.client.Store.AppState.PutAppStateVersion(ctx, string(appstate.WAPatchCriticalUnblockLow), 100, [128]byte{1}); err != nil {
+		t.Fatalf("seed nonzero app state version: %v", err)
+	}
+
+	force, err := bridge.shouldForceFullContactImport(ctx, false)
+	if err != nil {
+		t.Fatalf("shouldForceFullContactImport: %v", err)
+	}
+	if !force {
+		t.Fatal("upgrade without lid_contact_import_revision must force full replay even with nonzero app-state version")
+	}
+
+	if err := bridge.fetchContactAppState(ctx, false); err == nil {
+		t.Fatal("expected disconnected FetchAppStatePatches to return error")
+	}
+	versionAfterFailedUpgrade, _, err := bridge.client.Store.AppState.GetAppStateVersion(ctx, string(appstate.WAPatchCriticalUnblockLow))
+	if err != nil {
+		t.Fatalf("GetAppStateVersion after failed upgrade replay: %v", err)
+	}
+	if versionAfterFailedUpgrade != 0 {
+		t.Fatalf("expected upgrade replay to reset app-state version to 0 before snapshot fetch, got %d", versionAfterFailedUpgrade)
+	}
+	if _, found, err := bridge.store.GetMeta(ctx, metaKeyContactImportRevision); err != nil || found {
+		t.Fatalf("failed upgrade replay must not persist import revision, got found=%v err=%v", found, err)
+	}
+
+	if err := bridge.store.SetMeta(ctx, metaKeyContactImportRevision, lidContactImportRevision); err != nil {
+		t.Fatalf("SetMeta: %v", err)
+	}
+	forceAfterReplay, err := bridge.shouldForceFullContactImport(ctx, false)
+	if err != nil {
+		t.Fatalf("shouldForceFullContactImport after replay: %v", err)
+	}
+	if forceAfterReplay {
+		t.Fatal("after lid_contact_import_revision is persisted, incremental sync should not force full replay")
+	}
+}
+
 func TestBuildContactLabelPatch(t *testing.T) {
 	target := types.NewJID("85261234567", types.DefaultUserServer)
 
