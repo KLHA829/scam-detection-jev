@@ -8,15 +8,26 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"fmt"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
 	waBinary "go.mau.fi/whatsmeow/binary"
 	"go.mau.fi/whatsmeow/proto/waServerSync"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 )
+
+var errActiveAppStateRecordNotFound = errors.New("active app state record not found for removal")
+
+type appStateKeyIDLister interface {
+	ListAppStateSyncKeyIDs(ctx context.Context) ([][]byte, error)
+}
 
 type appStateMutationValidator func(ctx context.Context) error
 
@@ -52,6 +63,115 @@ func (b *WhatsmeowBridge) sendAppStateWithOperation(
 	return b.sendAppStateWithOperationAndInternals(ctx, patch, operation, allowRetry, validateAttempt, b.client.DangerousInternals())
 }
 
+func patchHasActiveMutationWithKey(
+	ctx context.Context,
+	deviceStore *store.Device,
+	patch appstate.PatchInfo,
+	keyID []byte,
+) (bool, error) {
+	if len(patch.Mutations) == 0 {
+		return false, nil
+	}
+	keyData, err := deviceStore.AppStateKeys.GetAppStateSyncKey(ctx, keyID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get app state key %x: %w", keyID, err)
+	}
+	if keyData == nil {
+		return false, nil
+	}
+	keys := expandAppStateKeys(keyData.Data)
+	for _, mutationInfo := range patch.Mutations {
+		indexBytes, err := json.Marshal(mutationInfo.Index)
+		if err != nil {
+			return false, fmt.Errorf("failed to marshal mutation index: %w", err)
+		}
+		indexMAC := concatAndHMAC(sha256.New, keys.index, indexBytes)
+		prevMAC, err := deviceStore.AppState.GetAppStateMutationMAC(ctx, string(patch.Type), indexMAC)
+		if err != nil {
+			return false, fmt.Errorf("failed to check active app state mutation MAC: %w", err)
+		}
+		if prevMAC == nil {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (b *WhatsmeowBridge) listAppStateSyncKeyIDs(ctx context.Context) ([][]byte, error) {
+	cli := b.client
+	if cli == nil || cli.Store == nil {
+		return nil, errNotReady
+	}
+	if lister, ok := cli.Store.AppStateKeys.(appStateKeyIDLister); ok {
+		return lister.ListAppStateSyncKeyIDs(ctx)
+	}
+	if b.db == nil || cli.Store.ID == nil {
+		return nil, nil
+	}
+	rows, err := b.db.QueryContext(ctx, `SELECT key_id FROM whatsmeow_app_state_sync_keys WHERE jid = $1 ORDER BY timestamp DESC`, cli.Store.ID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list app state sync key IDs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids [][]byte
+	for rows.Next() {
+		var id []byte
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan app state sync key ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate app state sync key IDs: %w", err)
+	}
+	return ids, nil
+}
+
+func (b *WhatsmeowBridge) resolveAppStateKeyIDForOperation(
+	ctx context.Context,
+	patch appstate.PatchInfo,
+	operation waServerSync.SyncdMutation_SyncdOperation,
+) ([]byte, error) {
+	cli := b.client
+	if cli == nil || cli.Store == nil || cli.Store.AppStateKeys == nil || cli.Store.AppState == nil {
+		return nil, errNotReady
+	}
+	latestKeyID, err := cli.Store.AppStateKeys.GetLatestAppStateSyncKeyID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest app state key ID: %w", err)
+	}
+	if latestKeyID == nil {
+		return nil, fmt.Errorf("no app state keys found, creating app state keys is not supported")
+	}
+	if operation != waServerSync.SyncdMutation_REMOVE {
+		return latestKeyID, nil
+	}
+	matched, err := patchHasActiveMutationWithKey(ctx, cli.Store, patch, latestKeyID)
+	if err != nil {
+		return nil, err
+	}
+	if matched {
+		return latestKeyID, nil
+	}
+	candidateIDs, err := b.listAppStateSyncKeyIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, candidateID := range candidateIDs {
+		if bytes.Equal(candidateID, latestKeyID) {
+			continue
+		}
+		matched, err := patchHasActiveMutationWithKey(ctx, cli.Store, patch, candidateID)
+		if err != nil {
+			return nil, err
+		}
+		if matched {
+			return candidateID, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: %s", errActiveAppStateRecordNotFound, patch.Type)
+}
+
 func (b *WhatsmeowBridge) sendAppStateWithOperationAndInternals(
 	ctx context.Context,
 	patch appstate.PatchInfo,
@@ -74,16 +194,13 @@ func (b *WhatsmeowBridge) sendAppStateWithOperationAndInternals(
 				return err
 			}
 		}
-		latestKeyID, err := cli.Store.AppStateKeys.GetLatestAppStateSyncKeyID(ctx)
+		keyID, err := b.resolveAppStateKeyIDForOperation(ctx, patch, operation)
 		if err != nil {
-			return fmt.Errorf("failed to get latest app state key ID: %w", err)
-		}
-		if latestKeyID == nil {
-			return fmt.Errorf("no app state keys found, creating app state keys is not supported")
+			return err
 		}
 
 		state := appstate.HashState{Version: version, Hash: hash}
-		encodedPatch, err := encodeAppStatePatchWithOperation(ctx, cli.Store, latestKeyID, state, patch, operation)
+		encodedPatch, err := encodeAppStatePatchWithOperation(ctx, cli.Store, keyID, state, patch, operation)
 		if err != nil {
 			return err
 		}
