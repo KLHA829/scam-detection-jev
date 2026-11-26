@@ -1100,13 +1100,15 @@ func TestNewWhatsmeowBridgeSQLiteInitSyncReconnectAndLID(t *testing.T) {
 	}
 	var fetchMu sync.Mutex
 	fetchFail := true
+	fetchCalls := 0
 	attemptDone := make(chan syncAttempt, 16)
-	bridge.syncRetryDelay = 15 * time.Millisecond
+	bridge.syncRetryDelay = 800 * time.Millisecond
 	bridge.onSyncAttemptDone = func(_ uint64, fullSync bool, err error) {
 		attemptDone <- syncAttempt{fullSync: fullSync, err: err}
 	}
 	bridge.fetchContactsFn = func(_ context.Context, fullSync bool) error {
 		fetchMu.Lock()
+		fetchCalls++
 		fail := fetchFail
 		fetchMu.Unlock()
 		if fail {
@@ -1151,6 +1153,10 @@ func TestNewWhatsmeowBridgeSQLiteInitSyncReconnectAndLID(t *testing.T) {
 	fetchMu.Lock()
 	fetchFail = false
 	fetchMu.Unlock()
+	select {
+	case bridge.syncRetryWake <- struct{}{}:
+	default:
+	}
 
 	deadline := time.After(2 * time.Second)
 	for {
@@ -1169,6 +1175,12 @@ func TestNewWhatsmeowBridgeSQLiteInitSyncReconnectAndLID(t *testing.T) {
 recovered:
 	if !bridge.Health().ContactsSynced {
 		t.Fatal("expected ContactsSynced=true after fullSync retry succeeded")
+	}
+	fetchMu.Lock()
+	callsAfterRecovery := fetchCalls
+	fetchMu.Unlock()
+	if callsAfterRecovery != 2 {
+		t.Fatalf("successful retry must complete without an extra full refetch, got %d fetches", callsAfterRecovery)
 	}
 	unsavedAfterCatchup, err := bridge.GetContact(ctx, "85261234567@c.us")
 	if err != nil {
