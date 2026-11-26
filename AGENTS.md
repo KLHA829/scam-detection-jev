@@ -70,63 +70,15 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - `python jevlike_serve.py` (or `npm run jevlike`) in terminal 1 — **PII mask head required**; then `npm start` in terminal 2 with `LLM_REVIEW_*` set.
 - `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — stub worker for offline tests (mask + optional fixed scores).
 
-## Current state (update with the date when it changes) — 2026-11-26
+## Current state — 2026-11-26
 
-- The whatsmeow transport removes bot-written contact labels through a real contact `REMOVE` app-state mutation (`DELETE /v1/contact/label` with the expected bot-written name), not a blank-name `SET`; removal is skipped when the live contact name no longer matches, including after a 409 conflict resync. `POST /v1/contact/label` remains the low-level `SET` mutation path, and Mini-WhatsApp models the distinction (2026-11-26).
+- whatsmeow removes bot-written contact labels with `DELETE /v1/contact/label` as a real `REMOVE` mutation, guarded by the expected bot-written name through conflict resync; `POST` remains low-level `SET`, and Mini-WhatsApp models the distinction.
 
-- Runtime `resolveTransportName` now defaults `WA_TRANSPORT` to `whatsmeow` (and `createWhatsmeowTransport` defaults `WA_BRIDGE_AUTO_START` on when `WA_BRIDGE_URL`/`WA_BRIDGE_TOKEN` are unset, retrying transient ephemeral loopback port bind conflicts up to 3 times on startup). Set `WA_TRANSPORT=wwebjs` for the legacy Chromium adapter (2026-11-25).
-- The context, primary and guided-explanation prompts name the allowlisted (official) domains in the masked text, and those domains are not masked, so the model no longer sees `https://payme.XXX` for a real PayMe link and calls it a fake payment page. Lookalike and unknown domains stay masked and add nothing to the prompt; unmasking lookalikes made the model archive warnings that quote a fake domain (2026-11-25).
-- The bot supports Chromium-free Linux/macOS/Windows operation via `WaTransport` (`lib/wa-transport/`) and the pure-Go `wa-bridge/` (`whatsmeow` + `modernc.org/sqlite`) sidecar (`WA_TRANSPORT=whatsmeow`, now default); `Dockerfile` uses a multi-stage Go + Node 22 build with `/data` state paths, `npm run wa-bridge:build` builds the sidecar, and `npm run test:e2e:boot:whatsmeow` verifies Chromium-free QR emission in CI (2026-11-24).
-- A 1:1 chat the user moves out of the archive (`chat_archived` with `prev=true`, `curr=false`) is recorded in `USER_RESTORED_CHATS_PATH` (default `./user-restored-chats.json`). Model verdicts on that chat then go to the self-chat review card like a saved contact, after any cooldown or restart; a curated malicious-host match from an unsaved sender still archives and blocks, while a saved or unknown-status sender gets the review card (2026-11-24).
-- Saved status of a `@lid` sender is read from its phone-number contact (the address book is keyed by phone number), unless the LID record already says saved. When it cannot be read, or WhatsApp gives no saved flag, the status is unknown: like a saved contact it only gets the review card and is never auto-archived, blocked or labelled (2026-11-24).
-- `/v1/mask` scores a message longer than the PII head's trained context (`context_tokens`, 96 by default) in overlapping windows of that size and masks a character when any window flags it, so long messages reach AI review instead of failing as truncated. Trailing characters the tokenizer emits no token for (spaces, an emoji variation selector) are not truncation. A tokenizer that still drops text fails the mask (2026-11-24).
-- A `（可疑推銷）` label the bot wrote is removed when a later review of the chat is a confident `no_action` with `pitch: false`; a contact the user saved or renamed is left alone (2026-11-23).
-- A first message from an unsaved number archives only on strong evidence (`strong: true`); a weak scam verdict waits for the sender's next message, so a clinic or shop that writes first after the user gave a number in person is not archived (2026-11-23).
-- The context review transcript includes the user's own messages in 1:1 chats (recorded from `message_create`, edits replaced in place), masked like inbound and marked `user:`; the prompt treats a payment, deposit or details request that completes a purchase, booking or service the user asked for as ordinary chat. Inbound-only transcripts are unchanged (2026-11-23).
-- Context review returns a separate `pitch` verdict for unsolicited investment, trading or health-product pitches; when it does not archive, an unsaved sender is renamed `（可疑推銷）` and the chat stays in place. Names the bot wrote are tracked per number, so a labelled sender that later asks for a code or money still archives, while a contact the user saved under the same text stays protected (2026-11-22).
-- The context LLM prompt (default path) lists money already sent to the user, bank alerts that only report a transaction or login on the user's own account, and one-time codes the user is told not to share as ordinary chat (no_action) (2026-11-22).
-- Short-link money hits still require the existing money-transfer ask: a link word alone no longer counts; without the unchanged urgency/account trigger, the link must be the payment destination in the same clause. This narrows the heuristic; masked AI still decides whether to archive (2026-11-22).
-- Warning-only scam reports bypass all hard-link rules for saved and unsaved senders, forwarded or not; quoted/reported/negated lures can be reviewed, but direct asks and multiple flagged URL occurrences retain hard-link handling (2026-11-22).
-
-- Guided blocks recheck the live contact after rename pacing, preserving newly saved names and saved-contact unblock metadata without cancelling the explicit block (2026-11-22).
-- Successful poll and command unblocks append to `BLOCK_LOG_PATH`; recent blocks and history-based 解除 skip unblocked contacts until they are blocked again (2026-11-21).
-- Primary LLM archives require a `scam` label and the confidence gate; contradictory `should_archive: true` on non-scam or unknown labels is ignored (2026-11-21).
-- Short-link impersonation requires affirmative self-identification or a WhatsApp official header; bare authority mentions and anti-scam advice such as 銀行職員唔會叫你撳 bit.ly/xxx go to mask → LLM rather than rule-only archive (2026-11-21).
-- Automatic blocks refresh contact state before blocking and renaming; automatic archives refresh before archiving. A newly saved or unverified contact defers a pending action rather than falling back to automatic archive. A temporary contact written by the same successful block does not prevent the archive. Explicit poll choices still apply to saved contacts.
-- Edits invalidate pending guided deliveries as well as open polls, bypassing recommendation cooldown; stale deliveries do not publish new cards, and polls already in flight are registered void.
-- Review and unblock choices persist consumption before resolving the in-memory poll. A failed save leaves the choice retryable and notifies the operator without taking action.
-
-- Automatic LLM cooldown starts only after a successful archive; deferred review cooldown starts on the recommendation. Benign and low-confidence reviews do not suppress follow-up messages. An edit that voids a guided poll re-reviews the edited text even during the cooldown; the context review sees the edited text in place of the original.
-- Bare-host lookalike checks require a two-letter or common TLD; uncommon-TLD bare hosts remain eligible for malicious-host matching.
-- Only a URL or email-domain match on the malicious-host list can bypass AI (`obvious_scam`). Lookalike and short-link hits require masked AI confirmation. Only a malicious-host match on an unsaved contact blocks (`封鎖·惡意域名`). Extend the list in `data/malicious-hosts.json` (optional `MALICIOUS_HOSTS_PATH`). A bare host with no scheme counts. Allowlisted hosts such as `sf-express.com` are not lookalikes, and neither are `github.io`, `medium.com`, or `blogspot.com`. The brand has to start the label, on the registrable name or a subdomain, so `not-hangseng.com` and `not-hangseng.evil.com` do not match; `hsbc.evil.com` and `whatsapp-secure.evil.com` do. A hyphen stays inside the label, so `not-bit.ly` is not a short link. Fullwidth URLs are folded before the check. `youtu.be` is not a short link. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) do not archive or block. All other DMs: mask → context or primary LLM. No thread window scoring. Edited messages re-run the same path, and an open guided poll for the original text is void: a later vote on it does nothing and the bot says it was void. A phone JID is kept when the paired id is `@lid`.
-- A failed archive still messages the operator. The receipt says the archive did not happen. Block, rename, mute, archive, the receipt, and the guided card share one WhatsApp write queue. A message that ends in ignore does not enter that queue.
-- Unblock deletes the temporary contact only while its live name still exactly matches the bot-written block name; edited or saved contacts are left alone.
-- A mask response that is truncated, short a row, or has a non-integer span is a failed mask. The LLM call is skipped. Empty span lists (no PII) are still success.
-
-- **Live worker role:** PII mask head (`JEVLIKE_MASK_CKPT` / `models/jevlike_hf_pii_mask.pt`). Scam scorer checkpoint (`jevlike-hf-r1`) remains for **lab eval only**, not inbound decisions.
-- `jevlike_serve.py` does **not** read `.env` (no dotenv). Export `JEVLIKE_MASK_CKPT` (and optional `JEVLIKE_CKPT` for `/v1/score`) in the shell that starts the worker.
-- Primary LLM precision on a labelled real corpus is **not yet published** — use `scripts/review-eval.js` (`--mode all`, `--llm dry|live`). Stub unit tests prove wiring, not FPR/FNR.
-- `CONTEXT_LLM_ENABLED` (default **on**) uses the same mask + chat API over the latest messages, the user's own included (default 10, current message included). Model answers do not auto-block. Saved contacts stay unblockable.
-- PII masking is a **separate** jevlike `AttentionHead` (`scripts/train_pii_mask.py` →
-  `models/jevlike_hf_pii_mask.pt`, gitignored). It is initialised from the r1 head and trained with
-  token-level labels, not the stock whole-message scam loss. The scam checkpoint is not overwritten.
-  On a synthetic held-out split the char F1 was 1.0; that is not the 366-row HK set. Live `/v1/mask`
-  returns only that head's spans. Lure words such as `驗證碼` are cleared from the mask so the later
-  model still sees them. Without the head the route returns 503 and nothing is sent.
-  `find_mask_spans` remains the training-label helper and the offline stub, not a live fallback.
-  Its digit classes are ASCII `[0-9]`, the same characters JavaScript `\d` matches. Fullwidth phones
-  and Chinese-numeral phones stay on the training-only extra gold, not on that shared stub.
-- Unsaved contacts auto-block only on a current-message malicious-host match. Lookalike and short-link rules need an AI archive recommendation; they do not block. `sf-express.com` and the other allowlisted hosts are not lookalikes. A news quote of 封號 / USDT / 轉數快 / 驗證碼 / 順豐清關 does not hard-hit.
-- Before the setup poll is answered (or `OPERATOR_MODE` is set), unsaved chats may be auto-archived but not auto-blocked; suspicious saved chats still get a review card.
-  Curated URL and email-domain matches are acted on before mask/LLM, so a slow LLM does not delay their archive or the URL-only block. `guided` forwards a suspicious DM to the operator, explains it only after
-  `/v1/mask`, and waits for 封鎖並封存 / 只封存 / 留低. A failed mask skips the explanation and still shows
-  the poll. The explanation model cannot take that action. An explicit 封鎖並封存 is the only way a saved
-  contact is blocked.  After every completed archive or block (automatic, or a guided 封鎖並封存 / 只封存),
- the bot messages the operator's own chat with the chat-list name, the phone, and the local reason. When a
- block actually succeeded, a follow-up self-chat poll offers **解除封鎖** / **保持封鎖** (archive-only: no poll).
- Unblock does not unarchive; confirmation says the chat may stay archived. The
-  optional Cantonese paragraph on an automatic receipt uses the masked transcript only; the name and phone
-  are attached locally and are not sent to the chat API. A failed mask still sends the receipt. Choosing 留低 does not.
+- Default transport is `whatsmeow` (`WA_TRANSPORT=whatsmeow`, `WA_BRIDGE_AUTO_START` on when `WA_BRIDGE_URL`/`WA_BRIDGE_TOKEN` are unset); set `WA_TRANSPORT=wwebjs` for legacy Chromium.
+- `CONTEXT_LLM_ENABLED` (default **on**) reviews masked 1:1 transcripts (inbound + `user:` messages), unmasks allowlisted `officialHosts` domains in prompts, requires `strong: true` on first unsaved message, and labels unsolicited pitches `（可疑推銷）` via `BOT_CONTACT_NAMES_PATH` (removed on confident `no_action` with `pitch: false`).
+- Chats restored from archive (`USER_RESTORED_CHATS_PATH`), whether seen live or reconciled from a whatsmeow full sync, and `@lid` / unknown-saved-status contacts go to the self-chat review card instead of auto-archive/block.
+- `/v1/mask` chunks messages longer than `context_tokens` (96) with overlapping windows; `jevlike_serve.py` does not read `.env` (export `JEVLIKE_MASK_CKPT`).
+- See [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) for historical state and detailed rationale.
 
 ## Landmines
 
