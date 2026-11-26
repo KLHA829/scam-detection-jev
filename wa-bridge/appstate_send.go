@@ -127,6 +127,17 @@ func (b *WhatsmeowBridge) listAppStateSyncKeyIDs(ctx context.Context) ([][]byte,
 	return ids, nil
 }
 
+func contactJIDFromPatch(patch appstate.PatchInfo) string {
+	if len(patch.Mutations) == 0 {
+		return ""
+	}
+	idx := patch.Mutations[0].Index
+	if len(idx) == 2 && idx[0] == appstate.IndexContact {
+		return idx[1]
+	}
+	return ""
+}
+
 func (b *WhatsmeowBridge) resolveAppStateKeyIDsForRemove(
 	ctx context.Context,
 	patch appstate.PatchInfo,
@@ -134,6 +145,28 @@ func (b *WhatsmeowBridge) resolveAppStateKeyIDsForRemove(
 	cli := b.client
 	if cli == nil || cli.Store == nil || cli.Store.AppStateKeys == nil || cli.Store.AppState == nil {
 		return nil, errNotReady
+	}
+	if targetJID := contactJIDFromPatch(patch); targetJID != "" && b.store != nil {
+		botLabels, err := b.store.ListBotContactLabels(ctx, targetJID)
+		if err != nil {
+			return nil, err
+		}
+		if len(botLabels) > 0 {
+			var ownedKeys [][]byte
+			for _, rec := range botLabels {
+				liveMAC, err := cli.Store.AppState.GetAppStateMutationMAC(ctx, string(patch.Type), rec.IndexMAC)
+				if err != nil {
+					return nil, fmt.Errorf("check bot contact label MAC: %w", err)
+				}
+				if liveMAC != nil && bytes.Equal(liveMAC, rec.ValueMAC) {
+					ownedKeys = append(ownedKeys, rec.KeyID)
+				}
+			}
+			if len(ownedKeys) == 0 {
+				return nil, fmt.Errorf("%w: %s", errActiveAppStateRecordNotFound, patch.Type)
+			}
+			return ownedKeys, nil
+		}
 	}
 	latestKeyID, err := cli.Store.AppStateKeys.GetLatestAppStateSyncKeyID(ctx)
 	if err != nil {
@@ -258,6 +291,26 @@ func (b *WhatsmeowBridge) sendAppStatePatchWithKeyLoop(
 				return err
 			}
 		}
+		if operation == waServerSync.SyncdMutation_REMOVE && b.store != nil {
+			if targetJID := contactJIDFromPatch(patch); targetJID != "" {
+				botLabels, err := b.store.ListBotContactLabels(ctx, targetJID)
+				if err != nil {
+					return err
+				}
+				for _, rec := range botLabels {
+					if !bytes.Equal(rec.KeyID, keyID) {
+						continue
+					}
+					liveMAC, err := cli.Store.AppState.GetAppStateMutationMAC(ctx, string(patch.Type), rec.IndexMAC)
+					if err != nil {
+						return fmt.Errorf("verify bot contact label MAC: %w", err)
+					}
+					if liveMAC == nil || !bytes.Equal(liveMAC, rec.ValueMAC) {
+						return errContactLabelChanged
+					}
+				}
+			}
+		}
 
 		state := appstate.HashState{Version: version, Hash: hash}
 		encodedPatch, err := encodeAppStatePatchWithOperation(ctx, cli.Store, keyID, state, patch, operation)
@@ -324,6 +377,11 @@ func (b *WhatsmeowBridge) sendAppStatePatchWithKeyLoop(
 		eventsToDispatch, err := internals.FetchAppState(ctx, patch.Type, false, false)
 		if err != nil {
 			return fmt.Errorf("failed to fetch app state after sending update: %w", err)
+		}
+		if operation == waServerSync.SyncdMutation_REMOVE && b.store != nil {
+			if targetJID := contactJIDFromPatch(patch); targetJID != "" {
+				_ = b.store.DeleteBotContactLabel(ctx, targetJID, keyID)
+			}
 		}
 		go func() {
 			for _, evt := range eventsToDispatch {

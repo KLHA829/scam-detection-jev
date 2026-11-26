@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -1141,14 +1143,40 @@ func (b *WhatsmeowBridge) SetContactLabel(ctx context.Context, phone, name strin
 		return fmt.Errorf("%w: invalid phone %q", errBadRequest, phone)
 	}
 	target := types.NewJID(digits, types.DefaultUserServer)
-	if err := b.client.SendAppState(ctx, buildContactLabelPatch(target, name)); err != nil {
+	patch := buildContactLabelPatch(target, name)
+	if err := b.client.SendAppState(ctx, patch); err != nil {
 		return fmt.Errorf("send contact label app state: %w", err)
 	}
+	clean := strings.TrimSpace(name)
+	b.recordBotContactLabel(ctx, target, patch, clean)
 	if b.client.Store != nil && b.client.Store.Contacts != nil {
-		clean := strings.TrimSpace(name)
 		_ = b.client.Store.Contacts.PutContactName(ctx, target, clean, clean)
 	}
 	return nil
+}
+
+func (b *WhatsmeowBridge) recordBotContactLabel(ctx context.Context, target types.JID, patch appstate.PatchInfo, labelName string) {
+	if b.store == nil || b.client == nil || b.client.Store == nil || b.client.Store.AppStateKeys == nil || b.client.Store.AppState == nil || len(patch.Mutations) == 0 {
+		return
+	}
+	keyID, err := b.client.Store.AppStateKeys.GetLatestAppStateSyncKeyID(ctx)
+	if err != nil || len(keyID) == 0 {
+		return
+	}
+	keyData, err := b.client.Store.AppStateKeys.GetAppStateSyncKey(ctx, keyID)
+	if err != nil || keyData == nil {
+		return
+	}
+	indexBytes, err := json.Marshal(patch.Mutations[0].Index)
+	if err != nil {
+		return
+	}
+	indexMAC := concatAndHMAC(sha256.New, expandAppStateKeys(keyData.Data).index, indexBytes)
+	valueMAC, err := b.client.Store.AppState.GetAppStateMutationMAC(ctx, string(patch.Type), indexMAC)
+	if err != nil || len(valueMAC) == 0 {
+		return
+	}
+	_ = b.store.SaveBotContactLabel(ctx, target.String(), keyID, indexMAC, valueMAC, labelName)
 }
 
 func buildContactRemovalPatch(target types.JID) appstate.PatchInfo {
