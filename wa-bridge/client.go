@@ -387,8 +387,10 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		b.hub.Publish(BridgeEvent{Type: "authenticated"})
 
 	case *events.AppStateSyncComplete:
-		if evt.Name == appstate.WAPatchCriticalUnblockLow {
+		if evt.Name == appstate.WAPatchRegularLow {
 			b.publishSyncArchiveRestores()
+		}
+		if evt.Name == appstate.WAPatchCriticalUnblockLow {
 			var retryGen uint64
 			b.mu.Lock()
 			if b.connected && b.loggedIn && !b.contactsSynced && b.syncNeedsRetry {
@@ -489,7 +491,7 @@ func (b *WhatsmeowBridge) recordPutArchived(chatID string, prevFound, prevArchiv
 		if _, exists := b.archiveSyncPending[chatID]; exists {
 			b.archiveSyncPending[chatID] = true
 		}
-	} else {
+	} else if !prevFound || prevArchived {
 		b.archiveSyncPending[chatID] = false
 	}
 	if _, exists := b.putArchiveQueue[chatID]; !exists && len(b.putArchiveQueue) >= maxStoredMessages {
@@ -519,6 +521,7 @@ func (b *WhatsmeowBridge) consumePutArchived(chatID string, expectedArchived boo
 			q = append(q[:i], q[i+1:]...)
 			if len(q) == 0 {
 				delete(b.putArchiveQueue, chatID)
+				delete(b.archiveSyncPending, chatID)
 			} else {
 				b.putArchiveQueue[chatID] = q
 			}

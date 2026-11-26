@@ -30,7 +30,8 @@ Or manually:
 
 ```bash
 LLM_REVIEW_COOLDOWN_MS=0 node --test --test-reporter tap \
-  lib/llm-review-cooldown.test.js lib/wa-handlers.test.js
+  lib/llm-review-cooldown.test.js lib/wa-handlers.test.js lib/wa-transport/whatsmeow.test.js
+cd wa-bridge && go test ./... -run TestBridgeArchiveEventReconcilesSyncRestores -count=1
 ```
 
 Save TAP under `evidence/<UTC-stamp>-llm-review-cooldown/`.

@@ -32,9 +32,10 @@ const TEST_NAMES = [
   'calls LLM again after the cooldown window expires',
   'does not cooldown-block a different chat',
   'still archives on heuristic hard-hit inside the cooldown window',
+  'forwards SSE chat_archived un-archive events into userRestoredChats so false-positive AI verdicts only alert',
 ];
 
-const TEST_FILES = ['lib/llm-review-cooldown.test.js', 'lib/wa-handlers.test.js'];
+const TEST_FILES = ['lib/llm-review-cooldown.test.js', 'lib/wa-handlers.test.js', 'lib/wa-transport/whatsmeow.test.js'];
 
 const UNSET_ENV = [
   'ARCHIVE_THRESHOLD',
