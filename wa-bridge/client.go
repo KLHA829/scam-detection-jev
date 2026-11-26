@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -40,152 +41,41 @@ type putArchiveTransition struct {
 
 type archiveTrackingChatSettings struct {
 	store.ChatSettingsStore
-	onPutArchived func(chatID string, prevFound, prevArchived, newArchived bool)
+	onPutArchived   func(chatID string, prevFound, prevArchived, newArchived bool)
+	getArchiveState func(ctx context.Context, chatID string) (bool, bool, error)
+	putArchiveState func(ctx context.Context, chatID string, archived bool) error
 }
 
 func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat types.JID, archived bool) error {
+	chatID := canonicalJID(chat)
 	var prevFound bool
 	var prevArchived bool
-	if settings, err := w.ChatSettingsStore.GetChatSettings(ctx, chat); err == nil && settings.Found {
-		prevFound = true
-		prevArchived = settings.Archived
+	if w.getArchiveState != nil && chatID != "" {
+		prev, found, err := w.getArchiveState(ctx, chatID)
+		if err != nil {
+			return err
+		}
+		prevFound = found
+		prevArchived = prev
+	}
+	if !prevFound {
+		if settings, err := w.ChatSettingsStore.GetChatSettings(ctx, chat); err == nil && settings.Found && settings.Archived {
+			prevFound = true
+			prevArchived = true
+		}
 	}
 	if err := w.ChatSettingsStore.PutArchived(ctx, chat, archived); err != nil {
 		return err
 	}
-	if w.onPutArchived != nil {
-		if chatID := canonicalJID(chat); chatID != "" {
-			w.onPutArchived(chatID, prevFound, prevArchived, archived)
+	if w.onPutArchived != nil && chatID != "" {
+		w.onPutArchived(chatID, prevFound, prevArchived, archived)
+	}
+	if w.putArchiveState != nil && chatID != "" {
+		if err := w.putArchiveState(ctx, chatID, archived); err != nil {
+			return err
 		}
 	}
 	return nil
-}
-
-type contactWriteObserver struct {
-	store.ContactStore
-	mu        sync.Mutex
-	attemptID uint64
-	err       error
-	errID     uint64
-	tracking  bool
-	seen      map[string]struct{}
-}
-
-func (w *contactWriteObserver) beginAttempt() (uint64, bool) {
-	w.mu.Lock()
-	hasPriorErr := w.err != nil
-	w.attemptID++
-	id := w.attemptID
-	w.mu.Unlock()
-	return id, hasPriorErr
-}
-
-func (w *contactWriteObserver) clearPriorErr(attemptID uint64) {
-	w.mu.Lock()
-	if w.err != nil && w.errID < attemptID {
-		w.err = nil
-		w.errID = 0
-	}
-	w.mu.Unlock()
-}
-
-func (w *contactWriteObserver) startFullSyncTracking() {
-	w.mu.Lock()
-	w.tracking = true
-	w.seen = make(map[string]struct{})
-	w.mu.Unlock()
-}
-
-func (w *contactWriteObserver) finishFullSyncTracking() map[string]struct{} {
-	w.mu.Lock()
-	seen := w.seen
-	w.tracking = false
-	w.seen = nil
-	w.mu.Unlock()
-	return seen
-}
-
-func (w *contactWriteObserver) snapshotSeenCount() int {
-	w.mu.Lock()
-	n := len(w.seen)
-	w.mu.Unlock()
-	return n
-}
-
-func (w *contactWriteObserver) wasSeen(id string) bool {
-	if id == "" {
-		return false
-	}
-	w.mu.Lock()
-	_, ok := w.seen[id]
-	w.mu.Unlock()
-	return ok
-}
-
-func (w *contactWriteObserver) record(err error) {
-	if err == nil {
-		return
-	}
-	w.mu.Lock()
-	if w.err == nil || w.errID != w.attemptID {
-		w.err = err
-		w.errID = w.attemptID
-	}
-	w.mu.Unlock()
-}
-
-func (w *contactWriteObserver) PutContactName(ctx context.Context, user types.JID, fullName, firstName string) error {
-	err := w.ContactStore.PutContactName(ctx, user, fullName, firstName)
-	w.record(err)
-	if err == nil && (strings.TrimSpace(fullName) != "" || strings.TrimSpace(firstName) != "") {
-		if id := canonicalJID(user); id != "" {
-			w.mu.Lock()
-			if w.tracking && w.seen != nil {
-				w.seen[id] = struct{}{}
-			}
-			w.mu.Unlock()
-		}
-	}
-	return err
-}
-
-func (w *contactWriteObserver) PutAllContactNames(ctx context.Context, contacts []store.ContactEntry) error {
-	err := w.ContactStore.PutAllContactNames(ctx, contacts)
-	w.record(err)
-	if err == nil {
-		w.mu.Lock()
-		if w.tracking && w.seen != nil {
-			for _, c := range contacts {
-				if strings.TrimSpace(c.FullName) == "" && strings.TrimSpace(c.FirstName) == "" {
-					continue
-				}
-				if id := canonicalJID(c.JID); id != "" {
-					w.seen[id] = struct{}{}
-				}
-			}
-		}
-		w.mu.Unlock()
-	}
-	return err
-}
-
-func (w *contactWriteObserver) takeErr() error {
-	w.mu.Lock()
-	id := w.attemptID
-	w.mu.Unlock()
-	return w.takeErrForAttempt(id)
-}
-
-func (w *contactWriteObserver) takeErrForAttempt(attemptID uint64) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.err == nil || w.errID != attemptID {
-		return nil
-	}
-	err := w.err
-	w.err = nil
-	w.errID = 0
-	return err
 }
 
 type WhatsmeowBridge struct {
@@ -198,8 +88,6 @@ type WhatsmeowBridge struct {
 	ctx               context.Context
 	cancel            context.CancelFunc
 	fetchContactsFn   func(ctx context.Context, fullSync bool) error
-	contactFetchMu    sync.Mutex
-	contactWrites     *contactWriteObserver
 	syncRetryDelay    time.Duration
 	onSyncAttemptDone func(gen uint64, fullSync bool, err error)
 	syncRetryWake     chan struct{}
@@ -215,8 +103,9 @@ type WhatsmeowBridge struct {
 	syncNeedsRetry    bool
 	syncNeedsFull     bool
 
-	archiveMu       sync.Mutex
-	putArchiveQueue map[string][]putArchiveTransition
+	archiveMu          sync.Mutex
+	putArchiveQueue    map[string][]putArchiveTransition
+	archiveSyncPending map[string]bool
 }
 
 func ensurePrivateSQLiteFile(dbPath string) error {
@@ -291,20 +180,20 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 
 	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
 	bridge := &WhatsmeowBridge{
-		db:              db,
-		store:           bridgeStore,
-		hub:             NewEventHub(),
-		log:             logger,
-		ctx:             bridgeCtx,
-		cancel:          bridgeCancel,
-		syncRetryDelay:  defaultSyncRetryDelay,
-		syncRetryWake:   make(chan struct{}, 1),
-		putArchiveQueue: make(map[string][]putArchiveTransition),
+		db:                 db,
+		store:              bridgeStore,
+		hub:                NewEventHub(),
+		log:                logger,
+		ctx:                bridgeCtx,
+		cancel:             bridgeCancel,
+		syncRetryDelay:     defaultSyncRetryDelay,
+		syncRetryWake:      make(chan struct{}, 1),
+		putArchiveQueue:    make(map[string][]putArchiveTransition),
+		archiveSyncPending: make(map[string]bool),
 	}
 	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
 	cli.EmitAppStateEventsOnFullSync = true
 	bridge.client = cli
-	bridge.ensureContactWritesWrapped()
 	bridge.ensureChatSettingsWrapped()
 	bridge.fetchContactsFn = bridge.fetchContactAppState
 	cli.AddEventHandler(bridge.handleEvent)
@@ -325,85 +214,21 @@ func (b *WhatsmeowBridge) shouldForceFullContactImport(ctx context.Context, requ
 	return !found || rev != lidContactImportRevision, nil
 }
 
-func (b *WhatsmeowBridge) reconcileDeletedContacts(ctx context.Context, seen map[string]struct{}) error {
-	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
-		return nil
-	}
-	seenCount := len(seen)
-	if seenCount == 0 && b.contactWrites != nil {
-		seenCount = b.contactWrites.snapshotSeenCount()
-	}
-	if seenCount == 0 {
-		return nil
-	}
-	all, err := b.client.Store.Contacts.GetAllContacts(ctx)
-	if err != nil {
-		return fmt.Errorf("list cached contacts for reconciliation: %w", err)
-	}
-	for jid, info := range all {
-		if strings.TrimSpace(info.FullName) == "" && strings.TrimSpace(info.FirstName) == "" {
-			continue
-		}
-		id := canonicalJID(jid)
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		if b.contactWrites != nil && b.contactWrites.wasSeen(id) {
-			continue
-		}
-		if err := b.client.Store.Contacts.PutContactName(ctx, jid, "", ""); err != nil {
-			return fmt.Errorf("clear deleted contact %s: %w", jid.String(), err)
-		}
-	}
-	return nil
-}
-
 // fetchContactAppState uses whatsmeow's locked fetch-and-apply path. Full-sync
 // app-state events stay enabled so lid_contact rows reach handleEvent instead
-// of being dropped by whatsmeow's legacy contact dispatcher; the contact store
-// observer turns per-row write failures back into a failed sync.
+// of being dropped by whatsmeow's legacy contact dispatcher. Live lid_contact
+// write failures invalidate the sync epoch so the gate stays fail-closed.
 func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync bool) error {
 	if b.client == nil || b.client.Store == nil {
 		return errNotReady
 	}
-	b.contactFetchMu.Lock()
-	defer b.contactFetchMu.Unlock()
-
 	var err error
 	fullSync, err = b.shouldForceFullContactImport(ctx, fullSync)
 	if err != nil {
 		return err
 	}
-	var attemptID uint64
-	var hasPriorErr bool
-	if b.contactWrites != nil {
-		attemptID, hasPriorErr = b.contactWrites.beginAttempt()
-		if hasPriorErr {
-			fullSync = true
-		}
-		if fullSync {
-			b.contactWrites.startFullSyncTracking()
-			defer b.contactWrites.finishFullSyncTracking()
-		}
-	}
-	fetchErr := b.client.FetchAppState(ctx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
-	var writeErr error
-	if b.contactWrites != nil {
-		writeErr = b.contactWrites.takeErrForAttempt(attemptID)
-	}
-	if fetchErr != nil {
-		return fmt.Errorf("fetch contact app state: %w", fetchErr)
-	}
-	if writeErr != nil {
-		return fmt.Errorf("write contact app state: %w", writeErr)
-	}
-	if b.contactWrites != nil && fullSync {
-		b.contactWrites.clearPriorErr(attemptID)
-	}
-	if fullSync {
-		if err := b.reconcileDeletedContacts(ctx, nil); err != nil {
-			return err
-		}
+	if err := b.client.FetchAppState(ctx, appstate.WAPatchCriticalUnblockLow, fullSync, false); err != nil {
+		return fmt.Errorf("fetch contact app state: %w", err)
 	}
 	if b.store != nil {
 		if err := b.store.SetMeta(ctx, metaKeyContactImportRevision, lidContactImportRevision); err != nil {
@@ -605,7 +430,6 @@ func (b *WhatsmeowBridge) Health() HealthStatus {
 func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	switch evt := rawEvt.(type) {
 	case *events.Connected:
-		b.ensureContactWritesWrapped()
 		b.ensureChatSettingsWrapped()
 		b.mu.Lock()
 		b.connGen++
@@ -639,7 +463,6 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		}
 
 	case *events.PairSuccess:
-		b.ensureContactWritesWrapped()
 		b.ensureChatSettingsWrapped()
 		if b.store != nil {
 			ctx := b.ctx
@@ -653,7 +476,6 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 		b.hub.Publish(BridgeEvent{Type: "authenticated"})
 
 	case *events.AppState:
-		b.ensureContactWritesWrapped()
 		if len(evt.Index) > 1 && evt.Index[0] == appstate.IndexLIDContact && evt.SyncActionValue != nil {
 			if act := evt.SyncActionValue.GetLidContactAction(); act != nil {
 				if jid, err := types.ParseJID(evt.Index[1]); err == nil && !jid.IsEmpty() && b.client != nil && b.client.Store != nil && b.client.Store.Contacts != nil {
@@ -662,13 +484,16 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 						ctx = context.Background()
 					}
 					if err := b.client.Store.Contacts.PutContactName(ctx, jid, act.GetFirstName(), act.GetFullName()); err != nil {
-						b.log.Warnf("failed to store live lid_contact %s: %v", jid.String(), err)
+						b.invalidateContactSyncForWriteError(jid, err)
 					}
 				}
 			}
 		}
 
 	case *events.AppStateSyncComplete:
+		if evt.Name == appstate.WAPatchRegularLow {
+			b.publishSyncArchiveRestores()
+		}
 		if evt.Name == appstate.WAPatchCriticalUnblockLow {
 			var retryGen uint64
 			b.mu.Lock()
@@ -734,17 +559,37 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	}
 }
 
-func (b *WhatsmeowBridge) ensureContactWritesWrapped() {
-	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
-		return
+func (b *WhatsmeowBridge) invalidateContactSyncForWriteError(jid types.JID, writeErr error) {
+	b.log.Warnf("failed to store live lid_contact %s: %v", jid.String(), writeErr)
+	var retryGen uint64
+	b.mu.Lock()
+	b.syncEpoch++
+	b.contactsSynced = false
+	b.syncNeedsRetry = true
+	b.syncNeedsFull = true
+	if b.connected && b.loggedIn {
+		if b.syncAttemptActive {
+			select {
+			case b.syncRetryWake <- struct{}{}:
+			default:
+			}
+		} else {
+			b.syncAttemptActive = true
+			b.syncNeedsRetry = false
+			retryGen = b.connGen
+		}
 	}
-	if observer, ok := b.client.Store.Contacts.(*contactWriteObserver); ok {
-		b.contactWrites = observer
-		return
+	b.mu.Unlock()
+	if retryGen != 0 {
+		go b.syncContacts(b.ctx, retryGen)
 	}
-	observer := &contactWriteObserver{ContactStore: b.client.Store.Contacts}
-	b.client.Store.Contacts = observer
-	b.contactWrites = observer
+}
+
+func (b *WhatsmeowBridge) selfDeviceJID() string {
+	if b.client != nil && b.client.Store != nil && b.client.Store.ID != nil {
+		return b.client.Store.ID.String()
+	}
+	return ""
 }
 
 func (b *WhatsmeowBridge) ensureChatSettingsWrapped() {
@@ -764,6 +609,12 @@ func (b *WhatsmeowBridge) ensureChatSettingsWrapped() {
 	b.client.Store.ChatSettings = &archiveTrackingChatSettings{
 		ChatSettingsStore: cs,
 		onPutArchived:     b.recordPutArchived,
+		getArchiveState: func(ctx context.Context, chatID string) (bool, bool, error) {
+			return b.store.GetArchiveState(ctx, b.selfDeviceJID(), chatID)
+		},
+		putArchiveState: func(ctx context.Context, chatID string, archived bool) error {
+			return b.store.PutArchiveState(ctx, b.selfDeviceJID(), chatID, archived)
+		},
 	}
 }
 
@@ -781,6 +632,16 @@ func (b *WhatsmeowBridge) recordPutArchived(chatID string, prevFound, prevArchiv
 	defer b.archiveMu.Unlock()
 	if b.putArchiveQueue == nil {
 		b.putArchiveQueue = make(map[string][]putArchiveTransition)
+	}
+	if b.archiveSyncPending == nil {
+		b.archiveSyncPending = make(map[string]bool)
+	}
+	if newArchived {
+		if _, exists := b.archiveSyncPending[chatID]; exists {
+			b.archiveSyncPending[chatID] = true
+		}
+	} else if !prevFound || prevArchived {
+		b.archiveSyncPending[chatID] = false
 	}
 	if _, exists := b.putArchiveQueue[chatID]; !exists && len(b.putArchiveQueue) >= maxStoredMessages {
 		clear(b.putArchiveQueue)
@@ -809,6 +670,7 @@ func (b *WhatsmeowBridge) consumePutArchived(chatID string, expectedArchived boo
 			q = append(q[:i], q[i+1:]...)
 			if len(q) == 0 {
 				delete(b.putArchiveQueue, chatID)
+				delete(b.archiveSyncPending, chatID)
 			} else {
 				b.putArchiveQueue[chatID] = q
 			}
@@ -816,6 +678,36 @@ func (b *WhatsmeowBridge) consumePutArchived(chatID string, expectedArchived boo
 		}
 	}
 	return putArchiveTransition{}, false
+}
+
+// Full-sync archive events stay suppressed so contact sync keeps whatsmeow's
+// error-propagating bulk path; the ChatSettings writes are the sync's source of truth.
+func (b *WhatsmeowBridge) publishSyncArchiveRestores() {
+	b.archiveMu.Lock()
+	b.putArchiveQueue = make(map[string][]putArchiveTransition)
+	pending := b.archiveSyncPending
+	b.archiveSyncPending = make(map[string]bool)
+	b.archiveMu.Unlock()
+
+	chatIDs := make([]string, 0, len(pending))
+	for chatID, archived := range pending {
+		if !archived {
+			chatIDs = append(chatIDs, chatID)
+		}
+	}
+	sort.Strings(chatIDs)
+	for _, chatID := range chatIDs {
+		b.hub.Publish(BridgeEvent{
+			Type: "chat_archived",
+			Data: map[string]any{
+				"chatId":      chatID,
+				"isGroup":     strings.HasSuffix(chatID, "@g.us"),
+				"isChannel":   strings.HasSuffix(chatID, "@newsletter"),
+				"archived":    false,
+				"wasArchived": true,
+			},
+		})
+	}
 }
 
 func (b *WhatsmeowBridge) handleArchiveEvent(evt *events.Archive) {
@@ -1160,23 +1052,6 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 				}
 				if strings.TrimSpace(info.PushName) == "" {
 					info.PushName = pnInfo.PushName
-				}
-			}
-		}
-	}
-	if jid.Server == types.DefaultUserServer && savedName == "" && b.client.Store.LIDs != nil {
-		if lid, err := b.client.Store.LIDs.GetLIDForPN(ctx, jid); err == nil && !lid.IsEmpty() {
-			if lidInfo, err := b.client.Store.Contacts.GetContact(ctx, lid); err == nil {
-				lidSaved := strings.TrimSpace(lidInfo.FullName)
-				if lidSaved == "" {
-					lidSaved = strings.TrimSpace(lidInfo.FirstName)
-				}
-				if lidSaved != "" {
-					info.FullName = lidInfo.FullName
-					info.FirstName = lidInfo.FirstName
-				}
-				if strings.TrimSpace(info.PushName) == "" {
-					info.PushName = lidInfo.PushName
 				}
 			}
 		}

@@ -111,6 +111,9 @@ func TestBridgeStorePersistenceAndPollDecoding(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveMessage m-2: %v", err)
 	}
+	if err := store.PutArchiveState(ctx, "85299990000@s.whatsapp.net", "85261112222@c.us", false); err != nil {
+		t.Fatalf("PutArchiveState: %v", err)
+	}
 	if err := db.Close(); err != nil {
 		t.Fatalf("close db: %v", err)
 	}
@@ -123,6 +126,11 @@ func TestBridgeStorePersistenceAndPollDecoding(t *testing.T) {
 	store2, err := NewBridgeStore(ctx, reopened)
 	if err != nil {
 		t.Fatalf("reopen store: %v", err)
+	}
+
+	archived, archiveFound, err := store2.GetArchiveState(ctx, "85299990000@s.whatsapp.net", "85261112222@c.us")
+	if err != nil || !archiveFound || archived {
+		t.Fatalf("GetArchiveState after reopen = (%v, %v, %v)", archived, archiveFound, err)
 	}
 
 	loadedOpts, found, err := store2.GetPollOptions(ctx, "poll-1")
@@ -511,252 +519,6 @@ func TestUpgradeFromNonzeroAppStateVersionForcesFullLidReplay(t *testing.T) {
 	}
 }
 
-func TestReconcileDeletedContactsPreservesPushName(t *testing.T) {
-	ctx := context.Background()
-	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "reconcile-deleted.db"), "ERROR")
-	if err != nil {
-		t.Fatalf("NewWhatsmeowBridge: %v", err)
-	}
-	defer func() { _ = bridge.Close() }()
-
-	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
-	bridge.client.Store.ID = &selfJID
-	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
-		Details:             []byte("details"),
-		AccountSignatureKey: make([]byte, 32),
-		AccountSignature:    make([]byte, 64),
-		DeviceSignature:     make([]byte, 64),
-	}
-	if err := bridge.client.Store.Save(ctx); err != nil {
-		t.Fatalf("save device store: %v", err)
-	}
-	bridge.ensureContactWritesWrapped()
-
-	deletedJID := types.NewJID("85261119999", types.DefaultUserServer)
-	keptJID := types.NewJID("85261118888", types.DefaultUserServer)
-	if err := bridge.client.Store.Contacts.PutContactName(ctx, deletedJID, "Pat", "Pat"); err != nil {
-		t.Fatalf("PutContactName(deleted): %v", err)
-	}
-	if _, _, err := bridge.client.Store.Contacts.PutPushName(ctx, deletedJID, "PatPush"); err != nil {
-		t.Fatalf("PutPushName(deleted): %v", err)
-	}
-	if err := bridge.client.Store.Contacts.PutContactName(ctx, keptJID, "Kept", "Kept"); err != nil {
-		t.Fatalf("PutContactName(kept): %v", err)
-	}
-
-	bridge.contactWrites.startFullSyncTracking()
-	if err := bridge.client.Store.Contacts.PutContactName(ctx, keptJID, "Kept", "Kept"); err != nil {
-		t.Fatalf("PutContactName(kept replay): %v", err)
-	}
-	seen := bridge.contactWrites.finishFullSyncTracking()
-	if err := bridge.reconcileDeletedContacts(ctx, seen); err != nil {
-		t.Fatalf("reconcileDeletedContacts: %v", err)
-	}
-
-	bridge.mu.Lock()
-	bridge.connected = true
-	bridge.loggedIn = true
-	bridge.connGen = 1
-	bridge.mu.Unlock()
-	bridge.markContactsSyncedForGen(1)
-
-	deletedResp, err := bridge.GetContact(ctx, deletedJID.String())
-	if err != nil {
-		t.Fatalf("GetContact(deleted): %v", err)
-	}
-	if deletedResp.IsMyContact == nil || *deletedResp.IsMyContact || deletedResp.Name != "" || deletedResp.Pushname != "PatPush" {
-		t.Fatalf("deleted contact must be cleared to unsaved while preserving pushname, got %+v", deletedResp)
-	}
-	keptResp, err := bridge.GetContact(ctx, keptJID.String())
-	if err != nil {
-		t.Fatalf("GetContact(kept): %v", err)
-	}
-	if keptResp.IsMyContact == nil || !*keptResp.IsMyContact || keptResp.Name != "Kept" {
-		t.Fatalf("kept contact must remain saved, got %+v", keptResp)
-	}
-}
-
-func TestObsoleteFetchAttemptCannotSwallowNewAttemptWriteError(t *testing.T) {
-	ctx := context.Background()
-	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "attempt-err.db"), "ERROR")
-	if err != nil {
-		t.Fatalf("NewWhatsmeowBridge: %v", err)
-	}
-	defer func() { _ = bridge.Close() }()
-
-	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
-	bridge.client.Store.ID = &selfJID
-	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
-		Details:             []byte("details"),
-		AccountSignatureKey: make([]byte, 32),
-		AccountSignature:    make([]byte, 64),
-		DeviceSignature:     make([]byte, 64),
-	}
-	if err := bridge.client.Store.Save(ctx); err != nil {
-		t.Fatalf("save device store: %v", err)
-	}
-
-	bridge.ensureContactWritesWrapped()
-	oldAttempt, _ := bridge.contactWrites.beginAttempt()
-	newAttempt, _ := bridge.contactWrites.beginAttempt()
-
-	writeFail := errors.New("sqlite write failed")
-	bridge.contactWrites.ContactStore = failingContactNameStore{
-		ContactStore: bridge.contactWrites.ContactStore,
-		err:          writeFail,
-	}
-	_ = bridge.contactWrites.PutContactName(ctx, types.NewJID("555000999", types.HiddenUserServer), "Mum", "Mum")
-
-	if swallowed := bridge.contactWrites.takeErrForAttempt(oldAttempt); swallowed != nil {
-		t.Fatalf("obsolete attempt %d must not drain write error from attempt %d, got %v", oldAttempt, newAttempt, swallowed)
-	}
-	if actual := bridge.contactWrites.takeErrForAttempt(newAttempt); !errors.Is(actual, writeFail) {
-		t.Fatalf("expected new attempt %d to observe writeFail, got %v", newAttempt, actual)
-	}
-}
-
-func TestLiveWriteErrorForcesFullReplayOnReconnect(t *testing.T) {
-	ctx := context.Background()
-	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "live-write-err-reconnect.db"), "ERROR")
-	if err != nil {
-		t.Fatalf("NewWhatsmeowBridge: %v", err)
-	}
-	defer func() { _ = bridge.Close() }()
-
-	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
-	bridge.client.Store.ID = &selfJID
-	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
-		Details:             []byte("details"),
-		AccountSignatureKey: make([]byte, 32),
-		AccountSignature:    make([]byte, 64),
-		DeviceSignature:     make([]byte, 64),
-	}
-	if err := bridge.client.Store.Save(ctx); err != nil {
-		t.Fatalf("save device store: %v", err)
-	}
-	if err := bridge.store.SetMeta(ctx, metaKeyContactImportRevision, lidContactImportRevision); err != nil {
-		t.Fatalf("SetMeta: %v", err)
-	}
-	if err := bridge.client.Store.AppState.PutAppStateVersion(ctx, string(appstate.WAPatchCriticalUnblockLow), 100, [128]byte{1}); err != nil {
-		t.Fatalf("PutAppStateVersion: %v", err)
-	}
-
-	bridge.ensureContactWritesWrapped()
-	rawContacts := bridge.contactWrites.ContactStore
-	bridge.contactWrites.ContactStore = failingContactNameStore{
-		ContactStore: rawContacts,
-		err:          errors.New("transient sqlite write error"),
-	}
-	bridge.handleEvent(&events.AppState{
-		Index: []string{appstate.IndexLIDContact, "555000888@lid"},
-		SyncActionValue: &waSyncAction.SyncActionValue{
-			LidContactAction: &waSyncAction.LidContactAction{
-				FullName:  proto.String("Missed Mum"),
-				FirstName: proto.String("Missed Mum"),
-			},
-		},
-	})
-	bridge.contactWrites.ContactStore = rawContacts
-
-	// Reconnect with current revision and version=100: prior live write failure must force fullSync (resetting version to 0).
-	if err := bridge.fetchContactAppState(ctx, false); err == nil {
-		t.Fatal("expected disconnected FetchAppState to fail")
-	}
-	verAfter, _, err := bridge.client.Store.AppState.GetAppStateVersion(ctx, string(appstate.WAPatchCriticalUnblockLow))
-	if err != nil {
-		t.Fatalf("GetAppStateVersion: %v", err)
-	}
-	if verAfter != 0 {
-		t.Fatalf("prior live write failure must force full replay (resetting version to 0), got %d", verAfter)
-	}
-	// If the forced fullSync failed before completing, the next attempt must still see hasPriorErr=true.
-	nextAttempt, hasPriorErr := bridge.contactWrites.beginAttempt()
-	if !hasPriorErr {
-		t.Fatal("prior live write failure must remain pending until a full replay succeeds")
-	}
-	bridge.contactWrites.clearPriorErr(nextAttempt)
-	if _, stillPending := bridge.contactWrites.beginAttempt(); stillPending {
-		t.Fatal("clearPriorErr after successful full replay must clear the prior error")
-	}
-}
-
-func TestGetContactFallsBackFromPNToSavedLIDAndSkipsEmptyReconcile(t *testing.T) {
-	ctx := context.Background()
-	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "pn-lid-fallback.db"), "ERROR")
-	if err != nil {
-		t.Fatalf("NewWhatsmeowBridge: %v", err)
-	}
-	defer func() { _ = bridge.Close() }()
-
-	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
-	bridge.client.Store.ID = &selfJID
-	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
-		Details:             []byte("details"),
-		AccountSignatureKey: make([]byte, 32),
-		AccountSignature:    make([]byte, 64),
-		DeviceSignature:     make([]byte, 64),
-	}
-	if err := bridge.client.Store.Save(ctx); err != nil {
-		t.Fatalf("save device store: %v", err)
-	}
-	bridge.ensureContactWritesWrapped()
-
-	pnJID := types.NewJID("85261234567", types.DefaultUserServer)
-	lidJID := types.NewJID("9001", types.HiddenUserServer)
-	if err := bridge.client.Store.LIDs.PutLIDMapping(ctx, lidJID, pnJID); err != nil {
-		t.Fatalf("PutLIDMapping: %v", err)
-	}
-	if err := bridge.client.Store.Contacts.PutContactName(ctx, lidJID, "Mum", "Mum"); err != nil {
-		t.Fatalf("PutContactName(lid): %v", err)
-	}
-
-	// Empty reconcile (e.g., empty fetch with 0 seen contacts) must not wipe cached saved names.
-	if err := bridge.reconcileDeletedContacts(ctx, nil); err != nil {
-		t.Fatalf("reconcileDeletedContacts(empty): %v", err)
-	}
-
-	bridge.mu.Lock()
-	bridge.connected = true
-	bridge.loggedIn = true
-	bridge.connGen = 1
-	bridge.mu.Unlock()
-	bridge.markContactsSyncedForGen(1)
-
-	pnResp, err := bridge.GetContact(ctx, pnJID.String())
-	if err != nil {
-		t.Fatalf("GetContact(pn): %v", err)
-	}
-	if pnResp.IsMyContact == nil || !*pnResp.IsMyContact || pnResp.Name != "Mum" {
-		t.Fatalf("PN lookup for contact saved only under mapped LID must stay protected, got %+v", pnResp)
-	}
-
-	// While full-sync tracking stays active through reconcileDeletedContacts, a live save is recorded in seen and preserved.
-	liveLID := types.NewJID("9002", types.HiddenUserServer)
-	bridge.contactWrites.startFullSyncTracking()
-	_ = bridge.client.Store.Contacts.PutContactName(ctx, lidJID, "Mum", "Mum")
-	bridge.handleEvent(&events.AppState{
-		Index: []string{appstate.IndexLIDContact, liveLID.String()},
-		SyncActionValue: &waSyncAction.SyncActionValue{
-			LidContactAction: &waSyncAction.LidContactAction{
-				FullName:  proto.String("Live Save"),
-				FirstName: proto.String("Live Save"),
-			},
-		},
-	})
-	if err := bridge.reconcileDeletedContacts(ctx, nil); err != nil {
-		t.Fatalf("reconcileDeletedContacts(live): %v", err)
-	}
-	bridge.contactWrites.finishFullSyncTracking()
-
-	liveResp, err := bridge.GetContact(ctx, liveLID.String())
-	if err != nil {
-		t.Fatalf("GetContact(liveLID): %v", err)
-	}
-	if liveResp.IsMyContact == nil || !*liveResp.IsMyContact || liveResp.Name != "Live Save" {
-		t.Fatalf("live save during active tracking must not be erased by reconcileDeletedContacts, got %+v", liveResp)
-	}
-}
-
 type failingContactNameStore struct {
 	store.ContactStore
 	err error
@@ -770,17 +532,60 @@ func (f failingContactNameStore) PutAllContactNames(context.Context, []store.Con
 	return f.err
 }
 
-func TestContactWriteObserverRecordsWriteErrors(t *testing.T) {
-	writeErr := errors.New("contact write failed")
-	observer := &contactWriteObserver{ContactStore: failingContactNameStore{err: writeErr}}
-	if err := observer.PutContactName(context.Background(), types.NewJID("85261234567", types.DefaultUserServer), "Mum", "Mum"); !errors.Is(err, writeErr) {
-		t.Fatalf("PutContactName error = %v, want %v", err, writeErr)
+func TestLidContactWriteFailureInvalidatesInflightSync(t *testing.T) {
+	ctx := context.Background()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "lid-write-error.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
 	}
-	if err := observer.takeErr(); !errors.Is(err, writeErr) {
-		t.Fatalf("takeErr = %v, want recorded %v", err, writeErr)
+	defer func() { _ = bridge.Close() }()
+
+	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
 	}
-	if err := observer.takeErr(); err != nil {
-		t.Fatalf("takeErr after drain = %v, want nil", err)
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
+	}
+
+	rawContacts := bridge.client.Store.Contacts
+	writeFail := errors.New("sqlite write failed")
+	bridge.client.Store.Contacts = failingContactNameStore{ContactStore: rawContacts, err: writeFail}
+
+	bridge.mu.Lock()
+	bridge.connected = true
+	bridge.loggedIn = true
+	bridge.connGen = 1
+	bridge.contactsSynced = true
+	bridge.syncAttemptActive = true
+	startEpoch := bridge.syncEpoch
+	bridge.mu.Unlock()
+
+	lidJID := types.NewJID("555000999", types.HiddenUserServer)
+	bridge.handleEvent(&events.AppState{
+		Index: []string{appstate.IndexLIDContact, lidJID.String()},
+		SyncActionValue: &waSyncAction.SyncActionValue{
+			LidContactAction: &waSyncAction.LidContactAction{
+				FullName:  proto.String("Mum"),
+				FirstName: proto.String("Mum"),
+			},
+		},
+	})
+
+	bridge.mu.RLock()
+	defer bridge.mu.RUnlock()
+	if bridge.contactsSynced {
+		t.Fatal("write failure must keep contactsSynced=false")
+	}
+	if !bridge.syncNeedsFull || !bridge.syncNeedsRetry {
+		t.Fatalf("write failure must force a full retry, needsFull=%v needsRetry=%v", bridge.syncNeedsFull, bridge.syncNeedsRetry)
+	}
+	if bridge.syncEpoch == startEpoch {
+		t.Fatal("write failure must invalidate the in-flight sync epoch")
 	}
 }
 
@@ -1592,7 +1397,7 @@ wakeRecovered:
 	}
 }
 
-func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
+func TestBridgeArchiveEventReconcilesSyncRestores(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "archive-events.db")
 
@@ -1633,6 +1438,34 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 	}
 
 	chatJID := types.NewJID("85261112222", types.DefaultUserServer)
+	raceJID := types.NewJID("85264443333", types.DefaultUserServer)
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, raceJID, false); err != nil {
+		t.Fatalf("PutArchived sync restore before live archive: %v", err)
+	}
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, raceJID, true); err != nil {
+		t.Fatalf("PutArchived live archive after sync restore: %v", err)
+	}
+	bridge.handleEvent(&events.Archive{
+		JID:          raceJID,
+		Timestamp:    time.Now(),
+		FromFullSync: false,
+		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(true)},
+	})
+	select {
+	case evt := <-ch:
+		if evt.Type != "chat_archived" {
+			t.Fatalf("expected live archive event before sync completion, got %+v", evt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for live archive event")
+	}
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchRegularLow})
+	select {
+	case unexpected := <-ch:
+		t.Fatalf("sync completion must use the final archived=true state, got %+v", unexpected)
+	case <-time.After(30 * time.Millisecond):
+	}
+
 	t1 := time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
 	t2 := t1.Add(time.Minute)
 	t3 := t2.Add(time.Minute)
@@ -1714,6 +1547,18 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 	settingsAfterRecovery, err := bridge.rawChatSettingsStore().GetChatSettings(ctx, chatJID)
 	if err != nil || !settingsAfterRecovery.Found || settingsAfterRecovery.Archived {
 		t.Fatalf("expected recovery ChatSettings Archived=false, got (%+v, %v)", settingsAfterRecovery, err)
+	}
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow})
+	select {
+	case unexpected := <-ch:
+		t.Fatalf("contact sync completion must leave archive restores pending, got %+v", unexpected)
+	case <-time.After(30 * time.Millisecond):
+	}
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchRegularLow})
+	recoveryEvt := readNext()
+	recoveryData, _ := recoveryEvt.Data.(map[string]any)
+	if recoveryData["chatId"] != "85261112222@c.us" || recoveryData["archived"] != false || recoveryData["wasArchived"] != true {
+		t.Fatalf("sync completion must reconcile the recovery un-archive, got %+v", recoveryEvt)
 	}
 
 	// Redundant live un-archive after recovery reads recovered prev=false so wasArchived=false.
@@ -1806,6 +1651,61 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 		t.Fatalf("first restore of unseen chat must emit wasArchived=true, got %+v", unseenEvt)
 	}
 
+	// Full sync applies archive mutations through ChatSettings without emitting events;
+	// completing regular_low reconciles only unconsumed unarchived states that were not already unarchived.
+	alreadyUnarchivedJID := types.NewJID("85265558888", types.DefaultUserServer)
+	if err := bridge.rawChatSettingsStore().PutArchived(ctx, alreadyUnarchivedJID, false); err != nil {
+		t.Fatalf("raw PutArchived already-unarchived seed: %v", err)
+	}
+	if err := bridge.store.PutArchiveState(ctx, bridge.selfDeviceJID(), canonicalJID(alreadyUnarchivedJID), false); err != nil {
+		t.Fatalf("seed explicit already-unarchived archive state: %v", err)
+	}
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, alreadyUnarchivedJID, false); err != nil {
+		t.Fatalf("PutArchived full-sync already-unarchived chat: %v", err)
+	}
+	fullSyncJID := types.NewJID("85265556666", types.DefaultUserServer)
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, fullSyncJID, false); err != nil {
+		t.Fatalf("PutArchived full-sync restore: %v", err)
+	}
+	mutedRestoreJID := types.NewJID("85265559999", types.DefaultUserServer)
+	if err := bridge.rawChatSettingsStore().PutMutedUntil(ctx, mutedRestoreJID, time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("raw PutMutedUntil mute-only seed: %v", err)
+	}
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, mutedRestoreJID, false); err != nil {
+		t.Fatalf("PutArchived full-sync muted restore: %v", err)
+	}
+	stillArchivedJID := types.NewJID("85265557777", types.DefaultUserServer)
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, stillArchivedJID, true); err != nil {
+		t.Fatalf("PutArchived full-sync still-archived chat: %v", err)
+	}
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow})
+	select {
+	case unexpected := <-ch:
+		t.Fatalf("critical_unblock_low completion must not flush regular_low restores, got %+v", unexpected)
+	case <-time.After(30 * time.Millisecond):
+	}
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchRegularLow})
+	restored := make(map[string]bool)
+	for range []string{"85265556666@c.us", "85265559999@c.us"} {
+		fullSyncEvt := readNext()
+		fullSyncData, _ := fullSyncEvt.Data.(map[string]any)
+		chatID, _ := fullSyncData["chatId"].(string)
+		if fullSyncData["archived"] != false || fullSyncData["wasArchived"] != true {
+			t.Fatalf("full-sync restore must emit wasArchived=true, got %+v", fullSyncEvt)
+		}
+		restored[chatID] = true
+	}
+	for _, chatID := range []string{"85265556666@c.us", "85265559999@c.us"} {
+		if !restored[chatID] {
+			t.Fatalf("full-sync reconciliation missing %s, got %v", chatID, restored)
+		}
+	}
+	select {
+	case unexpected := <-ch:
+		t.Fatalf("live-consumed, already-unarchived, or archived=true chats must not emit a restore, got %+v", unexpected)
+	case <-time.After(30 * time.Millisecond):
+	}
+
 	// Defensive guard: FromFullSync=true events are ignored, and group chats set isGroup=true.
 	bridge.handleEvent(&events.Archive{
 		JID:          chatJID,
@@ -1832,5 +1732,120 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 	grpData, _ := grpEvt.Data.(map[string]any)
 	if grpData["chatId"] != "1203630000@g.us" || grpData["isGroup"] != true || grpData["archived"] != false || grpData["wasArchived"] != true {
 		t.Fatalf("unexpected group un-archive event: %+v", grpEvt)
+	}
+}
+
+func TestBridgeArchiveTrackingEdgeCases(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "archive-edge.db")
+
+	bridge, err := NewWhatsmeowBridge(ctx, dbPath, "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	defer func() { _ = bridge.Close() }()
+
+	selfJID := types.NewJID("85299990001", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
+	}
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
+	}
+
+	ch, cancel := bridge.Events().Subscribe(16)
+	defer cancel()
+	bridge.handleEvent(&events.PairSuccess{})
+	<-ch // authenticated
+
+	// 1. Previously unpinned chat (whatsmeow_chat_settings row with archived=false, pinned=false,
+	// muted_until=0 and no bridge_archive_state row) must still emit a restore on first PutArchived(false).
+	unpinnedJID := types.NewJID("85261001111", types.DefaultUserServer)
+	if err := bridge.rawChatSettingsStore().PutPinned(ctx, unpinnedJID, false); err != nil {
+		t.Fatalf("raw PutPinned unpinned row: %v", err)
+	}
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, unpinnedJID, false); err != nil {
+		t.Fatalf("PutArchived after unpin: %v", err)
+	}
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchRegularLow})
+	select {
+	case evt := <-ch:
+		data, _ := evt.Data.(map[string]any)
+		if evt.Type != "chat_archived" || data["chatId"] != "85261001111@c.us" || data["archived"] != false || data["wasArchived"] != true {
+			t.Fatalf("expected restore for previously unpinned chat, got %+v", evt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for restore after unpin")
+	}
+
+	// 2. Secondary putArchiveState failure must still enqueue and emit the restore on sync completion.
+	tracker := bridge.client.Store.ChatSettings.(*archiveTrackingChatSettings)
+	origPut := tracker.putArchiveState
+	tracker.putArchiveState = func(ctx context.Context, chatID string, archived bool) error {
+		return errors.New("simulated sqlite full")
+	}
+	failStateJID := types.NewJID("85261002222", types.DefaultUserServer)
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, failStateJID, false); err == nil {
+		t.Fatal("expected PutArchived to return simulated secondary write error")
+	}
+	tracker.putArchiveState = origPut
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchRegularLow})
+	select {
+	case evt := <-ch:
+		data, _ := evt.Data.(map[string]any)
+		if evt.Type != "chat_archived" || data["chatId"] != "85261002222@c.us" || data["archived"] != false || data["wasArchived"] != true {
+			t.Fatalf("expected restore despite secondary write failure, got %+v", evt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for restore after secondary write failure")
+	}
+
+	// 3. Device scoping: bridge_archive_state baselines are isolated per full device JID (including :AD).
+	if foundArchived, found, err := bridge.store.GetArchiveState(ctx, "85299990001:2@s.whatsapp.net", canonicalJID(unpinnedJID)); err != nil || found || foundArchived {
+		t.Fatalf("expected other linked device JID to have no archive baseline, got (%v, %v, %v)", foundArchived, found, err)
+	}
+
+	// 4. Schema upgrade from 3-column bridge_archive_state preserves existing baselines.
+	if _, err := bridge.db.ExecContext(ctx, `
+DROP TABLE bridge_archive_state;
+CREATE TABLE bridge_archive_state (
+	chat_jid TEXT PRIMARY KEY,
+	archived INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+INSERT INTO bridge_archive_state (chat_jid, archived, updated_at) VALUES ('85261003333@c.us', 0, 12345);`); err != nil {
+		t.Fatalf("seed legacy 3-column bridge_archive_state: %v", err)
+	}
+	migratedStore, err := NewBridgeStore(ctx, bridge.db)
+	if err != nil {
+		t.Fatalf("NewBridgeStore migration: %v", err)
+	}
+	if archived, found, err := migratedStore.GetArchiveState(ctx, selfJID.String(), "85261003333@c.us"); err != nil || !found || archived {
+		t.Fatalf("expected migrated baseline preserved for selfJID, got (%v, %v, %v)", archived, found, err)
+	}
+
+	// 5. Interrupted upgrade recovery copies leftover old rows without dropping rows already in the new table.
+	if _, err := bridge.db.ExecContext(ctx, `
+INSERT OR REPLACE INTO bridge_archive_state (our_jid, chat_jid, archived, updated_at) VALUES (?, '85261004444@c.us', 0, 12346);
+CREATE TABLE bridge_archive_state_old (
+	chat_jid TEXT PRIMARY KEY,
+	archived INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+INSERT INTO bridge_archive_state_old (chat_jid, archived, updated_at) VALUES ('85261005555@c.us', 0, 12347);`, selfJID.String()); err != nil {
+		t.Fatalf("seed interrupted bridge_archive_state migration: %v", err)
+	}
+	recoveredStore, err := NewBridgeStore(ctx, bridge.db)
+	if err != nil {
+		t.Fatalf("NewBridgeStore interrupted migration recovery: %v", err)
+	}
+	for _, chatID := range []string{"85261004444@c.us", "85261005555@c.us"} {
+		if archived, found, err := recoveredStore.GetArchiveState(ctx, selfJID.String(), chatID); err != nil || !found || archived {
+			t.Fatalf("expected recovered baseline for %s, got (%v, %v, %v)", chatID, archived, found, err)
+		}
 	}
 }
