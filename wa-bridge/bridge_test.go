@@ -18,10 +18,13 @@ import (
 	"testing"
 	"time"
 
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
+	waBinary "go.mau.fi/whatsmeow/binary"
 	"go.mau.fi/whatsmeow/proto/waAdv"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waServerSync"
 	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
@@ -316,10 +319,15 @@ func TestContactRecoveryResyncsFailClosed(t *testing.T) {
 		syncedAtFetch bool
 	}
 	fetchDone := make(chan fetchResult, 1)
+	attemptDone := make(chan error, 1)
 	bridge.fetchContactsFn = func(_ context.Context, fullSync bool) error {
 		fetchDone <- fetchResult{fullSync: fullSync, syncedAtFetch: bridge.Health().ContactsSynced}
 		return nil
 	}
+	// The gate reopens in completeContactSyncAttempt after the fetch returns, so
+	// the completion signal must come from onSyncAttemptDone rather than the
+	// fetch itself.
+	bridge.onSyncAttemptDone = func(_ uint64, _ bool, err error) { attemptDone <- err }
 	bridge.mu.Lock()
 	bridge.connected = true
 	bridge.loggedIn = true
@@ -338,6 +346,14 @@ func TestContactRecoveryResyncsFailClosed(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for recovery contact resync")
+	}
+	select {
+	case err := <-attemptDone:
+		if err != nil {
+			t.Fatalf("recovery resync attempt failed: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for recovery resync completion")
 	}
 	if !bridge.Health().ContactsSynced {
 		t.Fatal("successful recovery resync should reopen the contact gate")
@@ -761,6 +777,1496 @@ func TestBuildContactLabelPatch(t *testing.T) {
 	}
 }
 
+func newLoggedInTestBridge(t *testing.T, ctx context.Context) *WhatsmeowBridge {
+	t.Helper()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "whatsmeow.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	t.Cleanup(func() { _ = bridge.Close() })
+
+	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
+	}
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
+	}
+	bridge.ensureContactWritesWrapped()
+	bridge.mu.Lock()
+	bridge.connected = true
+	bridge.loggedIn = true
+	bridge.mu.Unlock()
+	return bridge
+}
+
+type versionReadTrackingAppState struct {
+	store.AppStateStore
+	read *bool
+}
+
+func (s *versionReadTrackingAppState) GetAppStateVersion(ctx context.Context, name string) (uint64, [128]byte, error) {
+	*s.read = true
+	return s.AppStateStore.GetAppStateVersion(ctx, name)
+}
+
+func TestSendAppStateValidatesAfterReadingVersion(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+
+	readVersion := false
+	bridge.client.Store.AppState = &versionReadTrackingAppState{
+		AppStateStore: bridge.client.Store.AppState,
+		read:          &readVersion,
+	}
+	validationErr := errors.New("validation stopped send")
+	validate := func(context.Context) error {
+		if !readVersion {
+			t.Error("validator ran before reading the current app-state version")
+		}
+		return validationErr
+	}
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	err := bridge.sendAppStateWithOperation(ctx, buildContactRemovalPatch(target), waServerSync.SyncdMutation_REMOVE, true, validate)
+	if !errors.Is(err, validationErr) {
+		t.Fatalf("send error = %v, want validation error", err)
+	}
+}
+
+type conflictRenameInternals struct {
+	bridge    *WhatsmeowBridge
+	target    types.JID
+	sendCalls int
+}
+
+func (f *conflictRenameInternals) SendIQ(context.Context, whatsmeow.DangerousInfoQuery) (*waBinary.Node, error) {
+	f.sendCalls++
+	return &waBinary.Node{
+		Tag: "iq",
+		Content: []waBinary.Node{{
+			Tag: "sync",
+			Content: []waBinary.Node{{
+				Tag:   "collection",
+				Attrs: waBinary.Attrs{"type": "error", "name": "critical_unblock_low"},
+				Content: []waBinary.Node{{
+					Tag:   "error",
+					Attrs: waBinary.Attrs{"code": "409"},
+				}},
+			}},
+		}},
+	}, nil
+}
+
+func (f *conflictRenameInternals) DownloadExternalAppStateBlob(context.Context, *waServerSync.ExternalBlobReference) ([]byte, error) {
+	return nil, errors.New("unexpected external blob download")
+}
+
+func (f *conflictRenameInternals) ApplyAppStatePatches(ctx context.Context, _ appstate.WAPatchName, state appstate.HashState, _ *appstate.PatchList, _ bool, _ *[]any) (appstate.HashState, error) {
+	if err := f.bridge.client.Store.Contacts.PutContactName(ctx, f.target, "Delivery driver", "Delivery driver"); err != nil {
+		return state, err
+	}
+	return state, nil
+}
+
+func (f *conflictRenameInternals) FetchAppState(context.Context, appstate.WAPatchName, bool, bool) ([]any, error) {
+	return nil, errors.New("unexpected fetch after failed validation")
+}
+
+func (f *conflictRenameInternals) DispatchEvent(any) bool {
+	return false
+}
+
+func TestSendAppStateConflictRetryRevalidatesOwnership(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+
+	keyID := bytes.Repeat([]byte{0x42}, 8)
+	keyData := bytes.Repeat([]byte{0x7}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyID, store.AppStateSyncKey{Data: keyData, Fingerprint: bytes.Repeat([]byte{0x1}, 32), Timestamp: 1}); err != nil {
+		t.Fatalf("put app state key: %v", err)
+	}
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	patchInfo := buildContactRemovalPatch(target)
+	keys := expandAppStateKeys(keyData)
+	indexBytes, err := json.Marshal(patchInfo.Mutations[0].Index)
+	if err != nil {
+		t.Fatalf("marshal index: %v", err)
+	}
+	indexMAC := concatAndHMAC(sha256.New, keys.index, indexBytes)
+	if err := bridge.client.Store.AppState.PutAppStateVersion(ctx, string(patchInfo.Type), 1, [128]byte{}); err != nil {
+		t.Fatalf("put app state version: %v", err)
+	}
+	if err := bridge.client.Store.AppState.PutAppStateMutationMACs(ctx, string(patchInfo.Type), 1, []store.AppStateMutationMAC{{
+		IndexMAC: indexMAC,
+		ValueMAC: bytes.Repeat([]byte{0x99}, 32),
+	}}); err != nil {
+		t.Fatalf("put active mutation MAC: %v", err)
+	}
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "（可疑推銷）", "（可疑推銷）"); err != nil {
+		t.Fatalf("put bot label: %v", err)
+	}
+	validateOwnership := func(validateCtx context.Context) error {
+		latestInfo, err := bridge.client.Store.Contacts.GetContact(validateCtx, target)
+		if err != nil {
+			return err
+		}
+		if savedNameFromContactInfo(latestInfo) != "（可疑推銷）" {
+			return errContactLabelChanged
+		}
+		return nil
+	}
+	internals := &conflictRenameInternals{bridge: bridge, target: target}
+	err = bridge.sendAppStateWithOperationAndInternals(ctx, buildContactRemovalPatch(target), waServerSync.SyncdMutation_REMOVE, true, validateOwnership, internals)
+	if !errors.Is(err, errContactLabelChanged) {
+		t.Fatalf("send error = %v, want contact-label-changed validation error", err)
+	}
+	if internals.sendCalls != 1 {
+		t.Fatalf("send calls = %d, want 1 conflicted attempt only", internals.sendCalls)
+	}
+	info, err := bridge.client.Store.Contacts.GetContact(ctx, target)
+	if err != nil {
+		t.Fatalf("get renamed contact: %v", err)
+	}
+	if got := savedNameFromContactInfo(info); got != "Delivery driver" {
+		t.Fatalf("contact name = %q, want user rename preserved", got)
+	}
+}
+
+type captureSendInternals struct {
+	bridge      *WhatsmeowBridge
+	clearTarget types.JID
+	sentPatches [][]byte
+}
+
+func (c *captureSendInternals) SendIQ(_ context.Context, query whatsmeow.DangerousInfoQuery) (*waBinary.Node, error) {
+	syncNode, _ := query.Content.([]waBinary.Node)
+	if len(syncNode) > 0 {
+		if col, ok := syncNode[0].GetOptionalChildByTag("collection"); ok {
+			if patchNode, ok := col.GetOptionalChildByTag("patch"); ok {
+				if raw, ok := patchNode.Content.([]byte); ok {
+					c.sentPatches = append(c.sentPatches, append([]byte(nil), raw...))
+				}
+			}
+		}
+	}
+	return &waBinary.Node{
+		Tag: "iq",
+		Content: []waBinary.Node{{
+			Tag: "sync",
+			Content: []waBinary.Node{{
+				Tag:   "collection",
+				Attrs: waBinary.Attrs{"name": "critical_unblock_low"},
+			}},
+		}},
+	}, nil
+}
+
+func (c *captureSendInternals) DownloadExternalAppStateBlob(context.Context, *waServerSync.ExternalBlobReference) ([]byte, error) {
+	return nil, errors.New("unexpected external blob download")
+}
+
+func (c *captureSendInternals) ApplyAppStatePatches(_ context.Context, _ appstate.WAPatchName, state appstate.HashState, _ *appstate.PatchList, _ bool, _ *[]any) (appstate.HashState, error) {
+	return state, nil
+}
+
+func (c *captureSendInternals) FetchAppState(ctx context.Context, name appstate.WAPatchName, _ bool, _ bool) ([]any, error) {
+	if c.bridge != nil && c.bridge.client != nil && c.bridge.client.Store != nil && c.bridge.client.Store.AppState != nil && len(c.sentPatches) > 0 {
+		var patch waServerSync.SyncdPatch
+		if err := proto.Unmarshal(c.sentPatches[len(c.sentPatches)-1], &patch); err == nil {
+			var removedIndexMACs [][]byte
+			var addedMACs []store.AppStateMutationMAC
+			for _, m := range patch.GetMutations() {
+				switch m.GetOperation() {
+				case waServerSync.SyncdMutation_REMOVE:
+					if idx := m.GetRecord().GetIndex().GetBlob(); len(idx) > 0 {
+						removedIndexMACs = append(removedIndexMACs, idx)
+					}
+				case waServerSync.SyncdMutation_SET:
+					idx := m.GetRecord().GetIndex().GetBlob()
+					val := m.GetRecord().GetValue().GetBlob()
+					if len(idx) > 0 && len(val) >= 32 {
+						addedMACs = append(addedMACs, store.AppStateMutationMAC{
+							IndexMAC: idx,
+							ValueMAC: val[len(val)-32:],
+						})
+					}
+				}
+			}
+			if len(addedMACs) > 0 {
+				if err := c.bridge.client.Store.AppState.PutAppStateMutationMACs(ctx, string(name), 1, addedMACs); err != nil {
+					return nil, err
+				}
+			}
+			if len(removedIndexMACs) > 0 {
+				if err := c.bridge.client.Store.AppState.DeleteAppStateMutationMACs(ctx, string(name), removedIndexMACs); err != nil {
+					return nil, err
+				}
+				if !c.clearTarget.IsEmpty() && c.bridge.client.Store.Contacts != nil {
+					if err := c.bridge.client.Store.Contacts.PutContactName(ctx, c.clearTarget, "", ""); err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
+	}
+	return nil, nil
+}
+
+func (c *captureSendInternals) DispatchEvent(any) bool {
+	return false
+}
+
+func TestSendAppStateRemoveAfterKeyRotationUsesOriginatingKey(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+
+	keyIDA := bytes.Repeat([]byte{0x41}, 8)
+	keyDataA := bytes.Repeat([]byte{0x11}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyIDA, store.AppStateSyncKey{
+		Data:        keyDataA,
+		Fingerprint: bytes.Repeat([]byte{0x01}, 32),
+		Timestamp:   100,
+	}); err != nil {
+		t.Fatalf("put key A: %v", err)
+	}
+
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	patchInfo := buildContactRemovalPatch(target)
+	keysA := expandAppStateKeys(keyDataA)
+	indexBytes, err := json.Marshal(patchInfo.Mutations[0].Index)
+	if err != nil {
+		t.Fatalf("marshal index: %v", err)
+	}
+	indexMACA := concatAndHMAC(sha256.New, keysA.index, indexBytes)
+	prevValueMAC := bytes.Repeat([]byte{0x88}, 32)
+	if err := bridge.client.Store.AppState.PutAppStateVersion(ctx, string(patchInfo.Type), 5, [128]byte{}); err != nil {
+		t.Fatalf("put app state version: %v", err)
+	}
+	if err := bridge.client.Store.AppState.PutAppStateMutationMACs(ctx, string(patchInfo.Type), 5, []store.AppStateMutationMAC{{
+		IndexMAC: indexMACA,
+		ValueMAC: prevValueMAC,
+	}}); err != nil {
+		t.Fatalf("put key-A mutation MAC: %v", err)
+	}
+	if err := bridge.store.SaveBotContactLabel(ctx, target.String(), keyIDA, indexMACA, prevValueMAC, "（可疑推銷）"); err != nil {
+		t.Fatalf("save bot contact label: %v", err)
+	}
+
+	keyIDB := bytes.Repeat([]byte{0x42}, 8)
+	keyDataB := bytes.Repeat([]byte{0x22}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyIDB, store.AppStateSyncKey{
+		Data:        keyDataB,
+		Fingerprint: bytes.Repeat([]byte{0x02}, 32),
+		Timestamp:   200,
+	}); err != nil {
+		t.Fatalf("put key B: %v", err)
+	}
+
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "（可疑推銷）", "（可疑推銷）"); err != nil {
+		t.Fatalf("put bot label: %v", err)
+	}
+
+	internals := &captureSendInternals{bridge: bridge}
+	err = bridge.deleteContactLabelWithSender(ctx, "85261234567", "（可疑推銷）", func(
+		sendCtx context.Context,
+		p appstate.PatchInfo,
+		op waServerSync.SyncdMutation_SyncdOperation,
+		allowRetry bool,
+		validate appStateMutationValidator,
+	) error {
+		return bridge.sendAppStateWithOperationAndInternals(sendCtx, p, op, allowRetry, validate, internals)
+	})
+	if err != nil {
+		t.Fatalf("DeleteContactLabel after key rotation: %v", err)
+	}
+	if len(internals.sentPatches) != 1 {
+		t.Fatalf("sent patches = %d, want 1", len(internals.sentPatches))
+	}
+
+	patch, mutation := decodeAppStateMutationForTest(t, internals.sentPatches[0])
+	if !bytes.Equal(patch.GetKeyID().GetID(), keyIDA) {
+		t.Fatalf("patch key ID = %x, want originating key A %x", patch.GetKeyID().GetID(), keyIDA)
+	}
+	if !bytes.Equal(mutation.GetRecord().GetKeyID().GetID(), keyIDA) {
+		t.Fatalf("mutation key ID = %x, want originating key A %x", mutation.GetRecord().GetKeyID().GetID(), keyIDA)
+	}
+	if mutation.GetOperation() != waServerSync.SyncdMutation_REMOVE {
+		t.Fatalf("mutation operation = %s, want REMOVE", mutation.GetOperation())
+	}
+	if !bytes.Equal(mutation.GetRecord().GetIndex().GetBlob(), indexMACA) {
+		t.Fatalf("mutation index MAC does not match key A record")
+	}
+	_ = decryptAppStateMutationForTest(t, mutation, keyDataA)
+
+	remainingMAC, err := bridge.client.Store.AppState.GetAppStateMutationMAC(ctx, string(patchInfo.Type), indexMACA)
+	if err != nil {
+		t.Fatalf("check remaining key-A MAC: %v", err)
+	}
+	if remainingMAC != nil {
+		t.Fatalf("expected key-A mutation MAC to be removed, still got %x", remainingMAC)
+	}
+
+	info, err := bridge.client.Store.Contacts.GetContact(ctx, target)
+	if err != nil {
+		t.Fatalf("get contact: %v", err)
+	}
+	if got := savedNameFromContactInfo(info); got != "" {
+		t.Fatalf("contact name = %q, want cleared after REMOVE", got)
+	}
+}
+
+func TestSendAppStateRemoveAfterKeyRotationClearsAllMatchingKeys(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+
+	keyIDA := bytes.Repeat([]byte{0x41}, 8)
+	keyDataA := bytes.Repeat([]byte{0x11}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyIDA, store.AppStateSyncKey{
+		Data:        keyDataA,
+		Fingerprint: bytes.Repeat([]byte{0x01}, 32),
+		Timestamp:   100,
+	}); err != nil {
+		t.Fatalf("put key A: %v", err)
+	}
+	keyIDB := bytes.Repeat([]byte{0x42}, 8)
+	keyDataB := bytes.Repeat([]byte{0x22}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyIDB, store.AppStateSyncKey{
+		Data:        keyDataB,
+		Fingerprint: bytes.Repeat([]byte{0x02}, 32),
+		Timestamp:   200,
+	}); err != nil {
+		t.Fatalf("put key B: %v", err)
+	}
+
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	patchInfo := buildContactRemovalPatch(target)
+	indexBytes, err := json.Marshal(patchInfo.Mutations[0].Index)
+	if err != nil {
+		t.Fatalf("marshal index: %v", err)
+	}
+	indexMACA := concatAndHMAC(sha256.New, expandAppStateKeys(keyDataA).index, indexBytes)
+	indexMACB := concatAndHMAC(sha256.New, expandAppStateKeys(keyDataB).index, indexBytes)
+	if err := bridge.client.Store.AppState.PutAppStateVersion(ctx, string(patchInfo.Type), 6, [128]byte{}); err != nil {
+		t.Fatalf("put app state version: %v", err)
+	}
+	if err := bridge.client.Store.AppState.PutAppStateMutationMACs(ctx, string(patchInfo.Type), 6, []store.AppStateMutationMAC{
+		{IndexMAC: indexMACA, ValueMAC: bytes.Repeat([]byte{0x88}, 32)},
+		{IndexMAC: indexMACB, ValueMAC: bytes.Repeat([]byte{0x99}, 32)},
+	}); err != nil {
+		t.Fatalf("put mutation MACs: %v", err)
+	}
+	if err := bridge.store.SaveBotContactLabel(ctx, target.String(), keyIDA, indexMACA, bytes.Repeat([]byte{0x88}, 32), "（可疑推銷）"); err != nil {
+		t.Fatalf("save bot contact label A: %v", err)
+	}
+	if err := bridge.store.SaveBotContactLabel(ctx, target.String(), keyIDB, indexMACB, bytes.Repeat([]byte{0x99}, 32), "（可疑推銷）"); err != nil {
+		t.Fatalf("save bot contact label B: %v", err)
+	}
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "（可疑推銷）", "（可疑推銷）"); err != nil {
+		t.Fatalf("put bot label: %v", err)
+	}
+
+	internals := &captureSendInternals{bridge: bridge, clearTarget: target}
+	err = bridge.deleteContactLabelWithSender(ctx, "85261234567", "（可疑推銷）", func(
+		sendCtx context.Context,
+		p appstate.PatchInfo,
+		op waServerSync.SyncdMutation_SyncdOperation,
+		allowRetry bool,
+		validate appStateMutationValidator,
+	) error {
+		return bridge.sendAppStateWithOperationAndInternals(sendCtx, p, op, allowRetry, validate, internals)
+	})
+	if err != nil {
+		t.Fatalf("DeleteContactLabel across rotated keys: %v", err)
+	}
+	if len(internals.sentPatches) != 2 {
+		t.Fatalf("sent patches = %d, want 2 (one per matching key)", len(internals.sentPatches))
+	}
+	for _, mac := range [][]byte{indexMACA, indexMACB} {
+		remaining, err := bridge.client.Store.AppState.GetAppStateMutationMAC(ctx, string(patchInfo.Type), mac)
+		if err != nil {
+			t.Fatalf("check remaining MAC: %v", err)
+		}
+		if remaining != nil {
+			t.Fatalf("expected mutation MAC %x to be removed", mac)
+		}
+	}
+}
+
+func TestDeleteContactLabelPreservesUserRecordUnderOtherKey(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	bridge.fetchContactsFn = func(context.Context, bool) error { return nil }
+
+	keyIDA := bytes.Repeat([]byte{0x41}, 8)
+	keyDataA := bytes.Repeat([]byte{0x11}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyIDA, store.AppStateSyncKey{
+		Data:        keyDataA,
+		Fingerprint: bytes.Repeat([]byte{0x01}, 32),
+		Timestamp:   100,
+	}); err != nil {
+		t.Fatalf("put key A: %v", err)
+	}
+	keyIDB := bytes.Repeat([]byte{0x42}, 8)
+	keyDataB := bytes.Repeat([]byte{0x22}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyIDB, store.AppStateSyncKey{
+		Data:        keyDataB,
+		Fingerprint: bytes.Repeat([]byte{0x02}, 32),
+		Timestamp:   200,
+	}); err != nil {
+		t.Fatalf("put key B: %v", err)
+	}
+
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	patchInfo := buildContactRemovalPatch(target)
+	indexBytes, err := json.Marshal(patchInfo.Mutations[0].Index)
+	if err != nil {
+		t.Fatalf("marshal index: %v", err)
+	}
+	indexMACA := concatAndHMAC(sha256.New, expandAppStateKeys(keyDataA).index, indexBytes)
+	indexMACB := concatAndHMAC(sha256.New, expandAppStateKeys(keyDataB).index, indexBytes)
+	userValueMAC := bytes.Repeat([]byte{0x77}, 32)
+	botValueMAC := bytes.Repeat([]byte{0x99}, 32)
+	if err := bridge.client.Store.AppState.PutAppStateVersion(ctx, string(patchInfo.Type), 6, [128]byte{}); err != nil {
+		t.Fatalf("put app state version: %v", err)
+	}
+	if err := bridge.client.Store.AppState.PutAppStateMutationMACs(ctx, string(patchInfo.Type), 6, []store.AppStateMutationMAC{
+		{IndexMAC: indexMACA, ValueMAC: userValueMAC},
+		{IndexMAC: indexMACB, ValueMAC: botValueMAC},
+	}); err != nil {
+		t.Fatalf("put mutation MACs: %v", err)
+	}
+	if err := bridge.store.SaveBotContactLabel(ctx, target.String(), keyIDB, indexMACB, botValueMAC, "（可疑推銷）"); err != nil {
+		t.Fatalf("save bot contact label ownership: %v", err)
+	}
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "（可疑推銷）", "（可疑推銷）"); err != nil {
+		t.Fatalf("put bot label: %v", err)
+	}
+
+	internals := &captureSendInternals{bridge: bridge, clearTarget: target}
+	err = bridge.deleteContactLabelWithSender(ctx, "85261234567", "（可疑推銷）", func(
+		sendCtx context.Context,
+		p appstate.PatchInfo,
+		op waServerSync.SyncdMutation_SyncdOperation,
+		allowRetry bool,
+		validate appStateMutationValidator,
+	) error {
+		return bridge.sendAppStateWithOperationAndInternals(sendCtx, p, op, allowRetry, validate, internals)
+	})
+	if err != nil {
+		t.Fatalf("DeleteContactLabel on mixed-key contact: %v", err)
+	}
+	if len(internals.sentPatches) != 1 {
+		t.Fatalf("sent patches = %d, want 1 (only bot-owned key B)", len(internals.sentPatches))
+	}
+	patch, _ := decodeAppStateMutationForTest(t, internals.sentPatches[0])
+	if !bytes.Equal(patch.GetKeyID().GetID(), keyIDB) {
+		t.Fatalf("removed key ID = %x, want bot-owned key B %x", patch.GetKeyID().GetID(), keyIDB)
+	}
+	remainingUserMAC, err := bridge.client.Store.AppState.GetAppStateMutationMAC(ctx, string(patchInfo.Type), indexMACA)
+	if err != nil {
+		t.Fatalf("check user key-A MAC: %v", err)
+	}
+	if !bytes.Equal(remainingUserMAC, userValueMAC) {
+		t.Fatalf("user record under key A was deleted or altered: got %x, want %x", remainingUserMAC, userValueMAC)
+	}
+	remainingBotMAC, err := bridge.client.Store.AppState.GetAppStateMutationMAC(ctx, string(patchInfo.Type), indexMACB)
+	if err != nil {
+		t.Fatalf("check bot key-B MAC: %v", err)
+	}
+	if remainingBotMAC != nil {
+		t.Fatalf("bot record under key B should be removed, still got %x", remainingBotMAC)
+	}
+
+	bridge.mu.Lock()
+	bridge.contactsSynced = true
+	bridge.mu.Unlock()
+	contactResp, err := bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact after preserving user record: %v", err)
+	}
+	if contactResp.IsMyContact != nil {
+		t.Fatalf("expected IsMyContact=nil (unknown saved status) while surviving user record is unreconciled, got %v", *contactResp.IsMyContact)
+	}
+
+	if err := bridge.client.Store.AppState.DeleteAppStateMutationMACs(ctx, string(patchInfo.Type), [][]byte{indexMACA}); err != nil {
+		t.Fatalf("delete surviving user MAC: %v", err)
+	}
+	afterDeleteResp, err := bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact after user deleted surviving record: %v", err)
+	}
+	if afterDeleteResp.IsMyContact == nil || *afterDeleteResp.IsMyContact {
+		t.Fatalf("expected IsMyContact=false once surviving record is deleted, got %v", afterDeleteResp.IsMyContact)
+	}
+}
+
+func TestSetContactLabelRecordsExactKeyAcrossRotation(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+
+	keyIDA := bytes.Repeat([]byte{0x41}, 8)
+	keyDataA := bytes.Repeat([]byte{0x11}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyIDA, store.AppStateSyncKey{
+		Data:        keyDataA,
+		Fingerprint: bytes.Repeat([]byte{0x01}, 32),
+		Timestamp:   100,
+	}); err != nil {
+		t.Fatalf("put key A: %v", err)
+	}
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	patchInfo := buildContactRemovalPatch(target)
+	if err := bridge.client.Store.AppState.PutAppStateVersion(ctx, string(patchInfo.Type), 1, [128]byte{}); err != nil {
+		t.Fatalf("put app state version: %v", err)
+	}
+
+	internals := &captureSendInternals{bridge: bridge, clearTarget: target}
+	if err := bridge.setContactLabelWithInternals(ctx, "85261234567", "（可疑推銷）", internals); err != nil {
+		t.Fatalf("setContactLabelWithInternals under key A: %v", err)
+	}
+
+	keyIDB := bytes.Repeat([]byte{0x42}, 8)
+	keyDataB := bytes.Repeat([]byte{0x22}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyIDB, store.AppStateSyncKey{
+		Data:        keyDataB,
+		Fingerprint: bytes.Repeat([]byte{0x02}, 32),
+		Timestamp:   200,
+	}); err != nil {
+		t.Fatalf("put key B: %v", err)
+	}
+
+	err := bridge.deleteContactLabelWithSender(ctx, "85261234567", "（可疑推銷）", func(
+		sendCtx context.Context,
+		p appstate.PatchInfo,
+		op waServerSync.SyncdMutation_SyncdOperation,
+		allowRetry bool,
+		validate appStateMutationValidator,
+	) error {
+		return bridge.sendAppStateWithOperationAndInternals(sendCtx, p, op, allowRetry, validate, internals)
+	})
+	if err != nil {
+		t.Fatalf("deleteContactLabelWithSender after key rotation: %v", err)
+	}
+	if len(internals.sentPatches) != 2 {
+		t.Fatalf("sent patches = %d, want 2 (SET under A, REMOVE under A)", len(internals.sentPatches))
+	}
+	removePatch, _ := decodeAppStateMutationForTest(t, internals.sentPatches[1])
+	if !bytes.Equal(removePatch.GetKeyID().GetID(), keyIDA) {
+		t.Fatalf("REMOVE key ID = %x, want key A %x", removePatch.GetKeyID().GetID(), keyIDA)
+	}
+}
+
+type sameKeyUserRenameInternals struct {
+	captureSendInternals
+	target   types.JID
+	userMAC  []byte
+	userName string
+}
+
+func (s *sameKeyUserRenameInternals) FetchAppState(ctx context.Context, name appstate.WAPatchName, fullSync bool, onlyIfNotSynced bool) ([]any, error) {
+	if _, err := s.captureSendInternals.FetchAppState(ctx, name, fullSync, onlyIfNotSynced); err != nil {
+		return nil, err
+	}
+	if len(s.sentPatches) > 0 {
+		var patch waServerSync.SyncdPatch
+		if err := proto.Unmarshal(s.sentPatches[len(s.sentPatches)-1], &patch); err == nil && len(patch.GetMutations()) > 0 {
+			idx := patch.GetMutations()[0].GetRecord().GetIndex().GetBlob()
+			if len(idx) > 0 {
+				if err := s.bridge.client.Store.AppState.PutAppStateMutationMACs(ctx, string(name), 2, []store.AppStateMutationMAC{{
+					IndexMAC: idx,
+					ValueMAC: s.userMAC,
+				}}); err != nil {
+					return nil, err
+				}
+				if err := s.bridge.client.Store.Contacts.PutContactName(ctx, s.target, s.userName, s.userName); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	return nil, nil
+}
+
+func TestSetContactLabelDoesNotOverwriteSameKeyUserRenameDuringFetch(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+
+	keyID := bytes.Repeat([]byte{0x41}, 8)
+	keyData := bytes.Repeat([]byte{0x11}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyID, store.AppStateSyncKey{
+		Data:        keyData,
+		Fingerprint: bytes.Repeat([]byte{0x01}, 32),
+		Timestamp:   100,
+	}); err != nil {
+		t.Fatalf("put key: %v", err)
+	}
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	if err := bridge.client.Store.AppState.PutAppStateVersion(ctx, string(appstate.WAPatchCriticalUnblockLow), 1, [128]byte{}); err != nil {
+		t.Fatalf("put app state version: %v", err)
+	}
+
+	userMAC := bytes.Repeat([]byte{0xAB}, 32)
+	internals := &sameKeyUserRenameInternals{
+		captureSendInternals: captureSendInternals{bridge: bridge},
+		target:               target,
+		userMAC:              userMAC,
+		userName:             "Ada",
+	}
+	if err := bridge.setContactLabelWithInternals(ctx, "85261234567", "（可疑推銷）", internals); err != nil {
+		t.Fatalf("setContactLabelWithInternals: %v", err)
+	}
+	info, err := bridge.client.Store.Contacts.GetContact(ctx, target)
+	if err != nil {
+		t.Fatalf("get contact: %v", err)
+	}
+	if got := savedNameFromContactInfo(info); got != "Ada" {
+		t.Fatalf("contact name = %q, want synced user rename Ada preserved", got)
+	}
+	owned, err := bridge.store.ListBotContactLabels(ctx, target.String())
+	if err != nil {
+		t.Fatalf("list bot contact labels: %v", err)
+	}
+	if len(owned) != 0 {
+		t.Fatalf("expected 0 bot ownership rows when post-write sync superseded SET, got %d", len(owned))
+	}
+}
+
+type sameKeyRemovedDuringFetchInternals struct {
+	captureSendInternals
+	target types.JID
+}
+
+func (s *sameKeyRemovedDuringFetchInternals) FetchAppState(ctx context.Context, name appstate.WAPatchName, fullSync bool, onlyIfNotSynced bool) ([]any, error) {
+	if _, err := s.captureSendInternals.FetchAppState(ctx, name, fullSync, onlyIfNotSynced); err != nil {
+		return nil, err
+	}
+	if len(s.sentPatches) > 0 {
+		var patch waServerSync.SyncdPatch
+		if err := proto.Unmarshal(s.sentPatches[len(s.sentPatches)-1], &patch); err == nil && len(patch.GetMutations()) > 0 {
+			idx := patch.GetMutations()[0].GetRecord().GetIndex().GetBlob()
+			if len(idx) > 0 {
+				if err := s.bridge.client.Store.AppState.DeleteAppStateMutationMACs(ctx, string(name), [][]byte{idx}); err != nil {
+					return nil, err
+				}
+				if err := s.bridge.client.Store.Contacts.PutContactName(ctx, s.target, "", ""); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	return nil, nil
+}
+
+func TestSetContactLabelDoesNotRestoreSameKeyRemovedDuringFetch(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+
+	keyID := bytes.Repeat([]byte{0x41}, 8)
+	keyData := bytes.Repeat([]byte{0x11}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyID, store.AppStateSyncKey{
+		Data:        keyData,
+		Fingerprint: bytes.Repeat([]byte{0x01}, 32),
+		Timestamp:   100,
+	}); err != nil {
+		t.Fatalf("put key: %v", err)
+	}
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	if err := bridge.client.Store.AppState.PutAppStateVersion(ctx, string(appstate.WAPatchCriticalUnblockLow), 1, [128]byte{}); err != nil {
+		t.Fatalf("put app state version: %v", err)
+	}
+
+	internals := &sameKeyRemovedDuringFetchInternals{
+		captureSendInternals: captureSendInternals{bridge: bridge},
+		target:               target,
+	}
+	if err := bridge.setContactLabelWithInternals(ctx, "85261234567", "（可疑推銷）", internals); err != nil {
+		t.Fatalf("setContactLabelWithInternals: %v", err)
+	}
+	info, err := bridge.client.Store.Contacts.GetContact(ctx, target)
+	if err != nil {
+		t.Fatalf("get contact: %v", err)
+	}
+	if got := savedNameFromContactInfo(info); got != "" {
+		t.Fatalf("contact name = %q, want absent when post-write sync removed label", got)
+	}
+	owned, err := bridge.store.ListBotContactLabels(ctx, target.String())
+	if err != nil {
+		t.Fatalf("list bot contact labels: %v", err)
+	}
+	if len(owned) != 0 {
+		t.Fatalf("expected 0 bot ownership rows when post-write sync removed SET, got %d", len(owned))
+	}
+}
+
+func TestDeleteContactLabelRefusesUnownedHistoricalKey(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+
+	keyIDA := bytes.Repeat([]byte{0x41}, 8)
+	keyDataA := bytes.Repeat([]byte{0x11}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyIDA, store.AppStateSyncKey{
+		Data:        keyDataA,
+		Fingerprint: bytes.Repeat([]byte{0x01}, 32),
+		Timestamp:   100,
+	}); err != nil {
+		t.Fatalf("put key A: %v", err)
+	}
+	keyIDB := bytes.Repeat([]byte{0x42}, 8)
+	keyDataB := bytes.Repeat([]byte{0x22}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyIDB, store.AppStateSyncKey{
+		Data:        keyDataB,
+		Fingerprint: bytes.Repeat([]byte{0x02}, 32),
+		Timestamp:   200,
+	}); err != nil {
+		t.Fatalf("put key B: %v", err)
+	}
+
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	patchInfo := buildContactRemovalPatch(target)
+	indexBytes, err := json.Marshal(patchInfo.Mutations[0].Index)
+	if err != nil {
+		t.Fatalf("marshal index: %v", err)
+	}
+	indexMACA := concatAndHMAC(sha256.New, expandAppStateKeys(keyDataA).index, indexBytes)
+	userValueMAC := bytes.Repeat([]byte{0x77}, 32)
+	if err := bridge.client.Store.AppState.PutAppStateVersion(ctx, string(patchInfo.Type), 5, [128]byte{}); err != nil {
+		t.Fatalf("put app state version: %v", err)
+	}
+	if err := bridge.client.Store.AppState.PutAppStateMutationMACs(ctx, string(patchInfo.Type), 5, []store.AppStateMutationMAC{{
+		IndexMAC: indexMACA,
+		ValueMAC: userValueMAC,
+	}}); err != nil {
+		t.Fatalf("put unowned key-A MAC: %v", err)
+	}
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "（可疑推銷）", "（可疑推銷）"); err != nil {
+		t.Fatalf("put visible name: %v", err)
+	}
+
+	internals := &captureSendInternals{bridge: bridge, clearTarget: target}
+	err = bridge.deleteContactLabelWithSender(ctx, "85261234567", "（可疑推銷）", func(
+		sendCtx context.Context,
+		p appstate.PatchInfo,
+		op waServerSync.SyncdMutation_SyncdOperation,
+		allowRetry bool,
+		validate appStateMutationValidator,
+	) error {
+		return bridge.sendAppStateWithOperationAndInternals(sendCtx, p, op, allowRetry, validate, internals)
+	})
+	if !errors.Is(err, errActiveAppStateRecordNotFound) {
+		t.Fatalf("expected errActiveAppStateRecordNotFound, got %v", err)
+	}
+	if len(internals.sentPatches) != 0 {
+		t.Fatalf("sent patches = %d, want 0 when only unowned historical key exists", len(internals.sentPatches))
+	}
+	remainingMAC, err := bridge.client.Store.AppState.GetAppStateMutationMAC(ctx, string(patchInfo.Type), indexMACA)
+	if err != nil || !bytes.Equal(remainingMAC, userValueMAC) {
+		t.Fatalf("unowned historical record under key A was altered: got %x, err=%v", remainingMAC, err)
+	}
+}
+
+// seedTwoKeyContactLabel installs app-state keys A and B where B holds the bot
+// warning label and A holds a surviving user record for the same contact index,
+// then marks the contact with the visible bot label.
+func seedTwoKeyContactLabel(t *testing.T, ctx context.Context, bridge *WhatsmeowBridge) (target types.JID, indexMACA, indexMACB []byte) {
+	t.Helper()
+	keyIDA := bytes.Repeat([]byte{0x41}, 8)
+	keyDataA := bytes.Repeat([]byte{0x11}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyIDA, store.AppStateSyncKey{
+		Data:        keyDataA,
+		Fingerprint: bytes.Repeat([]byte{0x01}, 32),
+		Timestamp:   100,
+	}); err != nil {
+		t.Fatalf("put key A: %v", err)
+	}
+	keyIDB := bytes.Repeat([]byte{0x42}, 8)
+	keyDataB := bytes.Repeat([]byte{0x22}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyIDB, store.AppStateSyncKey{
+		Data:        keyDataB,
+		Fingerprint: bytes.Repeat([]byte{0x02}, 32),
+		Timestamp:   200,
+	}); err != nil {
+		t.Fatalf("put key B: %v", err)
+	}
+
+	target = types.NewJID("85261234567", types.DefaultUserServer)
+	patchInfo := buildContactRemovalPatch(target)
+	indexBytes, err := json.Marshal(patchInfo.Mutations[0].Index)
+	if err != nil {
+		t.Fatalf("marshal index: %v", err)
+	}
+	indexMACA = concatAndHMAC(sha256.New, expandAppStateKeys(keyDataA).index, indexBytes)
+	indexMACB = concatAndHMAC(sha256.New, expandAppStateKeys(keyDataB).index, indexBytes)
+	botValueMAC := bytes.Repeat([]byte{0x99}, 32)
+	if err := bridge.client.Store.AppState.PutAppStateVersion(ctx, string(patchInfo.Type), 6, [128]byte{}); err != nil {
+		t.Fatalf("put app state version: %v", err)
+	}
+	if err := bridge.client.Store.AppState.PutAppStateMutationMACs(ctx, string(patchInfo.Type), 6, []store.AppStateMutationMAC{
+		{IndexMAC: indexMACA, ValueMAC: bytes.Repeat([]byte{0x55}, 32)},
+		{IndexMAC: indexMACB, ValueMAC: botValueMAC},
+	}); err != nil {
+		t.Fatalf("put mutation MACs: %v", err)
+	}
+	if err := bridge.store.SaveBotContactLabel(ctx, target.String(), keyIDB, indexMACB, botValueMAC, "（可疑推銷）"); err != nil {
+		t.Fatalf("save bot contact label: %v", err)
+	}
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "（可疑推銷）", "（可疑推銷）"); err != nil {
+		t.Fatalf("put bot label: %v", err)
+	}
+	return target, indexMACA, indexMACB
+}
+
+func runDeleteContactLabelWithInternals(ctx context.Context, bridge *WhatsmeowBridge, internals *captureSendInternals) error {
+	return bridge.deleteContactLabelWithSender(ctx, "85261234567", "（可疑推銷）", func(
+		sendCtx context.Context,
+		p appstate.PatchInfo,
+		op waServerSync.SyncdMutation_SyncdOperation,
+		allowRetry bool,
+		validate appStateMutationValidator,
+	) error {
+		return bridge.sendAppStateWithOperationAndInternals(sendCtx, p, op, allowRetry, validate, internals)
+	})
+}
+
+func awaitRebuildSignals(t *testing.T, rebuildCalls <-chan bool, rebuildDone <-chan error) {
+	t.Helper()
+	select {
+	case fullSync := <-rebuildCalls:
+		if !fullSync {
+			t.Fatal("contact rebuild after a surviving record must be a full sync")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for contact rebuild fetch")
+	}
+	select {
+	case err := <-rebuildDone:
+		if err != nil {
+			t.Fatalf("contact rebuild failed: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for contact rebuild completion")
+	}
+}
+
+func TestDeleteContactLabelRebuildRestoresSurvivingUserName(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target, _, _ := seedTwoKeyContactLabel(t, ctx, bridge)
+
+	rebuildCalls := make(chan bool, 4)
+	rebuildDone := make(chan error, 4)
+	fetchGate := make(chan struct{})
+	bridge.onSyncAttemptDone = func(_ uint64, _ bool, err error) { rebuildDone <- err }
+	bridge.fetchContactsFn = func(_ context.Context, fullSync bool) error {
+		rebuildCalls <- fullSync
+		<-fetchGate
+		if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "Alice", "Alice"); err != nil {
+			return err
+		}
+		bridge.handleEvent(&events.Contact{
+			JID: target,
+			Action: &waSyncAction.ContactAction{
+				FullName:  proto.String("Alice"),
+				FirstName: proto.String("Alice"),
+			},
+		})
+		return nil
+	}
+	bridge.mu.Lock()
+	bridge.connGen = 1
+	bridge.mu.Unlock()
+
+	internals := &captureSendInternals{bridge: bridge, clearTarget: target}
+	if err := runDeleteContactLabelWithInternals(ctx, bridge, internals); err != nil {
+		t.Fatalf("deleteContactLabelWithSender: %v", err)
+	}
+	close(fetchGate)
+	awaitRebuildSignals(t, rebuildCalls, rebuildDone)
+
+	resp, err := bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact after rebuild restored user name: %v", err)
+	}
+	if resp.Name != "Alice" || resp.IsMyContact == nil || !*resp.IsMyContact {
+		t.Fatalf("expected Name=Alice and IsMyContact=true after rebuild, got Name=%q IsMyContact=%v", resp.Name, resp.IsMyContact)
+	}
+}
+
+func TestDeleteContactLabelStaysUnknownWhenSurvivingRecordNameBlank(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target, indexMACA, _ := seedTwoKeyContactLabel(t, ctx, bridge)
+
+	rebuildCalls := make(chan bool, 4)
+	rebuildDone := make(chan error, 4)
+	fetchGate := make(chan struct{})
+	bridge.onSyncAttemptDone = func(_ uint64, _ bool, err error) { rebuildDone <- err }
+	bridge.fetchContactsFn = func(_ context.Context, fullSync bool) error {
+		rebuildCalls <- fullSync
+		<-fetchGate
+		if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "", ""); err != nil {
+			return err
+		}
+		bridge.handleEvent(&events.Contact{
+			JID:    target,
+			Action: &waSyncAction.ContactAction{},
+		})
+		return nil
+	}
+	bridge.mu.Lock()
+	bridge.connGen = 1
+	bridge.mu.Unlock()
+
+	internals := &captureSendInternals{bridge: bridge, clearTarget: target}
+	if err := runDeleteContactLabelWithInternals(ctx, bridge, internals); err != nil {
+		t.Fatalf("deleteContactLabelWithSender: %v", err)
+	}
+	close(fetchGate)
+	awaitRebuildSignals(t, rebuildCalls, rebuildDone)
+
+	resp, err := bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact after blank rebuild: %v", err)
+	}
+	if resp.IsMyContact != nil {
+		t.Fatalf("expected IsMyContact=nil (name cannot be established from surviving records), got %v", *resp.IsMyContact)
+	}
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || !unreconciled {
+		t.Fatalf("unreconciled marker must survive while the surviving record keeps the name unknown, got %v err=%v", unreconciled, err)
+	}
+	if _, err := bridge.client.Store.AppState.GetAppStateMutationMAC(ctx, string(buildContactRemovalPatch(target).Type), indexMACA); err != nil {
+		t.Fatalf("check surviving MAC: %v", err)
+	}
+}
+
+func TestDeleteContactLabelClearsMarkerAfterVerifiedRebuildOmitsTarget(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target, _, _ := seedTwoKeyContactLabel(t, ctx, bridge)
+	patchInfo := buildContactRemovalPatch(target)
+
+	rebuildCalls := make(chan bool, 4)
+	rebuildDone := make(chan error, 4)
+	fetchGate := make(chan struct{})
+	bridge.onSyncAttemptDone = func(_ uint64, _ bool, err error) { rebuildDone <- err }
+	bridge.fetchContactsFn = func(fetchCtx context.Context, fullSync bool) error {
+		rebuildCalls <- fullSync
+		<-fetchGate
+		// A verified full rebuild resets the collection and the snapshot holds
+		// no record for the target, so the surviving MACs are gone for good.
+		if err := bridge.client.Store.AppState.DeleteAppStateVersion(fetchCtx, string(patchInfo.Type)); err != nil {
+			return err
+		}
+		if err := bridge.client.Store.AppState.PutAppStateVersion(fetchCtx, string(patchInfo.Type), 7, [128]byte{}); err != nil {
+			return err
+		}
+		if err := bridge.client.Store.Contacts.PutAllContactNames(fetchCtx, []store.ContactEntry{{
+			JID:      types.NewJID("85260000000", types.DefaultUserServer),
+			FullName: "Other Contact",
+		}}); err != nil {
+			return err
+		}
+		return nil
+	}
+	bridge.mu.Lock()
+	bridge.connGen = 1
+	bridge.mu.Unlock()
+
+	internals := &captureSendInternals{bridge: bridge, clearTarget: target}
+	if err := runDeleteContactLabelWithInternals(ctx, bridge, internals); err != nil {
+		t.Fatalf("deleteContactLabelWithSender: %v", err)
+	}
+	close(fetchGate)
+	awaitRebuildSignals(t, rebuildCalls, rebuildDone)
+
+	resp, err := bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact after verified rebuild omitted target: %v", err)
+	}
+	if resp.IsMyContact == nil || *resp.IsMyContact {
+		t.Fatalf("expected IsMyContact=false once a verified rebuild confirms no record survives, got %v", resp.IsMyContact)
+	}
+}
+
+func TestDeleteContactLabelStaysFailClosedUntilRebuildVerifies(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target, _, _ := seedTwoKeyContactLabel(t, ctx, bridge)
+	patchInfo := buildContactRemovalPatch(target)
+
+	bridge.syncRetryDelay = time.Hour
+	releaseFetch := make(chan struct{})
+	fetchGate := make(chan struct{})
+	fetchCalls := make(chan bool, 4)
+	var fetchMu sync.Mutex
+	fetchCount := 0
+	bridge.fetchContactsFn = func(fetchCtx context.Context, fullSync bool) error {
+		fetchMu.Lock()
+		fetchCount++
+		n := fetchCount
+		fetchMu.Unlock()
+		fetchCalls <- fullSync
+		<-fetchGate
+		if n == 1 {
+			// Mirror whatsmeow's destructive full fetch: the version row is
+			// deleted (cascading to the mutation MACs) before the snapshot
+			// download, which then fails.
+			if err := bridge.client.Store.AppState.DeleteAppStateVersion(fetchCtx, string(patchInfo.Type)); err != nil {
+				return err
+			}
+			close(releaseFetch)
+			return errors.New("snapshot download failed")
+		}
+		<-releaseFetch
+		if !fullSync {
+			return errors.New("contact rebuild retry must stay a full sync")
+		}
+		if err := bridge.client.Store.AppState.PutAppStateVersion(fetchCtx, string(patchInfo.Type), 7, [128]byte{}); err != nil {
+			return err
+		}
+		if err := bridge.client.Store.Contacts.PutContactName(fetchCtx, target, "Alice", "Alice"); err != nil {
+			return err
+		}
+		bridge.handleEvent(&events.Contact{
+			JID: target,
+			Action: &waSyncAction.ContactAction{
+				FullName:  proto.String("Alice"),
+				FirstName: proto.String("Alice"),
+			},
+		})
+		return nil
+	}
+	bridge.mu.Lock()
+	bridge.connGen = 1
+	bridge.mu.Unlock()
+
+	internals := &captureSendInternals{bridge: bridge, clearTarget: target}
+	if err := runDeleteContactLabelWithInternals(ctx, bridge, internals); err != nil {
+		t.Fatalf("deleteContactLabelWithSender: %v", err)
+	}
+	close(fetchGate)
+
+	// The removal invalidates contact authority before the destructive rebuild
+	// and the failed snapshot download must not reopen the saved-status gate.
+	if bridge.Health().ContactsSynced {
+		t.Fatal("contact sync must stay invalid while the rebuild is unverified")
+	}
+	select {
+	case fullSync := <-fetchCalls:
+		if !fullSync {
+			t.Fatal("contact rebuild must request a full sync")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for contact rebuild fetch")
+	}
+	<-releaseFetch
+
+	resp, err := bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact during failed rebuild: %v", err)
+	}
+	if resp.IsMyContact != nil {
+		t.Fatalf("expected IsMyContact=nil while the MAC cache is wiped and rebuild unverified, got %v", *resp.IsMyContact)
+	}
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || !unreconciled {
+		t.Fatalf("unreconciled marker must not clear from MAC absence before the rebuild verifies, got %v err=%v", unreconciled, err)
+	}
+
+	// Wake the retry; the verified rebuild restores the surviving user name.
+	select {
+	case bridge.syncRetryWake <- struct{}{}:
+	default:
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for !bridge.Health().ContactsSynced && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !bridge.Health().ContactsSynced {
+		t.Fatal("verified contact rebuild must reopen the contact gate")
+	}
+	resp, err = bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact after verified rebuild: %v", err)
+	}
+	if resp.Name != "Alice" || resp.IsMyContact == nil || !*resp.IsMyContact {
+		t.Fatalf("expected Name=Alice IsMyContact=true after verified rebuild, got Name=%q IsMyContact=%v", resp.Name, resp.IsMyContact)
+	}
+}
+
+func TestContactEventKeepsMarkerWhenSnapshotSetPrecedesRemove(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target, indexMACA, indexMACB := seedTwoKeyContactLabel(t, ctx, bridge)
+	patchInfo := buildContactRemovalPatch(target)
+
+	// Simulate the post-REMOVE replay state: the bot label's REMOVE already
+	// blanked the stored name while the key-A user record stays active.
+	if err := bridge.client.Store.AppState.DeleteAppStateMutationMACs(ctx, string(patchInfo.Type), [][]byte{indexMACB}); err != nil {
+		t.Fatalf("delete bot label MAC: %v", err)
+	}
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "", ""); err != nil {
+		t.Fatalf("blank contact name: %v", err)
+	}
+	if err := bridge.store.MarkUnreconciledContact(ctx, target.String()); err != nil {
+		t.Fatalf("mark unreconciled: %v", err)
+	}
+	bridge.mu.Lock()
+	bridge.contactsSynced = true
+	bridge.mu.Unlock()
+
+	// The queued snapshot SET event for the surviving user record arrives after
+	// the REMOVE already blanked the local name; it must not clear the marker.
+	bridge.handleContactEvent(&events.Contact{
+		JID: target,
+		Action: &waSyncAction.ContactAction{
+			FullName:  proto.String("Alice"),
+			FirstName: proto.String("Alice"),
+		},
+	})
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || !unreconciled {
+		t.Fatalf("snapshot SET event must not clear the marker while the final name is unresolved, got %v err=%v", unreconciled, err)
+	}
+	resp, err := bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact after snapshot-then-remove replay: %v", err)
+	}
+	if resp.IsMyContact != nil {
+		t.Fatalf("expected IsMyContact=nil while the surviving record keeps saved status unknown, got %v", *resp.IsMyContact)
+	}
+
+	// Once the surviving record is gone too, the marker reconciles to unsaved.
+	if err := bridge.client.Store.AppState.DeleteAppStateMutationMACs(ctx, string(patchInfo.Type), [][]byte{indexMACA}); err != nil {
+		t.Fatalf("delete surviving MAC: %v", err)
+	}
+	resp, err = bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact after surviving record deleted: %v", err)
+	}
+	if resp.IsMyContact == nil || *resp.IsMyContact {
+		t.Fatalf("expected IsMyContact=false once no record survives, got %v", resp.IsMyContact)
+	}
+}
+
+func TestContactEventClearsMarkerWhenFinalNamePresent(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target, _, _ := seedTwoKeyContactLabel(t, ctx, bridge)
+
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "Alice", "Alice"); err != nil {
+		t.Fatalf("restore user name: %v", err)
+	}
+	if err := bridge.store.MarkUnreconciledContact(ctx, target.String()); err != nil {
+		t.Fatalf("mark unreconciled: %v", err)
+	}
+	bridge.mu.Lock()
+	bridge.contactsSynced = true
+	bridge.mu.Unlock()
+	bridge.handleContactEvent(&events.Contact{
+		JID: target,
+		Action: &waSyncAction.ContactAction{
+			FullName:  proto.String("Alice"),
+			FirstName: proto.String("Alice"),
+		},
+	})
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || unreconciled {
+		t.Fatalf("contact event with a verified saved name must clear the marker, got %v err=%v", unreconciled, err)
+	}
+}
+
+// onGetContactStore invokes a hook inside the contacts read so tests can
+// interleave an invalidation into a lookup or event-handling window.
+type onGetContactStore struct {
+	store.ContactStore
+	onGetContact func()
+}
+
+func (s *onGetContactStore) GetContact(ctx context.Context, user types.JID) (types.ContactInfo, error) {
+	s.onGetContact()
+	return s.ContactStore.GetContact(ctx, user)
+}
+
+// seedAbsenceEvidenceContact blanks the contact name, removes both mutation
+// MACs and marks the contact unreconciled: exactly the state where a verified
+// lookup would reconcile the marker to unsaved.
+func seedAbsenceEvidenceContact(t *testing.T, ctx context.Context, bridge *WhatsmeowBridge) types.JID {
+	t.Helper()
+	target, indexMACA, indexMACB := seedTwoKeyContactLabel(t, ctx, bridge)
+	patchInfo := buildContactRemovalPatch(target)
+	if err := bridge.client.Store.AppState.DeleteAppStateMutationMACs(ctx, string(patchInfo.Type), [][]byte{indexMACA, indexMACB}); err != nil {
+		t.Fatalf("delete mutation MACs: %v", err)
+	}
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "", ""); err != nil {
+		t.Fatalf("blank contact name: %v", err)
+	}
+	if err := bridge.store.MarkUnreconciledContact(ctx, target.String()); err != nil {
+		t.Fatalf("mark unreconciled: %v", err)
+	}
+	bridge.mu.Lock()
+	bridge.contactsSynced = true
+	bridge.mu.Unlock()
+	return target
+}
+
+func TestGetContactKeepsMarkerWhenInvalidationInterleavesLookup(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target := seedAbsenceEvidenceContact(t, ctx, bridge)
+
+	// connGen stays 0 so invalidateContactSync cannot spawn a background
+	// syncContacts goroutine; the invalidation only closes the gate and bumps
+	// the epoch inside the lookup window.
+	var invalidateOnce sync.Once
+	bridge.client.Store.Contacts = &onGetContactStore{
+		ContactStore: bridge.client.Store.Contacts,
+		onGetContact: func() {
+			invalidateOnce.Do(func() { bridge.invalidateContactSync() })
+		},
+	}
+
+	resp, err := bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact during interleaved invalidation: %v", err)
+	}
+	if resp.IsMyContact != nil {
+		t.Fatalf("expected IsMyContact=nil while invalidation interleaves the lookup, got %v", *resp.IsMyContact)
+	}
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || !unreconciled {
+		t.Fatalf("marker must survive: MAC absence observed across an invalidation is not proof, got %v err=%v", unreconciled, err)
+	}
+
+	// Once the rebuild verifies and the gate reopens, the same absence evidence
+	// reconciles the marker to unsaved on a clean lookup.
+	bridge.mu.Lock()
+	bridge.contactsSynced = true
+	bridge.mu.Unlock()
+	resp, err = bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact after gate reopens: %v", err)
+	}
+	if resp.IsMyContact == nil || *resp.IsMyContact {
+		t.Fatalf("expected IsMyContact=false on a verified lookup with no surviving record, got %v", resp.IsMyContact)
+	}
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || unreconciled {
+		t.Fatalf("verified lookup must reconcile the marker, got %v err=%v", unreconciled, err)
+	}
+}
+
+func TestContactEventKeepsMarkerWhenInvalidationInterleavesEvent(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target := seedAbsenceEvidenceContact(t, ctx, bridge)
+
+	var invalidateOnce sync.Once
+	bridge.client.Store.Contacts = &onGetContactStore{
+		ContactStore: bridge.client.Store.Contacts,
+		onGetContact: func() {
+			invalidateOnce.Do(func() { bridge.invalidateContactSync() })
+		},
+	}
+
+	bridge.handleContactEvent(&events.Contact{
+		JID:    target,
+		Action: &waSyncAction.ContactAction{},
+	})
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || !unreconciled {
+		t.Fatalf("event-driven deletion must not trust MAC absence gathered across an invalidation, got %v err=%v", unreconciled, err)
+	}
+
+	// A later event outside any invalidation window reconciles the marker.
+	bridge.mu.Lock()
+	bridge.contactsSynced = true
+	bridge.mu.Unlock()
+	bridge.handleContactEvent(&events.Contact{
+		JID:    target,
+		Action: &waSyncAction.ContactAction{},
+	})
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || unreconciled {
+		t.Fatalf("event on a verified gate must reconcile the marker, got %v err=%v", unreconciled, err)
+	}
+}
+
+func TestContactEventKeepsMarkerWhileGateClosed(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target := seedAbsenceEvidenceContact(t, ctx, bridge)
+
+	// contactsSynced starts true in the seed; close the gate as a rebuild
+	// would, then fire the removal replay event.
+	bridge.mu.Lock()
+	bridge.contactsSynced = false
+	bridge.mu.Unlock()
+	bridge.handleContactEvent(&events.Contact{
+		JID:    target,
+		Action: &waSyncAction.ContactAction{},
+	})
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || !unreconciled {
+		t.Fatalf("event-driven deletion must stay fail-closed while the gate is closed, got %v err=%v", unreconciled, err)
+	}
+}
+
+func TestDeleteContactLabelClosesOpenGateOnSurvivingRecord(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target, _, _ := seedTwoKeyContactLabel(t, ctx, bridge)
+	bridge.fetchContactsFn = func(context.Context, bool) error { return nil }
+	bridge.mu.Lock()
+	bridge.contactsSynced = true
+	bridge.mu.Unlock()
+
+	internals := &captureSendInternals{bridge: bridge, clearTarget: target}
+	if err := runDeleteContactLabelWithInternals(ctx, bridge, internals); err != nil {
+		t.Fatalf("deleteContactLabelWithSender: %v", err)
+	}
+	if bridge.Health().ContactsSynced {
+		t.Fatal("label removal with a surviving record must close the contact gate before the rebuild verifies")
+	}
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || !unreconciled {
+		t.Fatalf("unreconciled marker must be set while the rebuild is unverified, got %v err=%v", unreconciled, err)
+	}
+}
+
+func TestDeleteContactLabelFailsWhenNoKeyMatchesActiveMutation(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+
+	keyIDB := bytes.Repeat([]byte{0x42}, 8)
+	keyDataB := bytes.Repeat([]byte{0x22}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyIDB, store.AppStateSyncKey{
+		Data:        keyDataB,
+		Fingerprint: bytes.Repeat([]byte{0x02}, 32),
+		Timestamp:   200,
+	}); err != nil {
+		t.Fatalf("put key B: %v", err)
+	}
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "（可疑推銷）", "（可疑推銷）"); err != nil {
+		t.Fatalf("put bot label: %v", err)
+	}
+
+	internals := &captureSendInternals{}
+	err := bridge.deleteContactLabelWithSender(ctx, "85261234567", "（可疑推銷）", func(
+		sendCtx context.Context,
+		p appstate.PatchInfo,
+		op waServerSync.SyncdMutation_SyncdOperation,
+		allowRetry bool,
+		validate appStateMutationValidator,
+	) error {
+		return bridge.sendAppStateWithOperationAndInternals(sendCtx, p, op, allowRetry, validate, internals)
+	})
+	if !errors.Is(err, errActiveAppStateRecordNotFound) {
+		t.Fatalf("DeleteContactLabel error = %v, want errActiveAppStateRecordNotFound", err)
+	}
+	if len(internals.sentPatches) != 0 {
+		t.Fatalf("sent patches = %d, want 0 when no active record matches", len(internals.sentPatches))
+	}
+	info, err := bridge.client.Store.Contacts.GetContact(ctx, target)
+	if err != nil {
+		t.Fatalf("get contact: %v", err)
+	}
+	if got := savedNameFromContactInfo(info); got != "（可疑推銷）" {
+		t.Fatalf("contact name = %q, want preserved when removal fails", got)
+	}
+}
+
+func TestDeleteContactLabelSkipsRetryWhenConflictSyncsUserRename(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "（可疑推銷）", "（可疑推銷）"); err != nil {
+		t.Fatalf("put bot label: %v", err)
+	}
+
+	senderCalls := 0
+	sendAfterConflictRename := func(
+		sendCtx context.Context,
+		_ appstate.PatchInfo,
+		_ waServerSync.SyncdMutation_SyncdOperation,
+		_ bool,
+		validateAttempt appStateMutationValidator,
+	) error {
+		senderCalls++
+		if senderCalls > 1 {
+			t.Fatalf("removal retry ran after the contact was renamed")
+		}
+		if err := bridge.client.Store.Contacts.PutContactName(sendCtx, target, "Delivery driver", "Delivery driver"); err != nil {
+			t.Fatalf("simulate conflict-synced user rename: %v", err)
+		}
+		return validateAttempt(sendCtx)
+	}
+
+	if err := bridge.deleteContactLabelWithSender(ctx, target.User, "（可疑推銷）", appStateOperationSender(sendAfterConflictRename)); err != nil {
+		t.Fatalf("deleteContactLabelWithSender: %v", err)
+	}
+	info, err := bridge.client.Store.Contacts.GetContact(ctx, target)
+	if err != nil {
+		t.Fatalf("read renamed contact: %v", err)
+	}
+	if info.FullName != "Delivery driver" || info.FirstName != "Delivery driver" {
+		t.Fatalf("user rename must survive skipped removal, got %+v", info)
+	}
+}
+
+func TestDeleteContactLabelClearsOnlyMatchingBotLabel(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "（可疑推銷）", "（可疑推銷）"); err != nil {
+		t.Fatalf("put bot label: %v", err)
+	}
+
+	senderCalls := 0
+	sendSuccessfully := appStateOperationSender(func(
+		sendCtx context.Context,
+		_ appstate.PatchInfo,
+		_ waServerSync.SyncdMutation_SyncdOperation,
+		_ bool,
+		validateAttempt appStateMutationValidator,
+	) error {
+		senderCalls++
+		if validateAttempt == nil {
+			t.Fatalf("delete contact sender did not receive retry validator")
+		}
+		if err := validateAttempt(sendCtx); err != nil {
+			t.Fatalf("unchanged bot label should pass retry validation: %v", err)
+		}
+		return nil
+	})
+	if err := bridge.deleteContactLabelWithSender(ctx, target.User, "（可疑推銷）", sendSuccessfully); err != nil {
+		t.Fatalf("deleteContactLabelWithSender: %v", err)
+	}
+	if senderCalls != 1 {
+		t.Fatalf("sender calls = %d, want 1", senderCalls)
+	}
+	info, err := bridge.client.Store.Contacts.GetContact(ctx, target)
+	if err != nil {
+		t.Fatalf("read cleared contact: %v", err)
+	}
+	if info.FullName != "" || info.FirstName != "" {
+		t.Fatalf("matching bot label should be cleared locally, got %+v", info)
+	}
+
+	renamedTarget := types.NewJID("85261234568", types.DefaultUserServer)
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, renamedTarget, "Delivery driver", "Delivery driver"); err != nil {
+		t.Fatalf("put user-renamed contact: %v", err)
+	}
+	if err := bridge.deleteContactLabelWithSender(ctx, renamedTarget.User, "（可疑推銷）", sendSuccessfully); err != nil {
+		t.Fatalf("deleteContactLabelWithSender renamed contact: %v", err)
+	}
+	if senderCalls != 1 {
+		t.Fatalf("sender ran for a contact that no longer has the bot label")
+	}
+	renamedInfo, err := bridge.client.Store.Contacts.GetContact(ctx, renamedTarget)
+	if err != nil {
+		t.Fatalf("read user-renamed contact: %v", err)
+	}
+	if renamedInfo.FullName != "Delivery driver" || renamedInfo.FirstName != "Delivery driver" {
+		t.Fatalf("user-renamed contact must survive skipped removal, got %+v", renamedInfo)
+	}
+}
+
 func TestExtractMessageContent(t *testing.T) {
 	plain := extractMessageContent(&waE2E.Message{Conversation: proto.String("hello")})
 	if plain.msgType != "chat" || plain.body != "hello" || plain.isEdit || plain.isPollVote {
@@ -1043,6 +2549,10 @@ func (f *fakeBackend) SetContactLabel(_ context.Context, phone, name string) err
 	f.lastCall = "label:" + phone + ":" + name
 	return nil
 }
+func (f *fakeBackend) DeleteContactLabel(_ context.Context, phone, expectedName string) error {
+	f.lastCall = "unlabel:" + phone + ":" + expectedName
+	return nil
+}
 
 func TestHTTPAndSSEServer(t *testing.T) {
 	backend := &fakeBackend{
@@ -1145,6 +2655,7 @@ func TestHTTPAndSSEServer(t *testing.T) {
 		{"POST", "/v1/chat/mute", map[string]any{"chatId": "852@c.us", "muted": false}, "unmute:852@c.us"},
 		{"POST", "/v1/contact/block", map[string]any{"id": "852@c.us"}, "block:852@c.us"},
 		{"POST", "/v1/contact/label", map[string]any{"phone": "85261230001", "name": "（可疑推銷）"}, "label:85261230001:（可疑推銷）"},
+		{"DELETE", "/v1/contact/label", map[string]any{"phone": "85261230001", "expectedName": "（可疑推銷）"}, "unlabel:85261230001:（可疑推銷）"},
 	} {
 		resp := doReq(tc.method, tc.path, tc.body)
 		if resp.StatusCode != http.StatusOK {
