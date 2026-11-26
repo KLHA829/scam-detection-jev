@@ -54,6 +54,12 @@ CREATE TABLE IF NOT EXISTS bridge_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_bridge_messages_chat_ts ON bridge_messages(chat_jid, ts_unix DESC);
 CREATE INDEX IF NOT EXISTS idx_bridge_messages_ts ON bridge_messages(ts_unix);
+
+CREATE TABLE IF NOT EXISTS bridge_archive_state (
+	chat_jid TEXT PRIMARY KEY,
+	archived INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
+);
 `
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		return nil, fmt.Errorf("init bridge schema: %w", err)
@@ -95,6 +101,29 @@ func ensureBridgeMessagesColumns(ctx context.Context, db *sql.DB) error {
 		if _, err := db.ExecContext(ctx, `ALTER TABLE bridge_messages ADD COLUMN msg_type TEXT NOT NULL DEFAULT 'unknown'`); err != nil {
 			return fmt.Errorf("migrate bridge_messages.msg_type: %w", err)
 		}
+	}
+	return nil
+}
+
+func (s *BridgeStore) GetArchiveState(ctx context.Context, chatJID string) (bool, bool, error) {
+	var archived bool
+	err := s.db.QueryRowContext(ctx, `SELECT archived FROM bridge_archive_state WHERE chat_jid=$1`, chatJID).Scan(&archived)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, fmt.Errorf("get archive state: %w", err)
+	}
+	return archived, true, nil
+}
+
+func (s *BridgeStore) PutArchiveState(ctx context.Context, chatJID string, archived bool) error {
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO bridge_archive_state (chat_jid, archived, updated_at) VALUES ($1, $2, $3)
+ON CONFLICT(chat_jid) DO UPDATE SET archived=excluded.archived, updated_at=excluded.updated_at
+`, chatJID, archived, time.Now().Unix())
+	if err != nil {
+		return fmt.Errorf("put archive state: %w", err)
 	}
 	return nil
 }

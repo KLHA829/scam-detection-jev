@@ -39,23 +39,33 @@ type putArchiveTransition struct {
 
 type archiveTrackingChatSettings struct {
 	store.ChatSettingsStore
-	onPutArchived func(chatID string, prevFound, prevArchived, newArchived bool)
+	onPutArchived   func(chatID string, prevFound, prevArchived, newArchived bool)
+	getArchiveState func(ctx context.Context, chatID string) (bool, bool, error)
+	putArchiveState func(ctx context.Context, chatID string, archived bool) error
 }
 
 func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat types.JID, archived bool) error {
+	chatID := canonicalJID(chat)
 	var prevFound bool
 	var prevArchived bool
-	if settings, err := w.ChatSettingsStore.GetChatSettings(ctx, chat); err == nil && settings.Found {
-		prevFound = true
-		prevArchived = settings.Archived
+	if w.getArchiveState != nil && chatID != "" {
+		prev, found, err := w.getArchiveState(ctx, chatID)
+		if err != nil {
+			return err
+		}
+		prevFound = found
+		prevArchived = prev
 	}
 	if err := w.ChatSettingsStore.PutArchived(ctx, chat, archived); err != nil {
 		return err
 	}
-	if w.onPutArchived != nil {
-		if chatID := canonicalJID(chat); chatID != "" {
-			w.onPutArchived(chatID, prevFound, prevArchived, archived)
+	if w.putArchiveState != nil && chatID != "" {
+		if err := w.putArchiveState(ctx, chatID, archived); err != nil {
+			return err
 		}
+	}
+	if w.onPutArchived != nil && chatID != "" {
+		w.onPutArchived(chatID, prevFound, prevArchived, archived)
 	}
 	return nil
 }
@@ -466,6 +476,8 @@ func (b *WhatsmeowBridge) ensureChatSettingsWrapped() {
 	b.client.Store.ChatSettings = &archiveTrackingChatSettings{
 		ChatSettingsStore: cs,
 		onPutArchived:     b.recordPutArchived,
+		getArchiveState:   b.store.GetArchiveState,
+		putArchiveState:   b.store.PutArchiveState,
 	}
 }
 

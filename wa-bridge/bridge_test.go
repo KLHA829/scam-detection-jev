@@ -110,6 +110,9 @@ func TestBridgeStorePersistenceAndPollDecoding(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveMessage m-2: %v", err)
 	}
+	if err := store.PutArchiveState(ctx, "85261112222@c.us", false); err != nil {
+		t.Fatalf("PutArchiveState: %v", err)
+	}
 	if err := db.Close(); err != nil {
 		t.Fatalf("close db: %v", err)
 	}
@@ -122,6 +125,11 @@ func TestBridgeStorePersistenceAndPollDecoding(t *testing.T) {
 	store2, err := NewBridgeStore(ctx, reopened)
 	if err != nil {
 		t.Fatalf("reopen store: %v", err)
+	}
+
+	archived, archiveFound, err := store2.GetArchiveState(ctx, "85261112222@c.us")
+	if err != nil || !archiveFound || archived {
+		t.Fatalf("GetArchiveState after reopen = (%v, %v, %v)", archived, archiveFound, err)
 	}
 
 	loadedOpts, found, err := store2.GetPollOptions(ctx, "poll-1")
@@ -1260,12 +1268,22 @@ func TestBridgeArchiveEventReconcilesSyncRestores(t *testing.T) {
 	if err := bridge.rawChatSettingsStore().PutArchived(ctx, alreadyUnarchivedJID, false); err != nil {
 		t.Fatalf("raw PutArchived already-unarchived seed: %v", err)
 	}
+	if err := bridge.store.PutArchiveState(ctx, canonicalJID(alreadyUnarchivedJID), false); err != nil {
+		t.Fatalf("seed explicit already-unarchived archive state: %v", err)
+	}
 	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, alreadyUnarchivedJID, false); err != nil {
 		t.Fatalf("PutArchived full-sync already-unarchived chat: %v", err)
 	}
 	fullSyncJID := types.NewJID("85265556666", types.DefaultUserServer)
 	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, fullSyncJID, false); err != nil {
 		t.Fatalf("PutArchived full-sync restore: %v", err)
+	}
+	mutedRestoreJID := types.NewJID("85265559999", types.DefaultUserServer)
+	if err := bridge.rawChatSettingsStore().PutMutedUntil(ctx, mutedRestoreJID, time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("raw PutMutedUntil mute-only seed: %v", err)
+	}
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, mutedRestoreJID, false); err != nil {
+		t.Fatalf("PutArchived full-sync muted restore: %v", err)
 	}
 	stillArchivedJID := types.NewJID("85265557777", types.DefaultUserServer)
 	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, stillArchivedJID, true); err != nil {
@@ -1278,10 +1296,20 @@ func TestBridgeArchiveEventReconcilesSyncRestores(t *testing.T) {
 	case <-time.After(30 * time.Millisecond):
 	}
 	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchRegularLow})
-	fullSyncEvt := readNext()
-	fullSyncData, _ := fullSyncEvt.Data.(map[string]any)
-	if fullSyncData["chatId"] != "85265556666@c.us" || fullSyncData["archived"] != false || fullSyncData["wasArchived"] != true {
-		t.Fatalf("full-sync restore must emit only 85265556666@c.us with wasArchived=true, got %+v", fullSyncEvt)
+	restored := make(map[string]bool)
+	for range []string{"85265556666@c.us", "85265559999@c.us"} {
+		fullSyncEvt := readNext()
+		fullSyncData, _ := fullSyncEvt.Data.(map[string]any)
+		chatID, _ := fullSyncData["chatId"].(string)
+		if fullSyncData["archived"] != false || fullSyncData["wasArchived"] != true {
+			t.Fatalf("full-sync restore must emit wasArchived=true, got %+v", fullSyncEvt)
+		}
+		restored[chatID] = true
+	}
+	for _, chatID := range []string{"85265556666@c.us", "85265559999@c.us"} {
+		if !restored[chatID] {
+			t.Fatalf("full-sync reconciliation missing %s, got %v", chatID, restored)
+		}
 	}
 	select {
 	case unexpected := <-ch:
