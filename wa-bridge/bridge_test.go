@@ -630,6 +630,7 @@ func TestContactWriteObserverSurfacesLegacyAndLIDWriteErrorsBounded(t *testing.T
 	bridge.syncRetryDelay = time.Millisecond
 	bridge.fetchContactsFn = func(_ context.Context, _ bool) error {
 		attempts++
+		bridge.invalidateContactSyncForWriteError(types.NewJID("555000999", types.HiddenUserServer), writeFail)
 		return writeFail
 	}
 	bridge.mu.Lock()

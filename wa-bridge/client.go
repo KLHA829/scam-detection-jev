@@ -659,12 +659,7 @@ func (b *WhatsmeowBridge) invalidateContactSyncForWriteError(jid types.JID, writ
 	b.syncNeedsRetry = true
 	b.syncNeedsFull = true
 	if b.connected && b.loggedIn {
-		if b.syncAttemptActive {
-			select {
-			case b.syncRetryWake <- struct{}{}:
-			default:
-			}
-		} else {
+		if !b.syncAttemptActive {
 			b.syncAttemptActive = true
 			b.syncNeedsRetry = false
 			retryGen = b.connGen
