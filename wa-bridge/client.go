@@ -678,17 +678,63 @@ func (b *WhatsmeowBridge) handleContactEvent(evt *events.Contact) {
 	if evt == nil || evt.Action == nil || b.store == nil {
 		return
 	}
-	if targetID := evt.JID.ToNonAD().String(); targetID != "" {
-		ctx := b.ctx
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		_ = b.store.ClearUnreconciledContact(ctx, targetID)
+	jid := evt.JID.ToNonAD()
+	targetID := jid.String()
+	if targetID == "" || b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
+		return
 	}
+	ctx := b.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// A contact event covers a single mutation, not the final per-key state: a
+	// REMOVE under another key later in the same replay can blank the stored
+	// name. Clear the unreconciled marker only when the sync gate stays verified
+	// across the whole evidence window — an invalidation interleaving the reads
+	// bumps syncEpoch, and a destructive rebuild can empty the mutation MAC
+	// cache, so neither a present name nor MAC absence is final otherwise.
+	syncedBefore, genBefore, epochBefore := b.sampleSyncState()
+	info, err := b.client.Store.Contacts.GetContact(ctx, jid)
+	if err != nil {
+		return
+	}
+	finalSaved := savedNameFromContactInfo(info)
+	var unreconciled, surviving, checkFailed bool
+	if finalSaved == "" {
+		var markerErr error
+		unreconciled, markerErr = b.store.HasUnreconciledContact(ctx, targetID)
+		if markerErr != nil || !unreconciled {
+			return
+		}
+		var checkErr error
+		surviving, checkErr = b.hasAnyActiveMutationForPatch(ctx, buildContactRemovalPatch(jid))
+		checkFailed = checkErr != nil
+	}
+	syncedAfter, genAfter, epochAfter := b.sampleSyncState()
+	verified := syncedBefore && syncedAfter && genBefore == genAfter && epochBefore == epochAfter
+	if !verified {
+		return
+	}
+	if finalSaved != "" {
+		_ = b.store.ClearUnreconciledContact(ctx, targetID)
+		return
+	}
+	if checkFailed || surviving {
+		return
+	}
+	_ = b.store.ClearUnreconciledContact(ctx, targetID)
 }
 
 func (b *WhatsmeowBridge) invalidateContactSyncForWriteError(writeErr error) {
 	b.log.Warnf("failed to store contact app state: %v", writeErr)
+	b.invalidateContactSync()
+}
+
+// invalidateContactSync drops the synced gate and forces a full refetch through
+// the bounded syncContacts retry loop. It runs before any destructive app-state
+// rebuild so a failed snapshot download cannot leave an emptied mutation MAC
+// cache looking authoritative.
+func (b *WhatsmeowBridge) invalidateContactSync() {
 	var retryGen uint64
 	b.mu.Lock()
 	b.syncEpoch++
@@ -1169,12 +1215,13 @@ func buildContactResponse(
 	}
 }
 
-func (b *WhatsmeowBridge) sampleSyncState() (synced bool, gen uint64) {
+func (b *WhatsmeowBridge) sampleSyncState() (synced bool, gen, epoch uint64) {
 	b.mu.RLock()
 	synced = b.contactsSynced
 	gen = b.connGen
+	epoch = b.syncEpoch
 	b.mu.RUnlock()
-	return synced, gen
+	return synced, gen, epoch
 }
 
 func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*ContactResponse, error) {
@@ -1186,7 +1233,7 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 		return nil, fmt.Errorf("%w: %v", errBadRequest, err)
 	}
 
-	syncedBefore, genBefore := b.sampleSyncState()
+	syncedBefore, genBefore, epochBefore := b.sampleSyncState()
 	info, err := b.client.Store.Contacts.GetContact(ctx, jid)
 	if err != nil {
 		return nil, fmt.Errorf("read contact %s: %w", rawID, err)
@@ -1221,16 +1268,44 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 	}
 
 	finalSaved := savedNameFromContactInfo(info)
-	if b.store != nil && lookupJID != "" {
-		if finalSaved != "" {
-			_ = b.store.ClearUnreconciledContact(ctx, lookupJID)
-		} else if unreconciled, err := b.store.HasUnreconciledContact(ctx, lookupJID); err != nil {
-			lidPhoneVerified = false
-		} else if unreconciled {
+
+	// Gather the marker state and the surviving-mutation evidence inside the
+	// same sampling window as the contact read. An invalidation interleaving
+	// anywhere in the window bumps syncEpoch, so MAC absence observed here can
+	// only be trusted as proof when the epoch is unchanged across the window:
+	// otherwise a destructive rebuild may have reset the cache mid-lookup and
+	// the emptied cache is not evidence that no record survives.
+	var (
+		markerPresent bool
+		markerErr     error
+		surviving     bool
+		survivingErr  error
+	)
+	if b.store != nil && lookupJID != "" && finalSaved == "" {
+		markerPresent, markerErr = b.store.HasUnreconciledContact(ctx, lookupJID)
+		if markerErr == nil && markerPresent {
 			targetJID, parseErr := types.ParseJID(lookupJID)
 			if parseErr != nil {
-				lidPhoneVerified = false
-			} else if surviving, checkErr := b.hasAnyActiveMutationForPatch(ctx, buildContactRemovalPatch(targetJID)); checkErr != nil || surviving {
+				survivingErr = parseErr
+			} else {
+				surviving, survivingErr = b.hasAnyActiveMutationForPatch(ctx, buildContactRemovalPatch(targetJID))
+			}
+		}
+	}
+
+	syncedAfter, genAfter, epochAfter := b.sampleSyncState()
+	verified := syncedBefore && syncedAfter && genBefore == genAfter && epochBefore == epochAfter
+
+	if b.store != nil && lookupJID != "" {
+		switch {
+		case finalSaved != "":
+			if verified {
+				_ = b.store.ClearUnreconciledContact(ctx, lookupJID)
+			}
+		case markerErr != nil:
+			lidPhoneVerified = false
+		case markerPresent:
+			if !verified || survivingErr != nil || surviving {
 				lidPhoneVerified = false
 			} else {
 				_ = b.store.ClearUnreconciledContact(ctx, lookupJID)
@@ -1238,8 +1313,7 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 		}
 	}
 
-	syncedAfter, genAfter := b.sampleSyncState()
-	authoritative := syncedBefore && syncedAfter && genBefore == genAfter && lidPhoneVerified
+	authoritative := verified && lidPhoneVerified
 	selfWid, selfLid := b.selfJIDs()
 	resp := buildContactResponse(jid, info, authoritative, selfWid, selfLid)
 	if resolvedNumber != "" {

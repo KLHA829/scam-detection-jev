@@ -89,6 +89,8 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - This bot is a personal filter on your own account, not a service. WhatsApp Web automation can log the
   session out; keep `wa-bridge.db` (or `.wwebjs_auth/` for `wwebjs`).
 
+**Root-cause fixes:** Fix bugs at the root cause—never apply symptom-only workarounds, silent fallbacks, or weakened/skipped tests. Trace callers and state transitions first, fix the underlying defect, and encode the regression guard in tests or CI.
+
 **Gardener:** When you fix a behavior bug or doc drift, encode the correction in tests, CI, or `.cursor/skills/verify-scam-bot/` (feature map + `bin/drive-*`) — not only in this file. Follow the Maintenance checklist in that skill.
 
 **Full Autopilot (無人盯內環):** Agents follow [`.cursor/skills/full-autopilot/SKILL.md`](.cursor/skills/full-autopilot/SKILL.md) (goal → verifiable units → self-prove → open PR, never merge unless asked). Self-proof uses [verify-scam-bot](.cursor/skills/verify-scam-bot/SKILL.md) (`bin/doctor`, `bin/drive-*`, then `npm test`). PR #51 locks in `lib/agent-trust.test.js`: mask-before-LLM on inbound, `createMaskClient` / no live `lab/score-message`, verify smoke mask-primary (`drive-mask-before-llm`), `verify-scam-detection-jev` redirect only. Do not reopen settled product decisions in the invariants section above.

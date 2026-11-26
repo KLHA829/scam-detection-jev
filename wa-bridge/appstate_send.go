@@ -21,7 +21,6 @@ import (
 	"go.mau.fi/whatsmeow/proto/waServerSync"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
-	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -279,23 +278,16 @@ func (b *WhatsmeowBridge) sendAppStateWithOperationAndInternals(
 			surviving, err := b.hasAnyActiveMutationForPatch(ctx, patch)
 			if err != nil || surviving {
 				_ = b.store.MarkUnreconciledContact(ctx, targetJID)
-				if err == nil {
-					if reconcileEvents, syncErr := internals.FetchAppState(ctx, patch.Type, true, false); syncErr == nil {
-						for _, evt := range reconcileEvents {
-							if contactEvt, ok := evt.(*events.Contact); ok {
-								b.handleContactEvent(contactEvt)
-							}
-						}
-						if len(reconcileEvents) > 0 {
-							go func() {
-								for _, evt := range reconcileEvents {
-									internals.DispatchEvent(evt)
-								}
-							}()
-						}
-					}
-				}
-			} else {
+			}
+			if err == nil && surviving {
+				// Another key still holds a record for this contact, so the
+				// displayed name stays ambiguous until a full replay settles
+				// it. A full fetch resets the mutation MAC cache before the
+				// snapshot arrives; route the rebuild through the contact sync
+				// retry path so contact authority stays invalid until the
+				// rebuild verifies instead of trusting the emptied cache.
+				b.invalidateContactSync()
+			} else if err == nil {
 				_ = b.store.ClearUnreconciledContact(ctx, targetJID)
 			}
 		}
