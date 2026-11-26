@@ -63,8 +63,26 @@ func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat type
 
 type contactWriteObserver struct {
 	store.ContactStore
-	mu  sync.Mutex
-	err error
+	mu       sync.Mutex
+	err      error
+	tracking bool
+	seen     map[string]struct{}
+}
+
+func (w *contactWriteObserver) startFullSyncTracking() {
+	w.mu.Lock()
+	w.tracking = true
+	w.seen = make(map[string]struct{})
+	w.mu.Unlock()
+}
+
+func (w *contactWriteObserver) finishFullSyncTracking() map[string]struct{} {
+	w.mu.Lock()
+	seen := w.seen
+	w.tracking = false
+	w.seen = nil
+	w.mu.Unlock()
+	return seen
 }
 
 func (w *contactWriteObserver) record(err error) {
@@ -81,12 +99,35 @@ func (w *contactWriteObserver) record(err error) {
 func (w *contactWriteObserver) PutContactName(ctx context.Context, user types.JID, fullName, firstName string) error {
 	err := w.ContactStore.PutContactName(ctx, user, fullName, firstName)
 	w.record(err)
+	if err == nil && (strings.TrimSpace(fullName) != "" || strings.TrimSpace(firstName) != "") {
+		if id := canonicalJID(user); id != "" {
+			w.mu.Lock()
+			if w.tracking && w.seen != nil {
+				w.seen[id] = struct{}{}
+			}
+			w.mu.Unlock()
+		}
+	}
 	return err
 }
 
 func (w *contactWriteObserver) PutAllContactNames(ctx context.Context, contacts []store.ContactEntry) error {
 	err := w.ContactStore.PutAllContactNames(ctx, contacts)
 	w.record(err)
+	if err == nil {
+		w.mu.Lock()
+		if w.tracking && w.seen != nil {
+			for _, c := range contacts {
+				if strings.TrimSpace(c.FullName) == "" && strings.TrimSpace(c.FirstName) == "" {
+					continue
+				}
+				if id := canonicalJID(c.JID); id != "" {
+					w.seen[id] = struct{}{}
+				}
+			}
+		}
+		w.mu.Unlock()
+	}
 	return err
 }
 
@@ -234,6 +275,28 @@ func (b *WhatsmeowBridge) shouldForceFullContactImport(ctx context.Context, requ
 	return !found || rev != lidContactImportRevision, nil
 }
 
+func (b *WhatsmeowBridge) reconcileDeletedContacts(ctx context.Context, seen map[string]struct{}) error {
+	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil || seen == nil {
+		return nil
+	}
+	all, err := b.client.Store.Contacts.GetAllContacts(ctx)
+	if err != nil {
+		return fmt.Errorf("list cached contacts for reconciliation: %w", err)
+	}
+	for jid, info := range all {
+		if strings.TrimSpace(info.FullName) == "" && strings.TrimSpace(info.FirstName) == "" {
+			continue
+		}
+		if _, ok := seen[canonicalJID(jid)]; ok {
+			continue
+		}
+		if err := b.client.Store.Contacts.PutContactName(ctx, jid, "", ""); err != nil {
+			return fmt.Errorf("clear deleted contact %s: %w", jid.String(), err)
+		}
+	}
+	return nil
+}
+
 // fetchContactAppState uses whatsmeow's locked fetch-and-apply path. Full-sync
 // app-state events stay enabled so lid_contact rows reach handleEvent instead
 // of being dropped by whatsmeow's legacy contact dispatcher; the contact store
@@ -247,16 +310,29 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 	if err != nil {
 		return err
 	}
+	if fullSync && b.contactWrites != nil {
+		b.contactWrites.startFullSyncTracking()
+		defer b.contactWrites.finishFullSyncTracking()
+	}
 	fetchErr := b.client.FetchAppState(ctx, appstate.WAPatchCriticalUnblockLow, fullSync, false)
 	var writeErr error
+	var seen map[string]struct{}
 	if b.contactWrites != nil {
 		writeErr = b.contactWrites.takeErr()
+		if fullSync {
+			seen = b.contactWrites.finishFullSyncTracking()
+		}
 	}
 	if fetchErr != nil {
 		return fmt.Errorf("fetch contact app state: %w", fetchErr)
 	}
 	if writeErr != nil {
 		return fmt.Errorf("write contact app state: %w", writeErr)
+	}
+	if fullSync {
+		if err := b.reconcileDeletedContacts(ctx, seen); err != nil {
+			return err
+		}
 	}
 	if b.store != nil {
 		if err := b.store.SetMeta(ctx, metaKeyContactImportRevision, lidContactImportRevision); err != nil {
