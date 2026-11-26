@@ -242,6 +242,7 @@ func (b *WhatsmeowBridge) sendAppStateWithOperationAndInternals(
 	if cli == nil || cli.Store == nil {
 		return errNotReady
 	}
+	b.ensureContactWritesWrapped()
 	if operation == waServerSync.SyncdMutation_REMOVE {
 		// Validate ownership and version before resolving keys so conflict-retry tests
 		// and stale-name checks run in the expected order.

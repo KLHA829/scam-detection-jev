@@ -83,11 +83,12 @@ func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat type
 
 type contactWriteObserver struct {
 	store.ContactStore
-	onError   func(error)
-	mu        sync.Mutex
-	attemptID uint64
-	err       error
-	errID     uint64
+	onError           func(error)
+	onBulkContactSync func(context.Context, []store.ContactEntry)
+	mu                sync.Mutex
+	attemptID         uint64
+	err               error
+	errID             uint64
 }
 
 func (w *contactWriteObserver) beginAttempt() (uint64, bool) {
@@ -133,6 +134,9 @@ func (w *contactWriteObserver) PutContactName(ctx context.Context, user types.JI
 func (w *contactWriteObserver) PutAllContactNames(ctx context.Context, contacts []store.ContactEntry) error {
 	err := w.ContactStore.PutAllContactNames(ctx, contacts)
 	w.record(err)
+	if err == nil && w.onBulkContactSync != nil {
+		w.onBulkContactSync(ctx, contacts)
+	}
 	return err
 }
 
@@ -298,6 +302,7 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 	if b.client == nil || b.client.Store == nil {
 		return errNotReady
 	}
+	b.ensureContactWritesWrapped()
 	b.contactFetchMu.Lock()
 	defer b.contactFetchMu.Unlock()
 
@@ -717,6 +722,17 @@ func (b *WhatsmeowBridge) contactWritesSnapshot() *contactWriteObserver {
 	return observer
 }
 
+func (b *WhatsmeowBridge) reconcileBulkContactSync(ctx context.Context, contacts []store.ContactEntry) {
+	if b.store == nil || len(contacts) == 0 {
+		return
+	}
+	for _, entry := range contacts {
+		if targetID := entry.JID.ToNonAD().String(); targetID != "" {
+			_ = b.store.ClearUnreconciledContact(ctx, targetID)
+		}
+	}
+}
+
 func (b *WhatsmeowBridge) ensureContactWritesWrapped() {
 	if b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
 		return
@@ -724,12 +740,14 @@ func (b *WhatsmeowBridge) ensureContactWritesWrapped() {
 	b.contactWritesMu.Lock()
 	defer b.contactWritesMu.Unlock()
 	if observer, ok := b.client.Store.Contacts.(*contactWriteObserver); ok {
+		observer.onBulkContactSync = b.reconcileBulkContactSync
 		b.contactWrites = observer
 		return
 	}
 	observer := &contactWriteObserver{
-		ContactStore: b.client.Store.Contacts,
-		onError:      b.invalidateContactSyncForWriteError,
+		ContactStore:      b.client.Store.Contacts,
+		onError:           b.invalidateContactSyncForWriteError,
+		onBulkContactSync: b.reconcileBulkContactSync,
 	}
 	b.client.Store.Contacts = observer
 	b.contactWrites = observer
@@ -1462,7 +1480,7 @@ func (b *WhatsmeowBridge) recordBotContactLabelIfUnchanged(
 	if err != nil {
 		return false
 	}
-	if len(liveMAC) > 0 && !bytes.Equal(liveMAC, committed.valueMAC) {
+	if !bytes.Equal(liveMAC, committed.valueMAC) {
 		return false
 	}
 	if b.store != nil {
@@ -1548,6 +1566,10 @@ func (b *WhatsmeowBridge) deleteContactLabelWithSender(ctx context.Context, phon
 		}
 		return fmt.Errorf("send contact removal app state: %w", err)
 	}
-	_ = b.client.Store.Contacts.PutContactName(ctx, target, "", "")
+	if latestInfo, readErr := b.client.Store.Contacts.GetContact(ctx, target); readErr == nil && savedNameFromContactInfo(latestInfo) == expectedName {
+		if surviving, checkErr := b.hasAnyActiveMutationForPatch(ctx, buildContactRemovalPatch(target)); checkErr == nil && !surviving {
+			_ = b.client.Store.Contacts.PutContactName(ctx, target, "", "")
+		}
+	}
 	return nil
 }
