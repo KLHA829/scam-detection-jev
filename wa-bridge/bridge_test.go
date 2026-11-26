@@ -18,7 +18,9 @@ import (
 	"testing"
 	"time"
 
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
+	waBinary "go.mau.fi/whatsmeow/binary"
 	"go.mau.fi/whatsmeow/proto/waAdv"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -308,6 +310,89 @@ func TestSendAppStateValidatesAfterReadingVersion(t *testing.T) {
 	err := bridge.sendAppStateWithOperation(ctx, buildContactRemovalPatch(target), waServerSync.SyncdMutation_REMOVE, true, validate)
 	if !errors.Is(err, validationErr) {
 		t.Fatalf("send error = %v, want validation error", err)
+	}
+}
+
+type conflictRenameInternals struct {
+	bridge    *WhatsmeowBridge
+	target    types.JID
+	sendCalls int
+}
+
+func (f *conflictRenameInternals) SendIQ(context.Context, whatsmeow.DangerousInfoQuery) (*waBinary.Node, error) {
+	f.sendCalls++
+	return &waBinary.Node{
+		Tag: "iq",
+		Content: []waBinary.Node{{
+			Tag: "sync",
+			Content: []waBinary.Node{{
+				Tag:   "collection",
+				Attrs: waBinary.Attrs{"type": "error", "name": "critical_unblock_low"},
+				Content: []waBinary.Node{{
+					Tag:   "error",
+					Attrs: waBinary.Attrs{"code": "409"},
+				}},
+			}},
+		}},
+	}, nil
+}
+
+func (f *conflictRenameInternals) DownloadExternalAppStateBlob(context.Context, *waServerSync.ExternalBlobReference) ([]byte, error) {
+	return nil, errors.New("unexpected external blob download")
+}
+
+func (f *conflictRenameInternals) ApplyAppStatePatches(ctx context.Context, _ appstate.WAPatchName, state appstate.HashState, _ *appstate.PatchList, _ bool, _ *[]any) (appstate.HashState, error) {
+	if err := f.bridge.client.Store.Contacts.PutContactName(ctx, f.target, "Delivery driver", "Delivery driver"); err != nil {
+		return state, err
+	}
+	return state, nil
+}
+
+func (f *conflictRenameInternals) FetchAppState(context.Context, appstate.WAPatchName, bool, bool) ([]any, error) {
+	return nil, errors.New("unexpected fetch after failed validation")
+}
+
+func (f *conflictRenameInternals) DispatchEvent(any) bool {
+	return false
+}
+
+func TestSendAppStateConflictRetryRevalidatesOwnership(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+
+	keyID := bytes.Repeat([]byte{0x42}, 8)
+	keyData := bytes.Repeat([]byte{0x7}, 32)
+	if err := bridge.client.Store.AppStateKeys.PutAppStateSyncKey(ctx, keyID, wastore.AppStateSyncKey{Data: keyData, Fingerprint: bytes.Repeat([]byte{0x1}, 32), Timestamp: 1}); err != nil {
+		t.Fatalf("put app state key: %v", err)
+	}
+	target := types.NewJID("85261234567", types.DefaultUserServer)
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "（可疑推銷）", "（可疑推銷）"); err != nil {
+		t.Fatalf("put bot label: %v", err)
+	}
+	validateOwnership := func(validateCtx context.Context) error {
+		latestInfo, err := bridge.client.Store.Contacts.GetContact(validateCtx, target)
+		if err != nil {
+			return err
+		}
+		if savedNameFromContactInfo(latestInfo) != "（可疑推銷）" {
+			return errContactLabelChanged
+		}
+		return nil
+	}
+	internals := &conflictRenameInternals{bridge: bridge, target: target}
+	err := bridge.sendAppStateWithOperationAndInternals(ctx, buildContactRemovalPatch(target), waServerSync.SyncdMutation_REMOVE, true, validateOwnership, internals)
+	if !errors.Is(err, errContactLabelChanged) {
+		t.Fatalf("send error = %v, want contact-label-changed validation error", err)
+	}
+	if internals.sendCalls != 1 {
+		t.Fatalf("send calls = %d, want 1 conflicted attempt only", internals.sendCalls)
+	}
+	info, err := bridge.client.Store.Contacts.GetContact(ctx, target)
+	if err != nil {
+		t.Fatalf("get renamed contact: %v", err)
+	}
+	if got := savedNameFromContactInfo(info); got != "Delivery driver" {
+		t.Fatalf("contact name = %q, want user rename preserved", got)
 	}
 }
 

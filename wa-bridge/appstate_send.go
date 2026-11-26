@@ -20,6 +20,14 @@ import (
 
 type appStateMutationValidator func(ctx context.Context) error
 
+type appStateInternals interface {
+	SendIQ(ctx context.Context, query whatsmeow.DangerousInfoQuery) (*waBinary.Node, error)
+	DownloadExternalAppStateBlob(ctx context.Context, ref *waServerSync.ExternalBlobReference) ([]byte, error)
+	ApplyAppStatePatches(ctx context.Context, name appstate.WAPatchName, state appstate.HashState, patches *appstate.PatchList, fullSync bool, eventsToDispatch *[]any) (appstate.HashState, error)
+	FetchAppState(ctx context.Context, name appstate.WAPatchName, fullSync, onlyIfNotSynced bool) ([]any, error)
+	DispatchEvent(evt any) bool
+}
+
 type appStateOperationSender func(
 	ctx context.Context,
 	patch appstate.PatchInfo,
@@ -38,11 +46,24 @@ func (b *WhatsmeowBridge) sendAppStateWithOperation(
 	allowRetry bool,
 	validateAttempt appStateMutationValidator,
 ) error {
+	if b.client == nil {
+		return errNotReady
+	}
+	return b.sendAppStateWithOperationAndInternals(ctx, patch, operation, allowRetry, validateAttempt, b.client.DangerousInternals())
+}
+
+func (b *WhatsmeowBridge) sendAppStateWithOperationAndInternals(
+	ctx context.Context,
+	patch appstate.PatchInfo,
+	operation waServerSync.SyncdMutation_SyncdOperation,
+	allowRetry bool,
+	validateAttempt appStateMutationValidator,
+	internals appStateInternals,
+) error {
 	cli := b.client
 	if cli == nil || cli.Store == nil {
 		return errNotReady
 	}
-	internals := cli.DangerousInternals()
 	for {
 		version, hash, err := cli.Store.AppState.GetAppStateVersion(ctx, string(patch.Type))
 		if err != nil {
