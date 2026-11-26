@@ -1960,6 +1960,9 @@ func TestContactEventClearsMarkerWhenFinalNamePresent(t *testing.T) {
 	if err := bridge.store.MarkUnreconciledContact(ctx, target.String()); err != nil {
 		t.Fatalf("mark unreconciled: %v", err)
 	}
+	bridge.mu.Lock()
+	bridge.contactsSynced = true
+	bridge.mu.Unlock()
 	bridge.handleContactEvent(&events.Contact{
 		JID: target,
 		Action: &waSyncAction.ContactAction{
@@ -1969,6 +1972,158 @@ func TestContactEventClearsMarkerWhenFinalNamePresent(t *testing.T) {
 	})
 	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || unreconciled {
 		t.Fatalf("contact event with a verified saved name must clear the marker, got %v err=%v", unreconciled, err)
+	}
+}
+
+// onGetContactStore invokes a hook inside the contacts read so tests can
+// interleave an invalidation into a lookup or event-handling window.
+type onGetContactStore struct {
+	store.ContactStore
+	onGetContact func()
+}
+
+func (s *onGetContactStore) GetContact(ctx context.Context, user types.JID) (types.ContactInfo, error) {
+	s.onGetContact()
+	return s.ContactStore.GetContact(ctx, user)
+}
+
+// seedAbsenceEvidenceContact blanks the contact name, removes both mutation
+// MACs and marks the contact unreconciled: exactly the state where a verified
+// lookup would reconcile the marker to unsaved.
+func seedAbsenceEvidenceContact(t *testing.T, ctx context.Context, bridge *WhatsmeowBridge) types.JID {
+	t.Helper()
+	target, indexMACA, indexMACB := seedTwoKeyContactLabel(t, ctx, bridge)
+	patchInfo := buildContactRemovalPatch(target)
+	if err := bridge.client.Store.AppState.DeleteAppStateMutationMACs(ctx, string(patchInfo.Type), [][]byte{indexMACA, indexMACB}); err != nil {
+		t.Fatalf("delete mutation MACs: %v", err)
+	}
+	if err := bridge.client.Store.Contacts.PutContactName(ctx, target, "", ""); err != nil {
+		t.Fatalf("blank contact name: %v", err)
+	}
+	if err := bridge.store.MarkUnreconciledContact(ctx, target.String()); err != nil {
+		t.Fatalf("mark unreconciled: %v", err)
+	}
+	bridge.mu.Lock()
+	bridge.contactsSynced = true
+	bridge.mu.Unlock()
+	return target
+}
+
+func TestGetContactKeepsMarkerWhenInvalidationInterleavesLookup(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target := seedAbsenceEvidenceContact(t, ctx, bridge)
+
+	// connGen stays 0 so invalidateContactSync cannot spawn a background
+	// syncContacts goroutine; the invalidation only closes the gate and bumps
+	// the epoch inside the lookup window.
+	var invalidateOnce sync.Once
+	bridge.client.Store.Contacts = &onGetContactStore{
+		ContactStore: bridge.client.Store.Contacts,
+		onGetContact: func() {
+			invalidateOnce.Do(func() { bridge.invalidateContactSync() })
+		},
+	}
+
+	resp, err := bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact during interleaved invalidation: %v", err)
+	}
+	if resp.IsMyContact != nil {
+		t.Fatalf("expected IsMyContact=nil while invalidation interleaves the lookup, got %v", *resp.IsMyContact)
+	}
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || !unreconciled {
+		t.Fatalf("marker must survive: MAC absence observed across an invalidation is not proof, got %v err=%v", unreconciled, err)
+	}
+
+	// Once the rebuild verifies and the gate reopens, the same absence evidence
+	// reconciles the marker to unsaved on a clean lookup.
+	bridge.mu.Lock()
+	bridge.contactsSynced = true
+	bridge.mu.Unlock()
+	resp, err = bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact after gate reopens: %v", err)
+	}
+	if resp.IsMyContact == nil || *resp.IsMyContact {
+		t.Fatalf("expected IsMyContact=false on a verified lookup with no surviving record, got %v", resp.IsMyContact)
+	}
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || unreconciled {
+		t.Fatalf("verified lookup must reconcile the marker, got %v err=%v", unreconciled, err)
+	}
+}
+
+func TestContactEventKeepsMarkerWhenInvalidationInterleavesEvent(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target := seedAbsenceEvidenceContact(t, ctx, bridge)
+
+	var invalidateOnce sync.Once
+	bridge.client.Store.Contacts = &onGetContactStore{
+		ContactStore: bridge.client.Store.Contacts,
+		onGetContact: func() {
+			invalidateOnce.Do(func() { bridge.invalidateContactSync() })
+		},
+	}
+
+	bridge.handleContactEvent(&events.Contact{
+		JID:    target,
+		Action: &waSyncAction.ContactAction{},
+	})
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || !unreconciled {
+		t.Fatalf("event-driven deletion must not trust MAC absence gathered across an invalidation, got %v err=%v", unreconciled, err)
+	}
+
+	// A later event outside any invalidation window reconciles the marker.
+	bridge.mu.Lock()
+	bridge.contactsSynced = true
+	bridge.mu.Unlock()
+	bridge.handleContactEvent(&events.Contact{
+		JID:    target,
+		Action: &waSyncAction.ContactAction{},
+	})
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || unreconciled {
+		t.Fatalf("event on a verified gate must reconcile the marker, got %v err=%v", unreconciled, err)
+	}
+}
+
+func TestContactEventKeepsMarkerWhileGateClosed(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target := seedAbsenceEvidenceContact(t, ctx, bridge)
+
+	// contactsSynced starts true in the seed; close the gate as a rebuild
+	// would, then fire the removal replay event.
+	bridge.mu.Lock()
+	bridge.contactsSynced = false
+	bridge.mu.Unlock()
+	bridge.handleContactEvent(&events.Contact{
+		JID:    target,
+		Action: &waSyncAction.ContactAction{},
+	})
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || !unreconciled {
+		t.Fatalf("event-driven deletion must stay fail-closed while the gate is closed, got %v err=%v", unreconciled, err)
+	}
+}
+
+func TestDeleteContactLabelClosesOpenGateOnSurvivingRecord(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	target, _, _ := seedTwoKeyContactLabel(t, ctx, bridge)
+	bridge.fetchContactsFn = func(context.Context, bool) error { return nil }
+	bridge.mu.Lock()
+	bridge.contactsSynced = true
+	bridge.mu.Unlock()
+
+	internals := &captureSendInternals{bridge: bridge, clearTarget: target}
+	if err := runDeleteContactLabelWithInternals(ctx, bridge, internals); err != nil {
+		t.Fatalf("deleteContactLabelWithSender: %v", err)
+	}
+	if bridge.Health().ContactsSynced {
+		t.Fatal("label removal with a surviving record must close the contact gate before the rebuild verifies")
+	}
+	if unreconciled, err := bridge.store.HasUnreconciledContact(ctx, target.String()); err != nil || !unreconciled {
+		t.Fatalf("unreconciled marker must be set while the rebuild is unverified, got %v err=%v", unreconciled, err)
 	}
 }
 
