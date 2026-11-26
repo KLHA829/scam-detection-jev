@@ -1008,6 +1008,42 @@ wakeRecovered:
 	}
 }
 
+type stubChatSettingsStore struct{}
+
+func (s *stubChatSettingsStore) PutMutedUntil(context.Context, types.JID, time.Time) error {
+	return nil
+}
+func (s *stubChatSettingsStore) PutPinned(context.Context, types.JID, bool) error   { return nil }
+func (s *stubChatSettingsStore) PutArchived(context.Context, types.JID, bool) error { return nil }
+func (s *stubChatSettingsStore) PutWASARootSecretID(context.Context, types.JID, types.MessageID) error {
+	return nil
+}
+func (s *stubChatSettingsStore) GetWASARootSecretID(context.Context, types.JID) (types.MessageID, error) {
+	return "", nil
+}
+func (s *stubChatSettingsStore) GetChatSettings(context.Context, types.JID) (types.LocalChatSettings, error) {
+	return types.LocalChatSettings{}, nil
+}
+
+func TestArchiveTrackingRecordsRestoreWhenBaselineWriteFails(t *testing.T) {
+	recorded := false
+	tracked := &archiveTrackingChatSettings{
+		ChatSettingsStore: &stubChatSettingsStore{},
+		onPutArchived: func(chatID string, prevFound, prevArchived, newArchived bool) {
+			recorded = chatID == "85265559999@c.us" && !prevFound && !newArchived
+		},
+		getArchiveState: func(context.Context, string) (bool, bool, error) { return false, false, nil },
+		putArchiveState: func(context.Context, string, bool) error { return errors.New("disk full") },
+	}
+	err := tracked.PutArchived(context.Background(), types.NewJID("85265559999", types.DefaultUserServer), false)
+	if err == nil {
+		t.Fatal("expected baseline write failure")
+	}
+	if !recorded {
+		t.Fatal("restore transition must be recorded even when baseline persistence fails")
+	}
+}
+
 func TestBridgeArchiveEventReconcilesSyncRestores(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "archive-events.db")
