@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -83,8 +84,9 @@ type WhatsmeowBridge struct {
 	syncNeedsRetry    bool
 	syncNeedsFull     bool
 
-	archiveMu       sync.Mutex
-	putArchiveQueue map[string][]putArchiveTransition
+	archiveMu          sync.Mutex
+	putArchiveQueue    map[string][]putArchiveTransition
+	archiveSyncPending map[string]bool
 }
 
 func ensurePrivateSQLiteFile(dbPath string) error {
@@ -159,15 +161,16 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 
 	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
 	bridge := &WhatsmeowBridge{
-		db:             db,
-		store:          bridgeStore,
-		hub:            NewEventHub(),
-		log:            logger,
-		ctx:            bridgeCtx,
-		cancel:         bridgeCancel,
-		syncRetryDelay: defaultSyncRetryDelay,
-		syncRetryWake:  make(chan struct{}, 1),
-		putArchiveQueue: make(map[string][]putArchiveTransition),
+		db:                 db,
+		store:              bridgeStore,
+		hub:                NewEventHub(),
+		log:                logger,
+		ctx:                bridgeCtx,
+		cancel:             bridgeCancel,
+		syncRetryDelay:     defaultSyncRetryDelay,
+		syncRetryWake:      make(chan struct{}, 1),
+		putArchiveQueue:    make(map[string][]putArchiveTransition),
+		archiveSyncPending: make(map[string]bool),
 	}
 	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
 	bridge.client = cli
@@ -385,6 +388,7 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 
 	case *events.AppStateSyncComplete:
 		if evt.Name == appstate.WAPatchCriticalUnblockLow {
+			b.publishSyncArchiveRestores()
 			var retryGen uint64
 			b.mu.Lock()
 			if b.connected && b.loggedIn && !b.contactsSynced && b.syncNeedsRetry {
@@ -478,6 +482,16 @@ func (b *WhatsmeowBridge) recordPutArchived(chatID string, prevFound, prevArchiv
 	if b.putArchiveQueue == nil {
 		b.putArchiveQueue = make(map[string][]putArchiveTransition)
 	}
+	if b.archiveSyncPending == nil {
+		b.archiveSyncPending = make(map[string]bool)
+	}
+	if newArchived {
+		if _, exists := b.archiveSyncPending[chatID]; exists {
+			b.archiveSyncPending[chatID] = true
+		}
+	} else {
+		b.archiveSyncPending[chatID] = false
+	}
 	if _, exists := b.putArchiveQueue[chatID]; !exists && len(b.putArchiveQueue) >= maxStoredMessages {
 		clear(b.putArchiveQueue)
 	}
@@ -512,6 +526,36 @@ func (b *WhatsmeowBridge) consumePutArchived(chatID string, expectedArchived boo
 		}
 	}
 	return putArchiveTransition{}, false
+}
+
+// Full-sync archive events stay suppressed so contact sync keeps whatsmeow's
+// error-propagating bulk path; the ChatSettings writes are the sync's source of truth.
+func (b *WhatsmeowBridge) publishSyncArchiveRestores() {
+	b.archiveMu.Lock()
+	b.putArchiveQueue = make(map[string][]putArchiveTransition)
+	pending := b.archiveSyncPending
+	b.archiveSyncPending = make(map[string]bool)
+	b.archiveMu.Unlock()
+
+	chatIDs := make([]string, 0, len(pending))
+	for chatID, archived := range pending {
+		if !archived {
+			chatIDs = append(chatIDs, chatID)
+		}
+	}
+	sort.Strings(chatIDs)
+	for _, chatID := range chatIDs {
+		b.hub.Publish(BridgeEvent{
+			Type: "chat_archived",
+			Data: map[string]any{
+				"chatId":      chatID,
+				"isGroup":     strings.HasSuffix(chatID, "@g.us"),
+				"isChannel":   strings.HasSuffix(chatID, "@newsletter"),
+				"archived":    false,
+				"wasArchived": true,
+			},
+		})
+	}
 }
 
 func (b *WhatsmeowBridge) handleArchiveEvent(evt *events.Archive) {

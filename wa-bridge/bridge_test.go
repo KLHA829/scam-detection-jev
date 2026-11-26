@@ -1000,7 +1000,7 @@ wakeRecovered:
 	}
 }
 
-func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
+func TestBridgeArchiveEventReconcilesSyncRestores(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "archive-events.db")
 
@@ -1041,6 +1041,34 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 	}
 
 	chatJID := types.NewJID("85261112222", types.DefaultUserServer)
+	raceJID := types.NewJID("85264443333", types.DefaultUserServer)
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, raceJID, false); err != nil {
+		t.Fatalf("PutArchived sync restore before live archive: %v", err)
+	}
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, raceJID, true); err != nil {
+		t.Fatalf("PutArchived live archive after sync restore: %v", err)
+	}
+	bridge.handleEvent(&events.Archive{
+		JID:          raceJID,
+		Timestamp:    time.Now(),
+		FromFullSync: false,
+		Action:       &waSyncAction.ArchiveChatAction{Archived: proto.Bool(true)},
+	})
+	select {
+	case evt := <-ch:
+		if evt.Type != "chat_archived" {
+			t.Fatalf("expected live archive event before sync completion, got %+v", evt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for live archive event")
+	}
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow})
+	select {
+	case unexpected := <-ch:
+		t.Fatalf("sync completion must use the final archived=true state, got %+v", unexpected)
+	case <-time.After(30 * time.Millisecond):
+	}
+
 	t1 := time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
 	t2 := t1.Add(time.Minute)
 	t3 := t2.Add(time.Minute)
@@ -1122,6 +1150,12 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 	settingsAfterRecovery, err := bridge.rawChatSettingsStore().GetChatSettings(ctx, chatJID)
 	if err != nil || !settingsAfterRecovery.Found || settingsAfterRecovery.Archived {
 		t.Fatalf("expected recovery ChatSettings Archived=false, got (%+v, %v)", settingsAfterRecovery, err)
+	}
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow})
+	recoveryEvt := readNext()
+	recoveryData, _ := recoveryEvt.Data.(map[string]any)
+	if recoveryData["chatId"] != "85261112222@c.us" || recoveryData["archived"] != false || recoveryData["wasArchived"] != true {
+		t.Fatalf("sync completion must reconcile the recovery un-archive, got %+v", recoveryEvt)
 	}
 
 	// Redundant live un-archive after recovery reads recovered prev=false so wasArchived=false.
@@ -1212,6 +1246,38 @@ func TestBridgeArchiveEventEmitsLiveTransitionsOnly(t *testing.T) {
 	unseenData, _ := unseenEvt.Data.(map[string]any)
 	if unseenData["chatId"] != "85263334444@c.us" || unseenData["archived"] != false || unseenData["wasArchived"] != true {
 		t.Fatalf("first restore of unseen chat must emit wasArchived=true, got %+v", unseenEvt)
+	}
+
+	// Full sync applies archive mutations through ChatSettings without emitting events;
+	// completing the sync reconciles every final unarchived state as a user restore.
+	fullSyncJID := types.NewJID("85265556666", types.DefaultUserServer)
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, fullSyncJID, false); err != nil {
+		t.Fatalf("PutArchived full-sync restore: %v", err)
+	}
+	stillArchivedJID := types.NewJID("85265557777", types.DefaultUserServer)
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, stillArchivedJID, true); err != nil {
+		t.Fatalf("PutArchived full-sync still-archived chat: %v", err)
+	}
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchCriticalUnblockLow})
+	restored := make(map[string]bool)
+	for range []string{"85261112222@c.us", "85263334444@c.us", "85265556666@c.us"} {
+		fullSyncEvt := readNext()
+		fullSyncData, _ := fullSyncEvt.Data.(map[string]any)
+		chatID, _ := fullSyncData["chatId"].(string)
+		if fullSyncData["archived"] != false || fullSyncData["wasArchived"] != true {
+			t.Fatalf("full-sync restore must emit wasArchived=true, got %+v", fullSyncEvt)
+		}
+		restored[chatID] = true
+	}
+	for _, chatID := range []string{"85261112222@c.us", "85263334444@c.us", "85265556666@c.us"} {
+		if !restored[chatID] {
+			t.Fatalf("full-sync reconciliation missing %s, got %v", chatID, restored)
+		}
+	}
+	select {
+	case unexpected := <-ch:
+		t.Fatalf("full-sync archived=true mutation must not emit a restore, got %+v", unexpected)
+	case <-time.After(30 * time.Millisecond):
 	}
 
 	// Defensive guard: FromFullSync=true events are ignored, and group chats set isGroup=true.
