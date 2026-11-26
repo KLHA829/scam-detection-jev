@@ -947,8 +947,17 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 	if b.store != nil && lookupJID != "" {
 		if finalSaved != "" {
 			_ = b.store.ClearUnreconciledContact(ctx, lookupJID)
-		} else if unreconciled, err := b.store.HasUnreconciledContact(ctx, lookupJID); err != nil || unreconciled {
+		} else if unreconciled, err := b.store.HasUnreconciledContact(ctx, lookupJID); err != nil {
 			lidPhoneVerified = false
+		} else if unreconciled {
+			targetJID, parseErr := types.ParseJID(lookupJID)
+			if parseErr != nil {
+				lidPhoneVerified = false
+			} else if surviving, checkErr := b.hasAnyActiveMutationForPatch(ctx, buildContactRemovalPatch(targetJID)); checkErr != nil || surviving {
+				lidPhoneVerified = false
+			} else {
+				_ = b.store.ClearUnreconciledContact(ctx, lookupJID)
+			}
 		}
 	}
 

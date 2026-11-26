@@ -765,6 +765,17 @@ func TestDeleteContactLabelPreservesUserRecordUnderOtherKey(t *testing.T) {
 	if contactResp.IsMyContact != nil {
 		t.Fatalf("expected IsMyContact=nil (unknown saved status) while surviving user record is unreconciled, got %v", *contactResp.IsMyContact)
 	}
+
+	if err := bridge.client.Store.AppState.DeleteAppStateMutationMACs(ctx, string(patchInfo.Type), [][]byte{indexMACA}); err != nil {
+		t.Fatalf("delete surviving user MAC: %v", err)
+	}
+	afterDeleteResp, err := bridge.GetContact(ctx, target.String())
+	if err != nil {
+		t.Fatalf("GetContact after user deleted surviving record: %v", err)
+	}
+	if afterDeleteResp.IsMyContact == nil || *afterDeleteResp.IsMyContact {
+		t.Fatalf("expected IsMyContact=false once surviving record is deleted, got %v", afterDeleteResp.IsMyContact)
+	}
 }
 
 func TestSetContactLabelRecordsExactKeyAcrossRotation(t *testing.T) {
