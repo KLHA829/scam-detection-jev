@@ -20,10 +20,7 @@ const {
   recordOutgoingMessage,
 } = require('./lib/handle-incoming');
 const { resolveRealNumber, phoneLookupId } = require('./lib/lid');
-const {
-  decideIncomingAction,
-  resolveIncomingMessageLabel,
-} = require('./lib/decide-incoming');
+const { decideIncomingAction } = require('./lib/decide-incoming');
 const { createLlmReviewConfig } = require('./lib/llm-review');
 const {
   contextLlmEnabled,
@@ -949,8 +946,6 @@ async function main() {
     waActionGapMs: pacer.gapMs,
     contextTurns: threadContext.turns,
     llmReviewEnabled: Boolean(llmReview.enabled),
-    llmReviewAll: Boolean(llmReview.reviewAll),
-    llmReviewMerge: llmReview.merge,
     llmReviewModel: llmReview.enabled ? llmReview.model : null,
     contextLlmEnabled: contextOn,
     contextLlmMessages: recentContext ? recentContext.limit : 0,
@@ -983,7 +978,6 @@ module.exports = {
   attachHandlers,
   main,
   decideIncomingAction,
-  resolveIncomingMessageLabel,
 };
 
 if (require.main === module) {
