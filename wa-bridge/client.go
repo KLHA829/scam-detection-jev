@@ -678,17 +678,48 @@ func (b *WhatsmeowBridge) handleContactEvent(evt *events.Contact) {
 	if evt == nil || evt.Action == nil || b.store == nil {
 		return
 	}
-	if targetID := evt.JID.ToNonAD().String(); targetID != "" {
-		ctx := b.ctx
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		_ = b.store.ClearUnreconciledContact(ctx, targetID)
+	jid := evt.JID.ToNonAD()
+	targetID := jid.String()
+	if targetID == "" || b.client == nil || b.client.Store == nil || b.client.Store.Contacts == nil {
+		return
 	}
+	ctx := b.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// A contact event covers a single mutation, not the final per-key state: a
+	// REMOVE under another key later in the same replay can blank the stored
+	// name. Clear the unreconciled marker only when the surviving records
+	// confirm the contact's saved-name state; otherwise keep it so GetContact
+	// stays fail-closed.
+	info, err := b.client.Store.Contacts.GetContact(ctx, jid)
+	if err != nil {
+		return
+	}
+	if savedNameFromContactInfo(info) != "" {
+		_ = b.store.ClearUnreconciledContact(ctx, targetID)
+		return
+	}
+	unreconciled, err := b.store.HasUnreconciledContact(ctx, targetID)
+	if err != nil || !unreconciled {
+		return
+	}
+	if surviving, checkErr := b.hasAnyActiveMutationForPatch(ctx, buildContactRemovalPatch(jid)); checkErr != nil || surviving {
+		return
+	}
+	_ = b.store.ClearUnreconciledContact(ctx, targetID)
 }
 
 func (b *WhatsmeowBridge) invalidateContactSyncForWriteError(writeErr error) {
 	b.log.Warnf("failed to store contact app state: %v", writeErr)
+	b.invalidateContactSync()
+}
+
+// invalidateContactSync drops the synced gate and forces a full refetch through
+// the bounded syncContacts retry loop. It runs before any destructive app-state
+// rebuild so a failed snapshot download cannot leave an emptied mutation MAC
+// cache looking authoritative.
+func (b *WhatsmeowBridge) invalidateContactSync() {
 	var retryGen uint64
 	b.mu.Lock()
 	b.syncEpoch++
@@ -1228,7 +1259,10 @@ func (b *WhatsmeowBridge) GetContact(ctx context.Context, rawID string) (*Contac
 			lidPhoneVerified = false
 		} else if unreconciled {
 			targetJID, parseErr := types.ParseJID(lookupJID)
-			if parseErr != nil {
+			if parseErr != nil || !syncedBefore {
+				// Without a verified sync the mutation MAC cache may have been
+				// reset by a destructive rebuild that has not completed, so MAC
+				// absence is not proof the record is gone. Keep the marker.
 				lidPhoneVerified = false
 			} else if surviving, checkErr := b.hasAnyActiveMutationForPatch(ctx, buildContactRemovalPatch(targetJID)); checkErr != nil || surviving {
 				lidPhoneVerified = false
