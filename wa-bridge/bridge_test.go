@@ -597,8 +597,8 @@ func TestObsoleteFetchAttemptCannotSwallowNewAttemptWriteError(t *testing.T) {
 	}
 
 	bridge.ensureContactWritesWrapped()
-	oldAttempt := bridge.contactWrites.beginAttempt()
-	newAttempt := bridge.contactWrites.beginAttempt()
+	oldAttempt, _ := bridge.contactWrites.beginAttempt()
+	newAttempt, _ := bridge.contactWrites.beginAttempt()
 
 	writeFail := errors.New("sqlite write failed")
 	bridge.contactWrites.ContactStore = failingContactNameStore{
@@ -612,6 +612,71 @@ func TestObsoleteFetchAttemptCannotSwallowNewAttemptWriteError(t *testing.T) {
 	}
 	if actual := bridge.contactWrites.takeErrForAttempt(newAttempt); !errors.Is(actual, writeFail) {
 		t.Fatalf("expected new attempt %d to observe writeFail, got %v", newAttempt, actual)
+	}
+}
+
+func TestLiveWriteErrorForcesFullReplayOnReconnect(t *testing.T) {
+	ctx := context.Background()
+	bridge, err := NewWhatsmeowBridge(ctx, filepath.Join(t.TempDir(), "live-write-err-reconnect.db"), "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	defer func() { _ = bridge.Close() }()
+
+	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
+	}
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
+	}
+	if err := bridge.store.SetMeta(ctx, metaKeyContactImportRevision, lidContactImportRevision); err != nil {
+		t.Fatalf("SetMeta: %v", err)
+	}
+	if err := bridge.client.Store.AppState.PutAppStateVersion(ctx, string(appstate.WAPatchCriticalUnblockLow), 100, [128]byte{1}); err != nil {
+		t.Fatalf("PutAppStateVersion: %v", err)
+	}
+
+	bridge.ensureContactWritesWrapped()
+	rawContacts := bridge.contactWrites.ContactStore
+	bridge.contactWrites.ContactStore = failingContactNameStore{
+		ContactStore: rawContacts,
+		err:          errors.New("transient sqlite write error"),
+	}
+	bridge.handleEvent(&events.AppState{
+		Index: []string{appstate.IndexLIDContact, "555000888@lid"},
+		SyncActionValue: &waSyncAction.SyncActionValue{
+			LidContactAction: &waSyncAction.LidContactAction{
+				FullName:  proto.String("Missed Mum"),
+				FirstName: proto.String("Missed Mum"),
+			},
+		},
+	})
+	bridge.contactWrites.ContactStore = rawContacts
+
+	// Reconnect with current revision and version=100: prior live write failure must force fullSync (resetting version to 0).
+	if err := bridge.fetchContactAppState(ctx, false); err == nil {
+		t.Fatal("expected disconnected FetchAppState to fail")
+	}
+	verAfter, _, err := bridge.client.Store.AppState.GetAppStateVersion(ctx, string(appstate.WAPatchCriticalUnblockLow))
+	if err != nil {
+		t.Fatalf("GetAppStateVersion: %v", err)
+	}
+	if verAfter != 0 {
+		t.Fatalf("prior live write failure must force full replay (resetting version to 0), got %d", verAfter)
+	}
+	// If the forced fullSync failed before completing, the next attempt must still see hasPriorErr=true.
+	nextAttempt, hasPriorErr := bridge.contactWrites.beginAttempt()
+	if !hasPriorErr {
+		t.Fatal("prior live write failure must remain pending until a full replay succeeds")
+	}
+	bridge.contactWrites.clearPriorErr(nextAttempt)
+	if _, stillPending := bridge.contactWrites.beginAttempt(); stillPending {
+		t.Fatal("clearPriorErr after successful full replay must clear the prior error")
 	}
 }
 

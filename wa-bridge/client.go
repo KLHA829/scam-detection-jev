@@ -71,14 +71,22 @@ type contactWriteObserver struct {
 	seen      map[string]struct{}
 }
 
-func (w *contactWriteObserver) beginAttempt() uint64 {
+func (w *contactWriteObserver) beginAttempt() (uint64, bool) {
 	w.mu.Lock()
+	hasPriorErr := w.err != nil
 	w.attemptID++
 	id := w.attemptID
-	w.err = nil
-	w.errID = 0
 	w.mu.Unlock()
-	return id
+	return id, hasPriorErr
+}
+
+func (w *contactWriteObserver) clearPriorErr(attemptID uint64) {
+	w.mu.Lock()
+	if w.err != nil && w.errID < attemptID {
+		w.err = nil
+		w.errID = 0
+	}
+	w.mu.Unlock()
 }
 
 func (w *contactWriteObserver) startFullSyncTracking() {
@@ -339,8 +347,12 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 		return err
 	}
 	var attemptID uint64
+	var hasPriorErr bool
 	if b.contactWrites != nil {
-		attemptID = b.contactWrites.beginAttempt()
+		attemptID, hasPriorErr = b.contactWrites.beginAttempt()
+		if hasPriorErr {
+			fullSync = true
+		}
 		if fullSync {
 			b.contactWrites.startFullSyncTracking()
 			defer b.contactWrites.finishFullSyncTracking()
@@ -360,6 +372,9 @@ func (b *WhatsmeowBridge) fetchContactAppState(ctx context.Context, fullSync boo
 	}
 	if writeErr != nil {
 		return fmt.Errorf("write contact app state: %w", writeErr)
+	}
+	if b.contactWrites != nil && fullSync {
+		b.contactWrites.clearPriorErr(attemptID)
 	}
 	if fullSync {
 		if err := b.reconcileDeletedContacts(ctx, seen); err != nil {
