@@ -359,12 +359,7 @@ func (b *WhatsmeowBridge) completeContactSyncAttempt(gen, startEpoch uint64) boo
 	if !b.connected || !b.loggedIn || b.connGen != gen {
 		return true
 	}
-	if b.syncEpoch != startEpoch || b.syncNeedsRetry {
-		b.syncNeedsRetry = false
-		select {
-		case <-b.syncRetryWake:
-		default:
-		}
+	if b.syncEpoch != startEpoch {
 		return false
 	}
 	b.contactsSynced = true
