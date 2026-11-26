@@ -56,6 +56,14 @@ func (w *archiveTrackingChatSettings) PutArchived(ctx context.Context, chat type
 		prevFound = found
 		prevArchived = prev
 	}
+	if !prevFound {
+		if settings, err := w.ChatSettingsStore.GetChatSettings(ctx, chat); err == nil && settings.Found {
+			if settings.Archived || (settings.MutedUntil.IsZero() && !settings.Pinned) {
+				prevFound = true
+				prevArchived = settings.Archived
+			}
+		}
+	}
 	if err := w.ChatSettingsStore.PutArchived(ctx, chat, archived); err != nil {
 		return err
 	}
@@ -459,6 +467,13 @@ func (b *WhatsmeowBridge) handleEvent(rawEvt any) {
 	}
 }
 
+func (b *WhatsmeowBridge) selfDeviceJID() string {
+	if b.client != nil && b.client.Store != nil && b.client.Store.ID != nil {
+		return b.client.Store.ID.ToNonAD().String()
+	}
+	return ""
+}
+
 func (b *WhatsmeowBridge) ensureChatSettingsWrapped() {
 	if b.client == nil || b.client.Store == nil {
 		return
@@ -476,8 +491,12 @@ func (b *WhatsmeowBridge) ensureChatSettingsWrapped() {
 	b.client.Store.ChatSettings = &archiveTrackingChatSettings{
 		ChatSettingsStore: cs,
 		onPutArchived:     b.recordPutArchived,
-		getArchiveState:   b.store.GetArchiveState,
-		putArchiveState:   b.store.PutArchiveState,
+		getArchiveState: func(ctx context.Context, chatID string) (bool, bool, error) {
+			return b.store.GetArchiveState(ctx, b.selfDeviceJID(), chatID)
+		},
+		putArchiveState: func(ctx context.Context, chatID string, archived bool) error {
+			return b.store.PutArchiveState(ctx, b.selfDeviceJID(), chatID, archived)
+		},
 	}
 }
 

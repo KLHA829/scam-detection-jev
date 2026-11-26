@@ -110,7 +110,7 @@ func TestBridgeStorePersistenceAndPollDecoding(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveMessage m-2: %v", err)
 	}
-	if err := store.PutArchiveState(ctx, "85261112222@c.us", false); err != nil {
+	if err := store.PutArchiveState(ctx, "85299990000@s.whatsapp.net", "85261112222@c.us", false); err != nil {
 		t.Fatalf("PutArchiveState: %v", err)
 	}
 	if err := db.Close(); err != nil {
@@ -127,7 +127,7 @@ func TestBridgeStorePersistenceAndPollDecoding(t *testing.T) {
 		t.Fatalf("reopen store: %v", err)
 	}
 
-	archived, archiveFound, err := store2.GetArchiveState(ctx, "85261112222@c.us")
+	archived, archiveFound, err := store2.GetArchiveState(ctx, "85299990000@s.whatsapp.net", "85261112222@c.us")
 	if err != nil || !archiveFound || archived {
 		t.Fatalf("GetArchiveState after reopen = (%v, %v, %v)", archived, archiveFound, err)
 	}
@@ -1008,42 +1008,6 @@ wakeRecovered:
 	}
 }
 
-type stubChatSettingsStore struct{}
-
-func (s *stubChatSettingsStore) PutMutedUntil(context.Context, types.JID, time.Time) error {
-	return nil
-}
-func (s *stubChatSettingsStore) PutPinned(context.Context, types.JID, bool) error   { return nil }
-func (s *stubChatSettingsStore) PutArchived(context.Context, types.JID, bool) error { return nil }
-func (s *stubChatSettingsStore) PutWASARootSecretID(context.Context, types.JID, types.MessageID) error {
-	return nil
-}
-func (s *stubChatSettingsStore) GetWASARootSecretID(context.Context, types.JID) (types.MessageID, error) {
-	return "", nil
-}
-func (s *stubChatSettingsStore) GetChatSettings(context.Context, types.JID) (types.LocalChatSettings, error) {
-	return types.LocalChatSettings{}, nil
-}
-
-func TestArchiveTrackingRecordsRestoreWhenBaselineWriteFails(t *testing.T) {
-	recorded := false
-	tracked := &archiveTrackingChatSettings{
-		ChatSettingsStore: &stubChatSettingsStore{},
-		onPutArchived: func(chatID string, prevFound, prevArchived, newArchived bool) {
-			recorded = chatID == "85265559999@c.us" && !prevFound && !newArchived
-		},
-		getArchiveState: func(context.Context, string) (bool, bool, error) { return false, false, nil },
-		putArchiveState: func(context.Context, string, bool) error { return errors.New("disk full") },
-	}
-	err := tracked.PutArchived(context.Background(), types.NewJID("85265559999", types.DefaultUserServer), false)
-	if err == nil {
-		t.Fatal("expected baseline write failure")
-	}
-	if !recorded {
-		t.Fatal("restore transition must be recorded even when baseline persistence fails")
-	}
-}
-
 func TestBridgeArchiveEventReconcilesSyncRestores(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "archive-events.db")
@@ -1304,7 +1268,7 @@ func TestBridgeArchiveEventReconcilesSyncRestores(t *testing.T) {
 	if err := bridge.rawChatSettingsStore().PutArchived(ctx, alreadyUnarchivedJID, false); err != nil {
 		t.Fatalf("raw PutArchived already-unarchived seed: %v", err)
 	}
-	if err := bridge.store.PutArchiveState(ctx, canonicalJID(alreadyUnarchivedJID), false); err != nil {
+	if err := bridge.store.PutArchiveState(ctx, bridge.selfDeviceJID(), canonicalJID(alreadyUnarchivedJID), false); err != nil {
 		t.Fatalf("seed explicit already-unarchived archive state: %v", err)
 	}
 	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, alreadyUnarchivedJID, false); err != nil {
@@ -1379,5 +1343,76 @@ func TestBridgeArchiveEventReconcilesSyncRestores(t *testing.T) {
 	grpData, _ := grpEvt.Data.(map[string]any)
 	if grpData["chatId"] != "1203630000@g.us" || grpData["isGroup"] != true || grpData["archived"] != false || grpData["wasArchived"] != true {
 		t.Fatalf("unexpected group un-archive event: %+v", grpEvt)
+	}
+}
+
+func TestBridgeArchiveTrackingEdgeCases(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "archive-edge.db")
+
+	bridge, err := NewWhatsmeowBridge(ctx, dbPath, "ERROR")
+	if err != nil {
+		t.Fatalf("NewWhatsmeowBridge: %v", err)
+	}
+	defer func() { _ = bridge.Close() }()
+
+	selfJID := types.NewJID("85299990001", types.DefaultUserServer)
+	bridge.client.Store.ID = &selfJID
+	bridge.client.Store.Account = &waAdv.ADVSignedDeviceIdentity{
+		Details:             []byte("details"),
+		AccountSignatureKey: make([]byte, 32),
+		AccountSignature:    make([]byte, 64),
+		DeviceSignature:     make([]byte, 64),
+	}
+	if err := bridge.client.Store.Save(ctx); err != nil {
+		t.Fatalf("save device store: %v", err)
+	}
+
+	ch, cancel := bridge.Events().Subscribe(16)
+	defer cancel()
+	bridge.handleEvent(&events.PairSuccess{})
+	<-ch // authenticated
+
+	// 1. Upgraded DB: legacy whatsmeow_chat_settings row with archived=false and no mute/pin
+	// must not emit a false restore when replayed without a bridge_archive_state row.
+	legacyJID := types.NewJID("85261001111", types.DefaultUserServer)
+	if err := bridge.rawChatSettingsStore().PutArchived(ctx, legacyJID, false); err != nil {
+		t.Fatalf("raw PutArchived legacy row: %v", err)
+	}
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, legacyJID, false); err != nil {
+		t.Fatalf("PutArchived legacy replay: %v", err)
+	}
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchRegularLow})
+	select {
+	case unexpected := <-ch:
+		t.Fatalf("upgraded already-unarchived row must not emit false restore, got %+v", unexpected)
+	case <-time.After(30 * time.Millisecond):
+	}
+
+	// 2. Secondary putArchiveState failure must still enqueue and emit the restore on sync completion.
+	tracker := bridge.client.Store.ChatSettings.(*archiveTrackingChatSettings)
+	origPut := tracker.putArchiveState
+	tracker.putArchiveState = func(ctx context.Context, chatID string, archived bool) error {
+		return errors.New("simulated sqlite full")
+	}
+	failStateJID := types.NewJID("85261002222", types.DefaultUserServer)
+	if err := bridge.client.Store.ChatSettings.PutArchived(ctx, failStateJID, false); err == nil {
+		t.Fatal("expected PutArchived to return simulated secondary write error")
+	}
+	tracker.putArchiveState = origPut
+	bridge.handleEvent(&events.AppStateSyncComplete{Name: appstate.WAPatchRegularLow})
+	select {
+	case evt := <-ch:
+		data, _ := evt.Data.(map[string]any)
+		if evt.Type != "chat_archived" || data["chatId"] != "85261002222@c.us" || data["archived"] != false || data["wasArchived"] != true {
+			t.Fatalf("expected restore despite secondary write failure, got %+v", evt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for restore after secondary write failure")
+	}
+
+	// 3. Device scoping: bridge_archive_state baselines are isolated per our_jid.
+	if foundArchived, found, err := bridge.store.GetArchiveState(ctx, "85299990002@s.whatsapp.net", canonicalJID(legacyJID)); err != nil || found || foundArchived {
+		t.Fatalf("expected other device JID to have no archive baseline, got (%v, %v, %v)", foundArchived, found, err)
 	}
 }
