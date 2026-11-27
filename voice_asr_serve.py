@@ -13,6 +13,7 @@ import base64
 import binascii
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,7 @@ DEFAULT_MODEL = "ASLP-lab/WSYue-ASR/sensevoice_small_yue"
 DEFAULT_LANGUAGE = "yue"
 MAX_JSON_BODY = 24 * 1024 * 1024
 MAX_AUDIO_BYTES = 12 * 1024 * 1024
+MAX_CONTEXT_CHARS = 500
 FFMPEG_TIMEOUT_SECONDS = 15
 
 HOST = os.environ.get("VOICE_ASR_HOST", DEFAULT_HOST).strip() or DEFAULT_HOST
@@ -40,7 +42,7 @@ if BACKEND not in {"funasr", "qwen"}:
 DEFAULT_QWEN_MODEL = "Qwen/Qwen3-ASR-0.6B"
 if not MODEL_ID:
     MODEL_ID = DEFAULT_QWEN_MODEL if BACKEND == "qwen" else DEFAULT_MODEL
-QWEN_CONTEXT = os.environ.get("VOICE_ASR_QWEN_CONTEXT", "封佢, 唔好封, 解封, 保持, 解封九一二三四五六七").strip()
+QWEN_CONTEXT = os.environ.get("VOICE_ASR_QWEN_CONTEXT", "").strip()
 DEVICE = os.environ.get("VOICE_ASR_DEVICE", "cpu").strip() or "cpu"
 LANGUAGE = os.environ.get("VOICE_ASR_LANGUAGE", DEFAULT_LANGUAGE).strip() or DEFAULT_LANGUAGE
 API_KEY = os.environ.get("VOICE_ASR_API_KEY", "")
@@ -71,7 +73,7 @@ def authorized(handler: BaseHTTPRequestHandler) -> bool:
     return handler.headers.get("Authorization", "") == f"Bearer {API_KEY}"
 
 
-def decode_audio(payload: object) -> tuple[bytes, str]:
+def decode_audio(payload: object) -> tuple[bytes, str, str | None]:
     if not isinstance(payload, dict):
         raise ValueError("json object required")
     encoded = payload.get("audioBase64")
@@ -88,7 +90,13 @@ def decode_audio(payload: object) -> tuple[bytes, str]:
     language = str(payload.get("language") or LANGUAGE).strip() or LANGUAGE
     if language not in _ALLOWED_LANGUAGES:
         raise ValueError("unsupported language")
-    return audio, language
+    context = payload.get("context")
+    if context is not None:
+        if not isinstance(context, str):
+            raise ValueError("context must be a string")
+        if len(context) > MAX_CONTEXT_CHARS:
+            raise ValueError("context is too long")
+    return audio, language, context
 
 
 def convert_to_wav(audio: bytes) -> bytes:
@@ -128,10 +136,18 @@ COMMAND_TRANSCRIPT_CORRECTIONS = (
     ("唔好风", "唔好封"),
     ("唔想風", "唔想封"),
     ("唔想风", "唔想封"),
+    ("唔好瘋", "唔好封"),
+    ("唔好疯", "唔好封"),
+    ("唔想瘋", "唔想封"),
+    ("唔想疯", "唔想封"),
     ("風佢", "封佢"),
     ("风佢", "封佢"),
+    ("瘋佢", "封佢"),
+    ("疯佢", "封佢"),
     ("解風", "解封"),
     ("解风", "解封"),
+    ("解瘋", "解封"),
+    ("解疯", "解封"),
     ("風存", "封存"),
     ("风存", "封存"),
     ("風鎖", "封鎖"),
@@ -145,6 +161,50 @@ def correct_command_transcript(text: str) -> str:
     for wrong, right in COMMAND_TRANSCRIPT_CORRECTIONS:
         text = text.replace(wrong, right)
     return text
+
+
+def validation_transcript_text(text: str) -> str:
+    compact = re.sub(r"[\s。！？!?，,、.]+", "", str(text or ""))
+    for wrong in ("風", "风", "瘋", "疯"):
+        compact = compact.replace(wrong, "封")
+    compact = compact.replace("锁", "鎖")
+    return compact.strip("啦喇呀啊喎")
+
+
+def transcript_edit_distance(left: str, right: str) -> int:
+    if left == right:
+        return 0
+    if not left:
+        return len(right)
+    if not right:
+        return len(left)
+    previous = list(range(len(right) + 1))
+    for i, a in enumerate(left, 1):
+        current = [i]
+        for j, b in enumerate(right, 1):
+            current.append(
+                min(
+                    previous[j] + 1,
+                    current[j - 1] + 1,
+                    previous[j - 1] + (0 if a == b else 1),
+                )
+            )
+        previous = current
+    return previous[-1]
+
+
+def contextual_transcript_consistent(contextual: str, plain: str) -> bool:
+    contextual_compact = validation_transcript_text(contextual)
+    plain_compact = validation_transcript_text(plain)
+    if not contextual_compact:
+        return True
+    if not plain_compact:
+        return False
+    if contextual_compact == plain_compact:
+        return True
+    distance = transcript_edit_distance(contextual_compact, plain_compact)
+    allowance = 1 if max(len(contextual_compact), len(plain_compact)) <= 12 else 2
+    return distance <= allowance
 
 
 def resolve_model_path(model_id: str, snapshot_download=None) -> str:
@@ -194,7 +254,7 @@ def load_model():
         return _MODEL
 
 
-def transcribe_audio(audio: bytes, language: str) -> str:
+def transcribe_audio(audio: bytes, language: str, context: str | None = None) -> str:
     wav = convert_to_wav(audio)
     model = load_model()
     if BACKEND != "qwen":
@@ -206,7 +266,12 @@ def transcribe_audio(audio: bytes, language: str) -> str:
             tmp.write(wav)
         with _MODEL_LOCK:
             if BACKEND == "qwen":
-                result = model.transcribe(audio=tmp_path, language="Cantonese", context=QWEN_CONTEXT)
+                effective_context = QWEN_CONTEXT if context is None else context
+                result = model.transcribe(audio=tmp_path, language="Cantonese", context=effective_context)
+                if effective_context.strip():
+                    plain_result = model.transcribe(audio=tmp_path, language="Cantonese", context="")
+                else:
+                    plain_result = None
             else:
                 result = model.generate(
                     input=tmp_path,
@@ -227,6 +292,10 @@ def transcribe_audio(audio: bytes, language: str) -> str:
         return ""
     if BACKEND == "qwen":
         text = str(getattr(result[0], "text", "")).strip()
+        if plain_result is not None:
+            plain_text = str(getattr(plain_result[0], "text", "")).strip() if plain_result else ""
+            if not contextual_transcript_consistent(text, plain_text):
+                text = plain_text
     elif isinstance(result[0], dict):
         text = str(rich_transcription_postprocess(str(result[0].get("text") or ""))).strip()
     else:
@@ -262,8 +331,8 @@ class VoiceAsrHandler(BaseHTTPRequestHandler):
             return
         try:
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
-            audio, language = decode_audio(payload)
-            text = transcribe_audio(audio, language)
+            audio, language, context = decode_audio(payload)
+            text = transcribe_audio(audio, language, context)
         except ValueError as exc:
             write_json(self, 400, {"error": str(exc)})
             return

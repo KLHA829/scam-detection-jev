@@ -452,10 +452,18 @@ async function isSelfChatId(transport, chatId) {
   return transport.isSelfChatId(chatId);
 }
 
+function voiceAsrContextForQuotedItem(quotedId, queue) {
+  if (!quotedId || !queue || typeof queue.get !== 'function') return '';
+  const item = queue.get(quotedId);
+  if (!item) return '';
+  if (item.kind === 'unblock') return '解封, 解除封鎖, 保持, 保持封鎖, 唔好解封';
+  return '封佢, 封鎖佢, 唔好封, 只封存';
+}
+
 async function handleSelfMessage(msg, deps) {
   let body = String(msg.body || '').trim();
   const env = deps.env || process.env;
-  const voiceCandidate = (msg.type === 'audio' || msg.type === 'ptt') && !body && voiceCommandsEnabled(env);
+  const voiceCandidate = msg.type === 'ptt' && !body && voiceCommandsEnabled(env);
   if (!voiceCandidate && !shouldProcessSelfMessageBody(body, Boolean(msg.hasQuotedMsg))) return;
   const wid = selfWid(deps.transport);
   if (!wid) return;
@@ -470,13 +478,24 @@ async function handleSelfMessage(msg, deps) {
   }
   if (!isSelf) return;
 
+  let quotedId = null;
+  if (msg.hasQuotedMsg && typeof msg.getQuotedMessageId === 'function') {
+    try {
+      quotedId = await msg.getQuotedMessageId();
+    } catch (err) {
+      log.warn('quoted message unavailable', { error: err.message });
+    }
+  }
+
   if (voiceCandidate) {
     try {
       if (!deps.voiceCommandClient || typeof msg.downloadMedia !== 'function') {
         throw new Error('voice transcription unavailable');
       }
       const media = await msg.downloadMedia();
-      body = normalizeVoiceTranscript(await deps.voiceCommandClient.transcribeMedia(media));
+      body = normalizeVoiceTranscript(await deps.voiceCommandClient.transcribeMedia(media, {
+        context: voiceAsrContextForQuotedItem(quotedId, deps.reviewQueue),
+      }));
     } catch (err) {
       log.warn('voice command transcription failed', { error: err.message });
       const sendFailure = () => deps.transport.sendText(wid, '語音指令暫時轉唔到文字，請用文字再試。');
@@ -487,14 +506,6 @@ async function handleSelfMessage(msg, deps) {
     if (!body || !shouldProcessSelfMessageBody(body, Boolean(msg.hasQuotedMsg))) return;
   }
 
-  let quotedId = null;
-  if (msg.hasQuotedMsg && typeof msg.getQuotedMessageId === 'function') {
-    try {
-      quotedId = await msg.getQuotedMessageId();
-    } catch (err) {
-      log.warn('quoted message unavailable', { error: err.message });
-    }
-  }
   const route = routeSelfText({
     body,
     quotedId,

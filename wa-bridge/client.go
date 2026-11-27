@@ -209,7 +209,8 @@ func (b *WhatsmeowBridge) isSelfChatID(chatID string) bool {
 
 func (b *WhatsmeowBridge) cacheVoiceMessage(messageID, chatID string, msg *waE2E.Message) {
 	unwrapped := unwrapE2EMessage(msg)
-	if messageID == "" || chatID == "" || unwrapped == nil || unwrapped.GetAudioMessage() == nil {
+	audio := unwrapped.GetAudioMessage()
+	if messageID == "" || chatID == "" || unwrapped == nil || audio == nil || !audio.GetPTT() {
 		return
 	}
 	cloned, ok := proto.Clone(unwrapped).(*waE2E.Message)
@@ -1138,7 +1139,11 @@ func extractMessageContent(raw *waE2E.Message) extractedMessage {
 	}
 	if audio := msg.GetAudioMessage(); audio != nil {
 		quotedID, isForwarded := extractContextMeta(audio.GetContextInfo())
-		return extractedMessage{msgType: "audio", quotedID: quotedID, isForwarded: isForwarded}
+		msgType := "audio"
+		if audio.GetPTT() {
+			msgType = "ptt"
+		}
+		return extractedMessage{msgType: msgType, quotedID: quotedID, isForwarded: isForwarded}
 	}
 	if msg.GetStickerMessage() != nil {
 		return extractedMessage{msgType: "sticker"}
@@ -1209,7 +1214,7 @@ func (b *WhatsmeowBridge) handleIncomingMessage(evt *events.Message) {
 	}
 
 	msgID := string(evt.Info.ID)
-	if extracted.msgType == "audio" && evt.Info.IsFromMe && (b.isSelfChatID(chatID) || senderID == chatID) {
+	if extracted.msgType == "ptt" && evt.Info.IsFromMe && (b.isSelfChatID(chatID) || senderID == chatID) {
 		b.cacheVoiceMessage(msgID, chatID, evt.Message)
 	}
 	_ = b.store.SaveMessage(ctx, StoredMessage{

@@ -813,6 +813,7 @@ func TestSelfVoiceMessageCachedOnlyInSelfChat(t *testing.T) {
 	audio := &waE2E.Message{AudioMessage: &waE2E.AudioMessage{
 		Mimetype: proto.String("audio/ogg"),
 		Seconds:  proto.Uint32(2),
+		PTT:      proto.Bool(true),
 	}}
 
 	bridge.handleIncomingMessage(&events.Message{
@@ -843,6 +844,21 @@ func TestSelfVoiceMessageCachedOnlyInSelfChat(t *testing.T) {
 	bridge.voiceMediaMu.Unlock()
 	if otherCached {
 		t.Fatal("voice messages outside the self chat must not be cached")
+	}
+
+	bridge.handleIncomingMessage(&events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: selfJID, Sender: selfJID, IsFromMe: true},
+			ID:            "audio-attachment-self",
+			Timestamp:     time.Now(),
+		},
+		Message: &waE2E.Message{AudioMessage: &waE2E.AudioMessage{Mimetype: proto.String("audio/mpeg")}},
+	})
+	bridge.voiceMediaMu.Lock()
+	_, attachmentCached := bridge.voiceMedia["audio-attachment-self"]
+	bridge.voiceMediaMu.Unlock()
+	if attachmentCached {
+		t.Fatal("audio attachments must not be cached as voice-note commands")
 	}
 }
 
@@ -2337,6 +2353,11 @@ func TestExtractMessageContent(t *testing.T) {
 	}})
 	if audio.msgType != "audio" || audio.quotedID != "poll-1" {
 		t.Fatalf("unexpected audio extract: %+v", audio)
+	}
+
+	voice := extractMessageContent(&waE2E.Message{AudioMessage: &waE2E.AudioMessage{PTT: proto.Bool(true)}})
+	if voice.msgType != "ptt" {
+		t.Fatalf("unexpected voice extract: %+v", voice)
 	}
 
 	edit := extractMessageContent(&waE2E.Message{

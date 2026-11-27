@@ -14,9 +14,12 @@ const evidenceRoot = path.join(skillDir, 'evidence');
 const TEST_NAMES = [
   'normalizes Cantonese ASR output for existing commands',
   'posts local audio as base64 and returns transcript text',
+  'sends a scoped command context when one is provided',
   'rejects invalid media and invalid worker responses',
   'applies a quoted review choice transcribed from a Cantonese voice note',
   'runs a direct unblock command transcribed from a Cantonese voice note',
+  'ignores a hallucinated multi-command transcript instead of guessing',
+  'does not transcribe a self-chat audio attachment as a voice command',
   'does not act when voice transcription fails',
 ];
 const TEST_FILES = [
