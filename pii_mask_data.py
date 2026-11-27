@@ -1,8 +1,10 @@
 """Synthetic PII spans for the jevlike mask head.
 
 Labels are the identifier rules plus forms those rules miss: 我叫/我名叫,
-Chinese-numeral phones, and fullwidth digits. Hard negatives (organisation
-tails, role titles, years, bare lure words) stay unlabelled.
+Chinese-numeral phones, fullwidth digits, addresses, birthdates, passports,
+card expiry/CVV pairs, and social handles. Hard negatives (organisation tails,
+role titles, years, bare lure words, common Cantonese words, order/reference
+numbers, dates, and amounts) stay unlabelled.
 
 Train and validation use different surnames and sentence frames so a memorised
 string is not the measurement.
@@ -24,6 +26,13 @@ _CN_PHONE = re.compile(
     rf"(?:電話|电话|打去|打俾|whatsapp|wa|號碼|号码)[^\n]{{0,6}}([{_CN_DIGITS}]{{8,11}})"
 )
 _FW_PHONE = re.compile(r"(?<![0-9０-９])[４５６７９][０-９]{7}(?![0-9０-９])")
+_ADDRESS = re.compile(r"((?:香港|九龍|新界)[\u4e00-\u9fff]{2,8}(?:道|街|路)[0-9]{1,4}號[0-9]{1,2}樓[A-Z]室)")
+_BIRTHDATE = re.compile(r"((?:19|20)[0-9]{2}年[0-9]{1,2}月[0-9]{1,2}日)(?=出生)")
+_BIRTHDAY_AFTER = re.compile(r"生日係\s*((?:19|20)[0-9]{2}年[0-9]{1,2}月[0-9]{1,2}日)")
+_PASSPORT = re.compile(r"(?:護照(?:號碼)?|passport)\s*[:：#]?\s*([A-Z][0-9]{7,8})", re.I)
+_CVV = re.compile(r"(?:CVV|安全碼)\s*[:：]?\s*([0-9]{3,4})", re.I)
+_EXPIRY = re.compile(r"(?:到期日|expiry(?:\s*date)?)\s*[:：]?\s*((?:0[1-9]|1[0-2])/[0-9]{2,4})", re.I)
+_SOCIAL_HANDLE = re.compile(r"(?<![A-Za-z0-9._%+-])(@[A-Za-z0-9_]{4,32})")
 
 _TRAIN_SURNAMES = list("陳李黃張劉周吳鄭王何梁馬羅歐")
 _TEST_SURNAMES = list("蔡楊許謝郭洪曾邱廖司")
@@ -43,6 +52,51 @@ _HARD_NEGATIVES = (
     "我係防騙協調中心提醒你",
     "驗證碼過期就要重新申請",
     "五十蚊就得，唔使五百",
+    "講天氣講食飯講屋企人",
+    "屋企人話唔使急",
+    "講健康講政府新措施",
+    "政府新措施出咗",
+    "多謝你，好多事情都順利",
+    "許多朋友都話曾經見過",
+    "我而家好緊張，因為聽日考試",
+    "方法簡單，連埋古董都賣咗",
+    "夏天去游水，之後飲湯",
+    "馬路旁邊森林好靜",
+    "地區官網有新聞，唔係叫你俾驗證碼",
+    "我部電話壞咗，遲啲先打",
+    "電話號碼之後先話你知",
+    "佢叫我小心啲，唔好亂俾驗證碼人",
+)
+
+_HARD_NEGATIVE_FRAMES = (
+    "講天氣講食飯講屋企人講新聞講股票",
+    "講健康講政府新措施，之後講旅行",
+    "屋企人話唔使急，慢慢嚟",
+    "訂單編號 {order}，{month}月{day}日送到",
+    "訂單編號 {order} 已經出貨",
+    "參考編號 {order} 三月後到期",
+    "預約編號 {order} 已經確認",
+    "單號 {order} 聽日送到",
+    "order number {order} confirmed",
+    "reference {order} expires next month",
+    "金額 {amount} 蚊已經俾咗",
+    "今年係{year}年，{month}月{day}日放假",
+    "會議係{year}年{month}月{day}日",
+    "下晝{hour}點{minute}分開會",
+    "而家{hour}點{minute}分，準備食飯",
+    "周末去行山買餸，夜晚睇電影",
+    "馬路旁邊森林好靜，適合散步",
+    "我而家好緊張，因為聽日考試",
+    "多謝你，許多事情都順利",
+    "曾經講過健康最重要",
+    "方法簡單，連埋古董都賣咗",
+    "夏天去游水，之後飲湯",
+    "地區官網有新聞，唔係叫你俾驗證碼",
+    "電話號碼之後先話你知",
+    "我部電話壞咗，遲啲先打",
+    "whatsapp 我遲啲覆你",
+    "Your OTP code is not needed here",
+    "Please call me tomorrow",
 )
 
 
@@ -54,7 +108,17 @@ def extra_gold_spans(text: str) -> list[dict]:
             continue
         start = match.start(1)
         spans.append({"start": start, "end": start + len(name), "label": "name"})
-    for pattern, label in ((_CN_PHONE, "phone"), (_FW_PHONE, "phone")):
+    for pattern, label in (
+        (_CN_PHONE, "phone"),
+        (_FW_PHONE, "phone"),
+        (_ADDRESS, "address"),
+        (_BIRTHDATE, "birthdate"),
+        (_BIRTHDAY_AFTER, "birthdate"),
+        (_PASSPORT, "passport"),
+        (_CVV, "cvv"),
+        (_EXPIRY, "expiry"),
+        (_SOCIAL_HANDLE, "social"),
+    ):
         for match in pattern.finditer(text):
             group = 1 if match.lastindex else 0
             spans.append(
@@ -119,7 +183,15 @@ def _fill(rng: random.Random, frame: str, surnames: list[str], givens: tuple[str
     name = _name(rng, surnames, givens)
     nick = f"阿{rng.choice(('明', '強', '珍', '輝', '玲', '文'))}"
     otp = "".join(rng.choice("0123456789") for _ in range(6))
-    email = f"user{rng.randrange(1000, 9999)}@example.com"
+    email_style = rng.randrange(4)
+    if email_style == 0:
+        email = f"user{rng.randrange(1000, 9999)}@example.com"
+    elif email_style == 1:
+        email = f"test{rng.randrange(100, 999)}@gmail.com"
+    elif email_style == 2:
+        email = f"{rng.choice(('chan', 'wong', 'lee', 'lau'))}.{rng.choice(('kwok', 'cheung', 'lau', 'ng'))}+test@example.com"
+    else:
+        email = f"{rng.choice(('contact', 'info', 'hello'))}{rng.randrange(10, 99)}@{rng.choice(('example.com', 'mail.test'))}"
     hkid = f"{rng.choice('ABCDEFGHZ')}{rng.randrange(100000, 999999)}({rng.choice('0123456789A')})"
     id18 = f"44030119{rng.randrange(70, 99)}{rng.randrange(10, 12)}{rng.randrange(10, 28)}{rng.randrange(1000, 9999)}"
     account = f"{rng.randrange(100, 999)}-{rng.randrange(100000, 999999)}"
@@ -129,8 +201,17 @@ def _fill(rng: random.Random, frame: str, surnames: list[str], givens: tuple[str
     url_path = f"https://example{rng.randrange(10, 99)}.test/login?token=secret{rng.randrange(1000, 9999)}"
     url_user = f"https://user{rng.randrange(100, 999)}@example{rng.randrange(10, 99)}.test/home"
     short_url = f"https://bit.ly/ref{rng.randrange(1000, 9999)}"
+    url_verify = f"https://secure-login-example.test/verify?session=abcd{rng.randrange(1000, 9999)}"
     cn_phone = _local_phone(rng).translate(_CN_MAP)
     fw_phone = _local_phone(rng).translate(_FW_MAP)
+    district = rng.choice(("香港", "九龍", "新界"))
+    street = rng.choice(("彌敦道", "皇后大道", "青山道", "英皇道", "德輔道"))
+    address = f"{district}{street}{rng.randrange(1, 999)}號{rng.randrange(1, 40)}樓{rng.choice('ABCDE')}室"
+    birthdate = f"{rng.randrange(1940, 2010)}年{rng.randrange(1, 13)}月{rng.randrange(1, 29)}日"
+    passport = f"{rng.choice('EHKZ')}{rng.randrange(10000000, 99999999)}"
+    expiry = f"{rng.randrange(1, 13):02d}/{rng.randrange(26, 35)}"
+    cvv = f"{rng.randrange(100, 999)}"
+    telegram = f"@{rng.choice(('chan', 'wong', 'lee', 'lau'))}{rng.randrange(1000, 9999)}"
     return frame.format(
         name=name,
         nick=nick,
@@ -146,8 +227,15 @@ def _fill(rng: random.Random, frame: str, surnames: list[str], givens: tuple[str
         url_path=url_path,
         url_user=url_user,
         short_url=short_url,
+        url_verify=url_verify,
         cn_phone=cn_phone,
         fw_phone=fw_phone,
+        address=address,
+        birthdate=birthdate,
+        passport=passport,
+        expiry=expiry,
+        cvv=cvv,
+        telegram=telegram,
     )
 
 
@@ -169,6 +257,18 @@ _TRAIN_FRAMES = (
     "我號碼係{cn_phone}，儘快打",
     "全形電話{fw_phone}係我",
     "我係{name}，驗證碼{otp}，電話{phone}",
+    "叫我{nick}，今晚聯絡",
+    "我係{nick}，得閒傾",
+    "whatsapp {phone} 搵我",
+    "Your OTP code is {otp}",
+    "我住{address}，今晚喺屋企",
+    "我{birthdate}出生，身份證明天補俾你",
+    "護照號碼 {passport}，下星期飛",
+    "卡到期日 {expiry}，CVV {cvv}",
+    "加我 Telegram {telegram}",
+    "個OTP係 {otp}，快啲入",
+    "email係 {email}，send 文件過嚟",
+    "入去 {url_verify}",
 )
 _TEST_FRAMES = (
     "本人{name}，請打{phone}找我",
@@ -188,7 +288,30 @@ _TEST_FRAMES = (
     "打去{cn_phone}就可以",
     "備用號碼{fw_phone}留低",
     "叫我{name}，代碼 {otp}",
+    "叫我{nick}，之後聯絡",
+    "whatsapp {phone} 先",
+    "Your verification code is {otp}",
+    "我而家住{address}，遲啲見",
+    "生日係{birthdate}，唔好記錯",
+    "passport: {passport} 請核對",
+    "expiry date {expiry}，安全碼 {cvv}",
+    "telegram {telegram} 加我",
+    "OTP {otp} 快啲用",
+    "email: {email} 麻煩你",
+    "前往 {url_verify} 驗證",
 )
+
+
+def _negative_fill(rng: random.Random, frame: str) -> str:
+    return frame.format(
+        order="".join(rng.choice("0123456789") for _ in range(rng.choice((8, 10)))),
+        amount=rng.choice((68, 128, 500, 1250, 5000, 50000)),
+        year=rng.randrange(2024, 2031),
+        month=rng.randrange(1, 13),
+        day=rng.randrange(1, 29),
+        hour=rng.randrange(1, 13),
+        minute=rng.choice(("00", "15", "30", "45")),
+    )
 
 
 def generate_split(split: str, count: int, seed: int) -> list[dict]:
@@ -202,6 +325,9 @@ def generate_split(split: str, count: int, seed: int) -> list[dict]:
         rows.append({"text": text, "spans": gold_spans(text), "hard_negative": False})
     negatives = _HARD_NEGATIVES[:5] if split == "train" else _HARD_NEGATIVES[5:]
     for text in negatives:
+        rows.append({"text": text, "spans": gold_spans(text), "hard_negative": True})
+    for _ in range(max(10, count // 3)):
+        text = _negative_fill(rng, rng.choice(_HARD_NEGATIVE_FRAMES))
         rows.append({"text": text, "spans": gold_spans(text), "hard_negative": True})
     rng.shuffle(rows)
     return rows

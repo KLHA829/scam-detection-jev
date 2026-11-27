@@ -64,6 +64,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - `npm run typecheck` — TypeScript checks production JavaScript without emitting files.
 - `npm run test:e2e` — real local HTTP mask/LLM mocks drive the inbound path; no WhatsApp login.
 - `node scripts/legit-fpr.js` — false block / false archive rate on ~300 legit messages (`fixtures/legit-messages.json`) through the real handler, model answering not_scam. `lib/legit-fpr.test.js` (in `npm test`) fails when that list differs from `fixtures/legit-fpr-baseline.json`; rerun with `--update-baseline` only for an intended change.
+- `.venv/bin/python scripts/eval_pii_mask.py --checkpoint models/jevlike_hf_pii_mask.pt` — lab-only PII mask recall/overmasking check against `fixtures/pii-mask-eval.json`; needs the HF encoder and a trained mask head, so it is not part of offline CI.
 - `npm run wa-bridge:build` — compile pure-Go `wa-bridge/` (`CGO_ENABLED=0`; supports `--goos` / `--goarch` for Linux cross-builds).
 - `npm run test:e2e:boot` — best-effort boot through Chromium launch and QR emission; never scan the QR.
 - `npm run test:e2e:boot:whatsmeow` — Chromium-free best-effort boot compiling `wa-bridge` to a temp dir and waiting for QR emission; never scan the QR.

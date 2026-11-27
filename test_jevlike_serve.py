@@ -3,6 +3,7 @@
 
 import json
 import os
+import random
 import sys
 import tempfile
 import unittest
@@ -464,6 +465,42 @@ class PiiMaskLabelTests(unittest.TestCase):
         for text in data._HARD_NEGATIVES:
             self.assertEqual(data.gold_spans(text), [], text)
 
+    def test_generated_hard_negatives_include_digits_without_gold_spans(self):
+        import pii_mask_data as data
+
+        rng = random.Random(7)
+        saw_order = False
+        for frame in data._HARD_NEGATIVE_FRAMES:
+            for _ in range(4):
+                text = data._negative_fill(rng, frame)
+                saw_order = saw_order or "訂單編號" in text
+                self.assertEqual(data.gold_spans(text), [], text)
+        rows = data.generate_split("train", 30, 17)
+        negatives = [row for row in rows if row["hard_negative"]]
+        self.assertGreaterEqual(len(negatives), 15)
+        self.assertTrue(saw_order)
+        self.assertTrue(all(not row["spans"] for row in negatives))
+
+    def test_order_reference_digits_are_not_training_otps(self):
+        text = "訂單編號 20261127，三月十二日送到"
+        self.assertEqual(serve.find_mask_spans(text), [])
+        self.assertIn("20261127", _covered("電話 20261127", serve.find_mask_spans("電話 20261127")))
+        self.assertIn("123456", _covered("驗證碼編號 123456 請收好", serve.find_mask_spans("驗證碼編號 123456 請收好")))
+
+    def test_address_birthdate_passport_card_and_social_are_gold(self):
+        import pii_mask_data as data
+
+        examples = {
+            "我住香港九龍旺角彌敦道123號8樓A室": "香港九龍旺角彌敦道123號8樓A室",
+            "我1990年1月23日出生": "1990年1月23日",
+            "護照號碼 E12345678": "E12345678",
+            "卡到期日 12/29，CVV 123": "12/29",
+            "加我 Telegram @chan_test123": "@chan_test123",
+        }
+        for text, expected in examples.items():
+            self.assertIn(expected, _covered(text, data.gold_spans(text)))
+        self.assertIn("123", _covered("卡到期日 12/29，CVV 123", data.gold_spans("卡到期日 12/29，CVV 123")))
+
     def test_lure_words_are_cleared_from_model_flags(self):
         from pii_mask_head import clear_lure_chars, spans_from_flags
 
@@ -474,6 +511,33 @@ class PiiMaskLabelTests(unittest.TestCase):
         self.assertIn("123456", covered)
         self.assertNotIn("驗證碼", covered)
         self.assertNotIn("小心", covered)
+
+    def test_service_and_english_otp_lure_words_are_cleared(self):
+        from pii_mask_head import clear_lure_chars, spans_from_flags
+
+        text = "FPS ABC123，Your OTP code is 123456，whatsapp 我"
+        flags = [True] * len(text)
+        clear_lure_chars(text, flags)
+        covered = _covered(text, spans_from_flags(text, flags))
+        self.assertNotIn("FPS", covered)
+        self.assertNotIn("OTP", covered)
+        self.assertNotIn("code", covered)
+        self.assertNotIn("whatsapp", covered)
+        self.assertIn("ABC123", covered)
+        self.assertIn("123456", covered)
+
+    def test_eval_fixture_is_well_formed(self):
+        fixture = Path(__file__).resolve().parent / "fixtures" / "pii-mask-eval.json"
+        cases = json.loads(fixture.read_text(encoding="utf-8"))["cases"]
+        ids = [case["id"] for case in cases]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertGreaterEqual(len(cases), 50)
+        for case in cases:
+            self.assertIn(case["kind"], {"pii", "negative"})
+            self.assertIsInstance(case["text"], str)
+            self.assertIsInstance(case["expect"], list)
+            for secret in case["expect"]:
+                self.assertIn(secret, case["text"])
 
 
 def _covered(text, spans):
@@ -642,6 +706,21 @@ class ThresholdTests(unittest.TestCase):
         threshold, stats = choose_threshold(cache, [[0.99]])
         self.assertEqual(threshold, 0.9)
         self.assertGreater(stats["hard_negative_rows_flagged"], 0)
+
+    def test_choose_threshold_does_not_trade_away_all_recall_for_clean_negatives(self):
+        from pii_mask_head import choose_threshold
+
+        cache = {
+            "rows": [
+                {"text": "a", "spans": [{"start": 0, "end": 1, "label": "otp"}], "hard_negative": False},
+                {"text": "b", "spans": [], "hard_negative": True},
+            ],
+            "offsets": [[(0, 1)], [(0, 1)]],
+        }
+        threshold, stats = choose_threshold(cache, [[0.45], [0.5]])
+        self.assertLessEqual(threshold, 0.45)
+        self.assertEqual(stats["recall"], 1.0)
+        self.assertEqual(stats["hard_negative_rows_flagged"], 1)
 
 
 class UnloadedWorkerTests(unittest.TestCase):
@@ -1099,8 +1178,9 @@ class SyntheticLabelTests(unittest.TestCase):
 
         train = data.generate_split("train", 12, 3)
         val = data.generate_split("val", 12, 3)
-        self.assertEqual(len(train), 17)
-        self.assertEqual(len(val), 17)
+        generated_negatives = max(10, 12 // 3)
+        self.assertEqual(len(train), 12 + 5 + generated_negatives)
+        self.assertEqual(len(val), 12 + (len(data._HARD_NEGATIVES) - 5) + generated_negatives)
         for row in train + val:
             if row["hard_negative"]:
                 self.assertEqual(row["spans"], [])

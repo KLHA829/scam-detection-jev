@@ -437,6 +437,25 @@ def merge_mask_spans(spans: list[dict]) -> list[dict]:
     return merged
 
 
+_ORDER_CONTEXT_RE = re.compile(
+    r"(?:訂單(?:編號)?|單號|預約(?:編號)?|參考編號|order(?:\s*(?:no\.?|number))?|booking|reference)"
+    r"\s*[:：#]?\s*$",
+    re.I,
+)
+
+
+def _drop_order_reference_spans(text: str, spans: list[dict]) -> list[dict]:
+    """Order/reference numbers are contextual identifiers, not OTPs or phones."""
+    filtered = []
+    for span in spans:
+        covered = text[span["start"] : span["end"]]
+        prefix = text[max(0, span["start"] - 24) : span["start"]]
+        if re.fullmatch(r"[0-9\s-]+", covered) and _ORDER_CONTEXT_RE.search(prefix):
+            continue
+        filtered.append(span)
+    return filtered
+
+
 def find_mask_spans(text: str) -> list[dict]:
     """Training-label ranges. Live /v1/mask does not call this."""
     body = "" if text is None else str(text)
@@ -448,7 +467,7 @@ def find_mask_spans(text: str) -> list[dict]:
     spans.extend(_otp_spans(body))
     spans.extend(_url_spans(body))
     spans.extend(_name_spans(body))
-    return merge_mask_spans(spans)
+    return merge_mask_spans(_drop_order_reference_spans(body, spans))
 
 
 def resolve_mask_checkpoint() -> Path | None:
