@@ -202,9 +202,10 @@ def contextual_transcript_consistent(contextual: str, plain: str) -> bool:
         return False
     if contextual_compact == plain_compact:
         return True
+    if max(len(contextual_compact), len(plain_compact)) <= 12:
+        return False
     distance = transcript_edit_distance(contextual_compact, plain_compact)
-    allowance = 1 if max(len(contextual_compact), len(plain_compact)) <= 12 else 2
-    return distance <= allowance
+    return distance <= 2
 
 
 def resolve_model_path(model_id: str, snapshot_download=None) -> str:

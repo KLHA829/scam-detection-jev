@@ -68,6 +68,8 @@ class VoiceAsrServeTest(unittest.TestCase):
         self.assertTrue(serve.contextual_transcript_consistent("封佢。", "风佢。"))
         self.assertFalse(serve.contextual_transcript_consistent("封佢。", "係。"))
         self.assertFalse(serve.contextual_transcript_consistent("解封。", ""))
+        self.assertFalse(serve.contextual_transcript_consistent("封佢。", "唔封佢。"))
+        self.assertFalse(serve.contextual_transcript_consistent("解封。", "唔好解封。"))
         self.assertFalse(
             serve.contextual_transcript_consistent(
                 "封佢，唔好封，解封九一二三四五六七。",
