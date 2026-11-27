@@ -576,6 +576,41 @@ def mask_coverage_truncated(text: str, offsets, tokenizer=None) -> bool:
     return False
 
 
+def _plan_mask_window_chunks(
+    windows: list[dict],
+    max_batch: int = _MASK_WINDOW_BATCH,
+    max_pad_tokens: int = 64,
+) -> list[list[int]]:
+    """Sort windows by token width and greedily pack chunks with bounded padding overhead."""
+    if not windows:
+        return []
+    ordered = sorted(range(len(windows)), key=lambda idx: windows[idx]["width"])
+    chunks: list[list[int]] = []
+    chunk: list[int] = []
+    real_tokens = 0
+    for idx in ordered:
+        width = windows[idx]["width"]
+        if not chunk:
+            chunk = [idx]
+            real_tokens = width
+            continue
+        new_count = len(chunk) + 1
+        new_real = real_tokens + width
+        new_padded = new_count * width
+        if len(chunk) < max_batch and (
+            new_padded <= 2 * new_real or new_padded - new_real <= max_pad_tokens
+        ):
+            chunk.append(idx)
+            real_tokens = new_real
+        else:
+            chunks.append(chunk)
+            chunk = [idx]
+            real_tokens = width
+    if chunk:
+        chunks.append(chunk)
+    return chunks
+
+
 def model_mask_spans_batch(texts: list[str]) -> list[list[dict]]:
     """Character spans for a batch of messages from the fine-tuned mask head."""
     global _MASK_OPTION_CACHE
@@ -656,7 +691,7 @@ def model_mask_spans_batch(texts: list[str]) -> list[list[dict]]:
         )
 
     option_key = (_MODEL.encoder, tokenizer, _DEVICE, mask_option, keep_option)
-    flat_probs: list[list[float]] = []
+    flat_probs: list[list[float]] = [[] for _ in windows]
     with _SCORE_LOCK:
         with torch.no_grad():
             if _MASK_OPTION_CACHE is None or _MASK_OPTION_CACHE[0] != option_key:
@@ -677,8 +712,8 @@ def model_mask_spans_batch(texts: list[str]) -> list[list[dict]]:
                 _MASK_OPTION_CACHE = (option_key, pooled)
             pooled = _MASK_OPTION_CACHE[1]
             pad_id = tokenizer.pad_token_id if getattr(tokenizer, "pad_token_id", None) is not None else 0
-            for start in range(0, len(windows), _MASK_WINDOW_BATCH):
-                chunk = windows[start : start + _MASK_WINDOW_BATCH]
+            for chunk_indices in _plan_mask_window_chunks(windows):
+                chunk = [windows[win_idx] for win_idx in chunk_indices]
                 width = max(item["width"] for item in chunk)
                 batch_ids = torch.full(
                     (len(chunk), width),
@@ -702,12 +737,13 @@ def model_mask_spans_batch(texts: list[str]) -> list[list[dict]]:
                 ).last_hidden_state
                 logits = mask_option_logits(_MASK_HEAD, context_hidden, pooled)
                 probabilities = torch.sigmoid(logits).detach().cpu()
-                for row, item in enumerate(chunk):
+                for row, win_idx in enumerate(chunk_indices):
+                    item = windows[win_idx]
                     if padding_side == "left":
                         row_probs = probabilities[row, width - item["width"] :]
                     else:
                         row_probs = probabilities[row, : item["width"]]
-                    flat_probs.append(row_probs.tolist())
+                    flat_probs[win_idx] = row_probs.tolist()
 
     results = []
     for item in prepared:
