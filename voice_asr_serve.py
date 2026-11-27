@@ -357,6 +357,11 @@ class VoiceAsrHandler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    try:
+        load_model()
+    except Exception as exc:
+        print(f"voice ASR model failed to load: {exc}", file=sys.stderr, flush=True)
+        return 1
     server = ThreadingHTTPServer((HOST, PORT), VoiceAsrHandler)
     print(f"voice ASR worker listening on http://{HOST}:{PORT} model={MODEL_ID} device={DEVICE}", flush=True)
     try:
