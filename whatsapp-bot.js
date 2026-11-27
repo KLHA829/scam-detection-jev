@@ -127,7 +127,7 @@ async function sendUnblockPoll(transport, queue, pacer, row) {
   }
 }
 
-async function sendActionNotice(transport, result, { maskClient, llmReview, listName, pacer, reviewQueue } = {}) {
+async function sendActionNotice(transport, result, { maskClient, maskCache, llmReview, listName, pacer, reviewQueue } = {}) {
   const action = result && result.decision && result.decision.action;
   if (!result || result.ignored || result.deferred) return;
   if (action !== 'archive' && action !== 'block') return;
@@ -141,6 +141,7 @@ async function sendActionNotice(transport, result, { maskClient, llmReview, list
     const notice = await composeActionNotice({
       messages: result.reviewMessages,
       maskClient,
+      maskCache,
       llmOptions: llmReview,
       env: process.env,
       action,
@@ -719,7 +720,12 @@ async function handleWaMessage(rawMsg, {
   );
   if (result && !result.deferred && !result.stale && (isCurrent() || result.blocked || result.archived)) {
     await sendActionNotice(transport, result, {
-      maskClient, llmReview, listName, pacer, reviewQueue,
+      maskClient,
+      maskCache: recentContext ? recentContext.maskCache(chatId) : null,
+      llmReview,
+      listName,
+      pacer,
+      reviewQueue,
     });
   }
   if (!result || !result.deferred || !reviewQueue || !isCurrent()) return result;
@@ -732,6 +738,7 @@ async function handleWaMessage(rawMsg, {
     const delivered = await deliverGuidedReview({
       result: { ...result, listName },
       maskClient,
+      maskCache: recentContext ? recentContext.maskCache(chatId) : null,
       llmReview,
       env: process.env,
       queue: reviewQueue,

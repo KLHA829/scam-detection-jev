@@ -2,6 +2,9 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const { extractDigits } = require('./lib/lid');
 const { isLidId, phoneLookupId, phoneFromLidMapping, resolveRealNumber } = require('./lib/lid');
@@ -13,6 +16,13 @@ const { loadRubric, labelFromScore } = require('./lib/score-message');
 const { scoreMessage } = require('./lab/score-message');
 const { JevlikeClient, resolveMaskUrl } = require('./lib/jevlike-client');
 const { processIncomingMessage } = require('./lib/handle-incoming');
+const { handleWaMessage } = require('./whatsapp-bot');
+const { createActionPacer } = require('./lib/action-pacer');
+const { createThreadContext } = require('./lib/thread-context');
+const { createRecentContext } = require('./lib/context-llm');
+const { createOperatorState } = require('./lib/operator-mode');
+const { createReviewQueue } = require('./lib/review-queue');
+const { llmChatResponse } = require('./lib/test-llm');
 const {
   createStubJevlikeClient,
   createStubJevlikeFetch,
@@ -518,5 +528,141 @@ describe('processIncomingMessage', () => {
     assert.equal(out.decision.action, 'ignore');
     assert.equal(out.decision.archiveReason, null);
     assert.deepEqual(reasons, []);
+  });
+});
+
+describe('mask cache reuse through WhatsApp orchestration', () => {
+  function reviewAndGuideFetch(prompts) {
+    return async (_url, options) => {
+      prompts.push(JSON.parse(options.body));
+      return llmChatResponse({
+        action: 'archive',
+        pitch: false,
+        strong: true,
+        confidence: 0.95,
+        reason: 'otp request',
+        guide: '呢句催你交驗證碼。用官方渠道核實。',
+      })();
+    };
+  }
+
+  function harness(chatId, prior, current, prompts) {
+    const threadContext = createThreadContext({ turns: 4 });
+    const recentContext = createRecentContext();
+    threadContext.push(chatId, prior, { messageId: 'prior-inbound' });
+    recentContext.push(chatId, prior, { messageId: 'prior-inbound' });
+    const batches = [];
+    const stubMaskClient = createStubJevlikeClient();
+    const sent = [];
+    const events = [];
+    const client = {
+      info: { wid: { _serialized: 'me@c.us' } },
+      async sendMessage(_wid, payload) {
+        sent.push(payload);
+        return { id: { _serialized: `sent-${sent.length}` } };
+      },
+    };
+    const chat = {
+      id: { _serialized: chatId },
+      isGroup: false,
+      async archive() {
+        events.push('archive');
+      },
+    };
+    const contact = {
+      id: { _serialized: chatId, user: chatId.split('@')[0] },
+      number: chatId.split('@')[0],
+      isMyContact: false,
+      isMe: false,
+      pushname: 'Stranger',
+    };
+    const msg = {
+      from: chatId,
+      type: 'chat',
+      body: current,
+      id: { _serialized: 'current-inbound' },
+      async getChat() {
+        return chat;
+      },
+      async getContact() {
+        return contact;
+      },
+      async forward() {
+        events.push('forward');
+      },
+    };
+    const deps = {
+      client,
+      pacer: createActionPacer({ env: { WA_ACTION_GAP_MS: '0' } }),
+      threadContext,
+      recentContext,
+      env: { LLM_REVIEW_COOLDOWN_MS: '0', LLM_REVIEW_MIN_CONFIDENCE: '0.7' },
+      maskClient: {
+        async maskMessages(messages) {
+          batches.push([...messages]);
+          return stubMaskClient.maskMessages(messages);
+        },
+      },
+      llmReview: {
+        enabled: true,
+        apiUrl: 'http://llm.test/v1',
+        fetchImpl: reviewAndGuideFetch(prompts),
+      },
+    };
+    return { batches, sent, events, msg, deps };
+  }
+
+  function assertBodiesMaskedOnce(batches, prompts, prior, current) {
+    assert.deepEqual(batches, [[prior, current], []]);
+    assert.equal(prompts.length, 2);
+    for (const prompt of prompts) {
+      const serialized = JSON.stringify(prompt);
+      assert.equal(serialized.includes('91234567'), false);
+      assert.equal(serialized.includes('陳大文'), false);
+      assert.match(serialized, /XXX/);
+    }
+  }
+
+  it('masks each body once across context review and the automatic action receipt', async () => {
+    const chatId = '85260009999@c.us';
+    const prior = '我係陳大文 電話 91234567';
+    const current = '請把驗證碼發給我';
+    const prompts = [];
+    const { batches, sent, events, msg, deps } = harness(chatId, prior, current, prompts);
+    const out = await handleWaMessage(msg, {
+      ...deps,
+      operator: { mode: () => 'auto', awaitingChoice: () => false },
+      reviewQueue: null,
+    });
+    assert.equal(out.decision.action, 'archive');
+    assert.equal(out.archived, true);
+    assert.deepEqual(events, ['archive']);
+    assertBodiesMaskedOnce(batches, prompts, prior, current);
+    assert.equal(sent.length, 1);
+    assert.match(String(sent[0]), /已封存，未封鎖/);
+  });
+
+  it('masks each body once across context review and the guided review card', async (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mask-cache-guided-'));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const chatId = '85260009998@c.us';
+    const prior = '我係陳大文 電話 91234567';
+    const current = '請把驗證碼發給我';
+    const prompts = [];
+    const { batches, sent, events, msg, deps } = harness(chatId, prior, current, prompts);
+    const out = await handleWaMessage(msg, {
+      ...deps,
+      operator: createOperatorState({
+        env: { OPERATOR_MODE: 'guided' },
+        filePath: path.join(dir, 'mode.json'),
+      }),
+      reviewQueue: createReviewQueue({ filePath: path.join(dir, 'queue.json') }),
+    });
+    assert.equal(out.deferred, true);
+    assert.equal(out.decision.action, 'archive');
+    assert.deepEqual(events, ['forward']);
+    assertBodiesMaskedOnce(batches, prompts, prior, current);
+    assert.equal(sent.length, 2);
+    assert.match(String(sent[0]), /模型講解/);
   });
 });
