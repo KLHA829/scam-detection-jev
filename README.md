@@ -33,9 +33,9 @@ python -m pip install -r requirements.txt
 npm install
 npm run wa-bridge:build     # build default whatsmeow sidecar (Go 1.26+)
 scripts/download_jevlike_ckpt.sh
-python scripts/train_pii_mask.py --output models/jevlike_hf_pii_mask.pt
+scripts/download_pii_mask_ckpt.sh
 
-# Terminal 1 — activate the venv; training downloads the encoder once (~400 MB)
+# Terminal 1 — activate the venv; first start downloads the encoder once (~400 MB)
 python jevlike_serve.py
 
 # Terminal 2 — verify before starting the bot
@@ -50,7 +50,7 @@ Scan the QR code. By default (`WA_TRANSPORT=whatsmeow`), session keys stay in `w
 
 Set `JEVLIKE_DEVICE=cuda` only when you have a compatible NVIDIA GPU. CPU is the default on a Pi.
 
-The r1 download alone cannot serve `/v1/mask`: training creates the separate PII head (see [models/README.md](models/README.md)). Alternatively, export `JEVLIKE_MASK_CKPT=/path/to/jevlike_hf_pii_mask.pt` for an existing trained head in the worker shell. `jevlike_serve.py` does not read `.env`; export optional lab `JEVLIKE_CKPT` there too. Restart the worker after training or changing the head. Without it, `/v1/mask` returns 503 and the bot skips the LLM.
+The r1 download alone cannot serve `/v1/mask`: `scripts/download_pii_mask_ckpt.sh` downloads the separate published PII head and verifies its SHA-256 (see [models/README.md](models/README.md)). Alternatively, export `JEVLIKE_MASK_CKPT=/path/to/jevlike_hf_pii_mask.pt` for an existing trained head in the worker shell. `jevlike_serve.py` does not read `.env`; export optional lab `JEVLIKE_CKPT` there too. Restart the worker after downloading, training, or changing the head. Without it, `/v1/mask` returns 503 and the bot skips the LLM.
 
 ### Raspberry Pi (正體中文)
 
@@ -70,7 +70,7 @@ python -m pip install -r requirements.txt
 npm install
 npm run wa-bridge:build
 scripts/download_jevlike_ckpt.sh
-python scripts/train_pii_mask.py --output models/jevlike_hf_pii_mask.pt
+scripts/download_pii_mask_ckpt.sh
 
 python jevlike_serve.py   # terminal 1
 
@@ -82,11 +82,11 @@ curl -s -X POST localhost:8766/v1/mask -H 'content-type: application/json' -d '{
 npm start                 # terminal 2
 ```
 
-掃 QR。預設（`WA_TRANSPORT=whatsmeow`）Session 存在 `wa-bridge.db`（若設為 `WA_TRANSPORT=wwebjs` 則在 `.wwebjs_auth/`）。權重見 Release [jevlike-hf-r1](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1)。不要把 `.pt`、`.db` 或 encoder 推進 git。詳見 [models/README.md](models/README.md)。
+掃 QR。預設（`WA_TRANSPORT=whatsmeow`）Session 存在 `wa-bridge.db`（若設為 `WA_TRANSPORT=wwebjs` 則在 `.wwebjs_auth/`）。權重見 Release [jevlike-hf-r1](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1) 同 [jevlike-pii-mask-hn1](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-pii-mask-hn1)。不要把 `.pt`、`.db` 或 encoder 推進 git。詳見 [models/README.md](models/README.md)。
 
 Pi 建議 4 GB RAM 以上。`JEVLIKE_DEVICE=cpu` 為預設。
 
-只下載 r1 並不會產生脫敏頭；上面的訓練會另存 `models/jevlike_hf_pii_mask.pt`，不會覆蓋 r1。首次訓練會下載約 400 MB 編碼器，Pi 上 CPU 訓練可能需較長時間。亦可在其他機器訓練後複製頭檔，並在啟動 worker 的 shell 執行 `export JEVLIKE_MASK_CKPT=/path/to/jevlike_hf_pii_mask.pt`。Worker 不會讀取 `.env`；訓練或換頭後須重新啟動，再檢查上述兩個端點。缺少脫敏頭時 `/v1/mask` 會回 503，bot 會跳過 LLM。
+只下載 r1 並不會產生脫敏頭；`scripts/download_pii_mask_ckpt.sh` 會下載已發佈嘅 `models/jevlike_hf_pii_mask.pt` 並核對 SHA-256，唔會覆蓋 r1。首次 worker start 會下載約 400 MB 編碼器。亦可在其他機器訓練後複製頭檔，並在啟動 worker 的 shell 執行 `export JEVLIKE_MASK_CKPT=/path/to/jevlike_hf_pii_mask.pt`。Worker 不會讀取 `.env`；下載、訓練或換頭後須重新啟動，再檢查上述兩個端點。缺少脫敏頭時 `/v1/mask` 會回 503，bot 會跳過 LLM。
 
 ### Windows notes
 
