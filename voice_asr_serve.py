@@ -255,6 +255,18 @@ def load_model():
         return _MODEL
 
 
+def qwen_language_name(language: str) -> str | None:
+    if language in {"auto", "nospeech"}:
+        return None
+    return {
+        "yue": "Cantonese",
+        "zh": "Chinese",
+        "en": "English",
+        "ja": "Japanese",
+        "ko": "Korean",
+    }[language]
+
+
 def transcribe_audio(audio: bytes, language: str, context: str | None = None) -> str:
     wav = convert_to_wav(audio)
     model = load_model()
@@ -268,9 +280,9 @@ def transcribe_audio(audio: bytes, language: str, context: str | None = None) ->
         with _MODEL_LOCK:
             if BACKEND == "qwen":
                 effective_context = QWEN_CONTEXT if context is None else context
-                result = model.transcribe(audio=tmp_path, language="Cantonese", context=effective_context)
+                result = model.transcribe(audio=tmp_path, language=qwen_language_name(language), context=effective_context)
                 if effective_context.strip():
-                    plain_result = model.transcribe(audio=tmp_path, language="Cantonese", context="")
+                    plain_result = model.transcribe(audio=tmp_path, language=qwen_language_name(language), context="")
                 else:
                     plain_result = None
             else:

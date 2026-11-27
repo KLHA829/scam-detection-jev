@@ -53,6 +53,12 @@ class VoiceAsrServeTest(unittest.TestCase):
         self.assertEqual(fake.calls[0]["context"], "封佢, 唔好封")
         self.assertEqual(fake.calls[1]["context"], "")
 
+    def test_qwen_backend_maps_worker_language_codes(self):
+        self.assertEqual(serve.qwen_language_name("yue"), "Cantonese")
+        self.assertEqual(serve.qwen_language_name("zh"), "Chinese")
+        self.assertEqual(serve.qwen_language_name("en"), "English")
+        self.assertIsNone(serve.qwen_language_name("auto"))
+
     def test_qwen_backend_rejects_context_hallucination_on_non_speech(self):
         class FakeQwen:
             def transcribe(self, **kwargs):
