@@ -29,15 +29,21 @@ type StoredMessage struct {
 }
 
 type BridgeStore struct {
-	db                *sql.DB
-	maxStoredMessages int
-	maxStoredPolls    int
-	pruneInterval     int
-	messageWrites     atomic.Int64
-	pollWrites        atomic.Int64
+	db                  *sql.DB
+	maxStoredMessages   int
+	maxStoredPolls      int
+	pruneInterval       int
+	messageWrites       atomic.Int64
+	pollWrites          atomic.Int64
+	messagePrunePending atomic.Bool
+	pollPrunePending    atomic.Bool
 }
 
 func NewBridgeStore(ctx context.Context, db *sql.DB) (*BridgeStore, error) {
+	return newBridgeStoreWithLimits(ctx, db, maxStoredMessages, maxStoredPolls, defaultPruneInterval)
+}
+
+func newBridgeStoreWithLimits(ctx context.Context, db *sql.DB, maxMessages, maxPolls, pruneInterval int) (*BridgeStore, error) {
 	if db == nil {
 		return nil, errors.New("sqlite db is required")
 	}
@@ -97,12 +103,19 @@ CREATE TABLE IF NOT EXISTS bridge_unreconciled_contacts (
 	if err := ensureBridgeArchiveStateColumns(ctx, db); err != nil {
 		return nil, err
 	}
-	return &BridgeStore{
+	s := &BridgeStore{
 		db:                db,
-		maxStoredMessages: maxStoredMessages,
-		maxStoredPolls:    maxStoredPolls,
-		pruneInterval:     defaultPruneInterval,
-	}, nil
+		maxStoredMessages: maxMessages,
+		maxStoredPolls:    maxPolls,
+		pruneInterval:     pruneInterval,
+	}
+	if err := s.pruneMessages(ctx); err != nil {
+		s.messagePrunePending.Store(true)
+	}
+	if err := s.prunePolls(ctx); err != nil {
+		s.pollPrunePending.Store(true)
+	}
+	return s, nil
 }
 
 func ensureBridgeMessagesColumns(ctx context.Context, db *sql.DB) error {
@@ -223,24 +236,32 @@ func writeHitsPruneInterval(counter *atomic.Int64, interval int) bool {
 	return counter.Add(1)%int64(interval) == 0
 }
 
-func (s *BridgeStore) pruneMessages(ctx context.Context) {
-	_, _ = s.db.ExecContext(
+func shouldRunPrune(counter *atomic.Int64, pending *atomic.Bool, interval int) bool {
+	hit := writeHitsPruneInterval(counter, interval)
+	wasPending := pending.Swap(false)
+	return hit || wasPending
+}
+
+func (s *BridgeStore) pruneMessages(ctx context.Context) error {
+	_, err := s.db.ExecContext(
 		ctx,
 		`DELETE FROM bridge_messages WHERE rowid IN (
 			SELECT rowid FROM bridge_messages ORDER BY ts_unix DESC, rowid DESC LIMIT -1 OFFSET ?
 		)`,
 		s.maxStoredMessages,
 	)
+	return err
 }
 
-func (s *BridgeStore) prunePolls(ctx context.Context) {
-	_, _ = s.db.ExecContext(
+func (s *BridgeStore) prunePolls(ctx context.Context) error {
+	_, err := s.db.ExecContext(
 		ctx,
 		`DELETE FROM bridge_polls WHERE rowid IN (
 			SELECT rowid FROM bridge_polls ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET ?
 		)`,
 		s.maxStoredPolls,
 	)
+	return err
 }
 
 func (s *BridgeStore) GetArchiveState(ctx context.Context, ourJID, chatJID string) (bool, bool, error) {
@@ -285,8 +306,10 @@ func (s *BridgeStore) SavePollOptions(ctx context.Context, pollID, chatJID strin
 	if err != nil {
 		return fmt.Errorf("save poll options: %w", err)
 	}
-	if writeHitsPruneInterval(&s.pollWrites, s.pruneInterval) {
-		s.prunePolls(ctx)
+	if shouldRunPrune(&s.pollWrites, &s.pollPrunePending, s.pruneInterval) {
+		if err := s.prunePolls(ctx); err != nil {
+			s.pollPrunePending.Store(true)
+		}
 	}
 	return nil
 }
@@ -354,8 +377,10 @@ func (s *BridgeStore) SaveMessage(ctx context.Context, msg StoredMessage) error 
 	if err != nil {
 		return fmt.Errorf("save message: %w", err)
 	}
-	if writeHitsPruneInterval(&s.messageWrites, s.pruneInterval) {
-		s.pruneMessages(ctx)
+	if shouldRunPrune(&s.messageWrites, &s.messagePrunePending, s.pruneInterval) {
+		if err := s.pruneMessages(ctx); err != nil {
+			s.messagePrunePending.Store(true)
+		}
 	}
 	return nil
 }

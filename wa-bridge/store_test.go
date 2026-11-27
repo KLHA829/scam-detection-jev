@@ -286,3 +286,118 @@ func TestBridgeStoreConcurrentWritesAreRaceFree(t *testing.T) {
 		t.Fatalf("poll rows after concurrent writes = %d, want within [%d, %d]", polls, store.maxStoredPolls, store.maxStoredPolls+store.pruneInterval-1)
 	}
 }
+
+func TestBridgeStoreTrimsOnRestart(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "bridge.db")
+
+	openAt := func() (*BridgeStore, *sql.DB) {
+		db, err := openBridgeSQLite(ctx, dbPath)
+		if err != nil {
+			t.Fatalf("open sqlite: %v", err)
+		}
+		store, err := newBridgeStoreWithLimits(ctx, db, 3, 2, 10)
+		if err != nil {
+			_ = db.Close()
+			t.Fatalf("new store: %v", err)
+		}
+		return store, db
+	}
+
+	// Session 1: write fewer rows than pruneInterval (10) so in-session pruning does not fire.
+	store1, db1 := openAt()
+	for i := 1; i <= 4; i++ {
+		saveTestMessage(t, store1, fmt.Sprintf("s1-m-%d", i), int64(100+i))
+	}
+	for i := 1; i <= 3; i++ {
+		if err := store1.SavePollOptions(ctx, fmt.Sprintf("s1-p-%d", i), "85261112222@c.us", []string{"yes", "no"}); err != nil {
+			t.Fatalf("SavePollOptions s1-p-%d: %v", i, err)
+		}
+	}
+	if got := countTableRows(t, db1, "bridge_messages"); got != 4 {
+		t.Fatalf("session 1 messages = %d, want 4", got)
+	}
+	if got := countTableRows(t, db1, "bridge_polls"); got != 3 {
+		t.Fatalf("session 1 polls = %d, want 3", got)
+	}
+	_ = db1.Close()
+
+	// Session 2: reopening the store trims the backlog on startup even before new writes.
+	store2, db2 := openAt()
+	assertIDs(t, orderedMessageIDs(t, db2), []string{"s1-m-4", "s1-m-3", "s1-m-2"})
+	assertIDs(t, orderedPollIDs(t, db2), []string{"s1-p-3", "s1-p-2"})
+
+	for i := 1; i <= 4; i++ {
+		saveTestMessage(t, store2, fmt.Sprintf("s2-m-%d", i), int64(200+i))
+	}
+	for i := 1; i <= 3; i++ {
+		time.Sleep(2 * time.Millisecond)
+		if err := store2.SavePollOptions(ctx, fmt.Sprintf("s2-p-%d", i), "85261112222@c.us", []string{"yes", "no"}); err != nil {
+			t.Fatalf("SavePollOptions s2-p-%d: %v", i, err)
+		}
+	}
+	_ = db2.Close()
+
+	// Session 3: reopening again trims session 2's partial batch back to exact caps.
+	_, db3 := openAt()
+	defer func() { _ = db3.Close() }()
+	assertIDs(t, orderedMessageIDs(t, db3), []string{"s2-m-4", "s2-m-3", "s2-m-2"})
+	assertIDs(t, orderedPollIDs(t, db3), []string{"s2-p-3", "s2-p-2"})
+}
+
+func TestBridgeStoreRetriesFailedPruneOnNextWrite(t *testing.T) {
+	ctx := context.Background()
+	store, db := newTestBridgeStore(t)
+	store.maxStoredMessages = 2
+	store.maxStoredPolls = 2
+	store.pruneInterval = 3
+
+	// Inject DELETE failures via triggers so pruneMessages and prunePolls fail on write #3.
+	if _, err := db.ExecContext(ctx, `
+CREATE TRIGGER block_msg_prune BEFORE DELETE ON bridge_messages BEGIN
+	SELECT RAISE(ABORT, 'injected message prune failure');
+END;
+CREATE TRIGGER block_poll_prune BEFORE DELETE ON bridge_polls BEGIN
+	SELECT RAISE(ABORT, 'injected poll prune failure');
+END;`); err != nil {
+		t.Fatalf("create triggers: %v", err)
+	}
+
+	saveTestMessage(t, store, "m-1", 100)
+	saveTestMessage(t, store, "m-2", 200)
+	saveTestMessage(t, store, "m-3", 300)
+	for i := 1; i <= 3; i++ {
+		if i > 1 {
+			time.Sleep(2 * time.Millisecond)
+		}
+		if err := store.SavePollOptions(ctx, fmt.Sprintf("p-%d", i), "85261112222@c.us", []string{"yes", "no"}); err != nil {
+			t.Fatalf("SavePollOptions p-%d: %v", i, err)
+		}
+	}
+	if got := countTableRows(t, db, "bridge_messages"); got != 3 {
+		t.Fatalf("messages after failed prune = %d, want 3", got)
+	}
+	if got := countTableRows(t, db, "bridge_polls"); got != 3 {
+		t.Fatalf("polls after failed prune = %d, want 3", got)
+	}
+	if !store.messagePrunePending.Load() || !store.pollPrunePending.Load() {
+		t.Fatalf("expected prune pending flags to be set (msg=%v, poll=%v)", store.messagePrunePending.Load(), store.pollPrunePending.Load())
+	}
+
+	if _, err := db.ExecContext(ctx, `DROP TRIGGER block_msg_prune; DROP TRIGGER block_poll_prune;`); err != nil {
+		t.Fatalf("drop triggers: %v", err)
+	}
+
+	// Write #4 is not on the 3-write interval, yet must immediately retry and trim both tables.
+	saveTestMessage(t, store, "m-4", 400)
+	time.Sleep(2 * time.Millisecond)
+	if err := store.SavePollOptions(ctx, "p-4", "85261112222@c.us", []string{"yes", "no"}); err != nil {
+		t.Fatalf("SavePollOptions p-4: %v", err)
+	}
+
+	assertIDs(t, orderedMessageIDs(t, db), []string{"m-4", "m-3"})
+	assertIDs(t, orderedPollIDs(t, db), []string{"p-4", "p-3"})
+	if store.messagePrunePending.Load() || store.pollPrunePending.Load() {
+		t.Fatalf("expected prune pending flags cleared (msg=%v, poll=%v)", store.messagePrunePending.Load(), store.pollPrunePending.Load())
+	}
+}
