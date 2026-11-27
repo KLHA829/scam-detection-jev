@@ -20,6 +20,7 @@ const TEST_NAMES = [
   'runs a direct unblock command transcribed from a Cantonese voice note',
   'uses unblock-specific ASR context for a quoted unblock voice note',
   'ignores a hallucinated multi-command transcript instead of guessing',
+  'does not transcribe a forwarded voice note as an operator command',
   'does not transcribe a self-chat audio attachment as a voice command',
   'does not act when voice transcription fails',
 ];

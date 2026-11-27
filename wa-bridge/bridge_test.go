@@ -860,6 +860,28 @@ func TestSelfVoiceMessageCachedOnlyInSelfChat(t *testing.T) {
 	if attachmentCached {
 		t.Fatal("audio attachments must not be cached as voice-note commands")
 	}
+
+	forwardedAudio := &waE2E.Message{AudioMessage: &waE2E.AudioMessage{
+		Mimetype: proto.String("audio/ogg"),
+		PTT:      proto.Bool(true),
+		ContextInfo: &waE2E.ContextInfo{
+			IsForwarded: proto.Bool(true),
+		},
+	}}
+	bridge.handleIncomingMessage(&events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: selfJID, Sender: selfJID, IsFromMe: true},
+			ID:            "forwarded-voice-self",
+			Timestamp:     time.Now(),
+		},
+		Message: forwardedAudio,
+	})
+	bridge.voiceMediaMu.Lock()
+	_, forwardedCached := bridge.voiceMedia["forwarded-voice-self"]
+	bridge.voiceMediaMu.Unlock()
+	if forwardedCached {
+		t.Fatal("forwarded voice notes must not be cached as operator commands")
+	}
 }
 
 type versionReadTrackingAppState struct {

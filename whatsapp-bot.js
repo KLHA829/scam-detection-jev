@@ -463,7 +463,7 @@ function voiceAsrContextForQuotedItem(quotedId, queue) {
 async function handleSelfMessage(msg, deps) {
   let body = String(msg.body || '').trim();
   const env = deps.env || process.env;
-  const voiceCandidate = msg.type === 'ptt' && !body && voiceCommandsEnabled(env);
+  const voiceCandidate = msg.type === 'ptt' && !body && msg.isForwarded !== true && voiceCommandsEnabled(env);
   if (!voiceCandidate && !shouldProcessSelfMessageBody(body, Boolean(msg.hasQuotedMsg))) return;
   const wid = selfWid(deps.transport);
   if (!wid) return;

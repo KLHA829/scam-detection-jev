@@ -1214,7 +1214,7 @@ func (b *WhatsmeowBridge) handleIncomingMessage(evt *events.Message) {
 	}
 
 	msgID := string(evt.Info.ID)
-	if extracted.msgType == "ptt" && evt.Info.IsFromMe && (b.isSelfChatID(chatID) || senderID == chatID) {
+	if extracted.msgType == "ptt" && !extracted.isForwarded && evt.Info.IsFromMe && (b.isSelfChatID(chatID) || senderID == chatID) {
 		b.cacheVoiceMessage(msgID, chatID, evt.Message)
 	}
 	_ = b.store.SaveMessage(ctx, StoredMessage{
