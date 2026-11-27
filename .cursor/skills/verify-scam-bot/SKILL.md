@@ -65,6 +65,7 @@ Requires doctor. Exercises stub `POST /v1/mask` and a `node --test` subset for m
 .cursor/skills/verify-scam-bot/bin/drive-agents-invariants
 .cursor/skills/verify-scam-bot/bin/drive-malicious-host-block
 .cursor/skills/verify-scam-bot/bin/drive-llm-review-cooldown
+.cursor/skills/verify-scam-bot/bin/drive-voice-operator-commands
 ```
 
 **Lab-only** (stub `POST /v1/score` + `lab/score-message` tests — not live inbound proof):
