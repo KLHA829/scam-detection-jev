@@ -16,6 +16,7 @@ import jevlike_serve as serve
 def tiny_mask_runtime(torch):
     class Tokenizer:
         option_calls = 0
+        pad_token_id = 0
 
         def __call__(
             self,
@@ -37,7 +38,7 @@ def tiny_mask_runtime(torch):
                 step = size - stride if return_overflowing_tokens else len(chars) + 1
                 rows = [chars[start : start + size] for start in range(0, max(1, len(chars) - stride), step)]
             if add_special_tokens:
-                rows = [[(0, [0, 0])] + row[: max_length - 2] + [(0, [0, 0])] for row in rows]
+                rows = [[(3, [0, 0])] + row[: max_length - 2] + [(3, [0, 0])] for row in rows]
             width = max(map(len, rows))
             rows = [row + [(0, [0, 0])] * (width - len(row)) for row in rows]
             tokens = torch.tensor([[token for token, _ in row] for row in rows])
@@ -51,9 +52,13 @@ def tiny_mask_runtime(torch):
         calls = 0
         option_calls = 0
 
+        def __init__(self):
+            self.shapes = []
+
         def __call__(self, input_ids, attention_mask):
             self.calls += 1
             self.option_calls += int(input_ids.shape[0] == 2)
+            self.shapes.append(tuple(input_ids.shape))
             hidden = torch.sin(input_ids.float().unsqueeze(-1) + torch.arange(64))
             return SimpleNamespace(last_hidden_state=hidden)
 
@@ -81,23 +86,12 @@ class MaskOptionCacheTests(unittest.TestCase):
             import torch
         except ImportError:
             self.skipTest("torch is not installed")
-        import pii_mask_head
-
         runtime = tiny_mask_runtime(torch)
         rows = ["電話91234567", "普通訊息", "😀 驗證碼123456", "", "abc@example.com"] * 2
-        logits = []
-        original = pii_mask_head.mask_option_logits
 
-        def record(*args):
-            result = original(*args)
-            logits.append(result.clone())
-            return result
-
-        with patch.multiple(serve, **runtime), patch.object(
-            pii_mask_head, "mask_option_logits", side_effect=record
-        ):
+        with patch.multiple(serve, **runtime):
             cached = serve.mask_payload(rows)
-            self.assertEqual(runtime["_MODEL"].encoder.calls, 11)
+            self.assertEqual(runtime["_MODEL"].encoder.calls, 2)
             self.assertEqual(runtime["_MODEL"].encoder.option_calls, 1)
             self.assertEqual(runtime["_COLLATOR"].tokenizer.option_calls, 1)
             self.assertTrue(any(row["spans"] for row in cached["messages"]))
@@ -106,8 +100,6 @@ class MaskOptionCacheTests(unittest.TestCase):
                 serve._MASK_OPTION_CACHE = None
                 uncached.append({"spans": serve.model_mask_spans(row)})
             self.assertEqual(cached["messages"], uncached)
-            for before, after in zip(logits[:10], logits[10:]):
-                self.assertTrue(torch.equal(before, after))
             self.assertEqual(serve.mask_payload([])["messages"], [])
             serve._MODEL = tiny_mask_runtime(torch)["_MODEL"]
             serve.model_mask_spans("new model")
@@ -162,6 +154,76 @@ class LongMessageMaskTests(unittest.TestCase):
         ):
             with self.assertRaises(serve.MaskTruncated):
                 serve.model_mask_spans("x" * 100)
+
+
+class BatchedMaskTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("torch is not installed")
+        self.torch = torch
+        self.runtime = tiny_mask_runtime(torch)
+
+    def test_mixed_lengths_empty_emoji_and_surrogates_keep_message_order(self):
+        rows = [
+            "電話91234567",
+            "",
+            "😀 驗證碼123456",
+            "ab",
+            "\ud800郵件abc@example.com",
+            "你" * 110 + "電話91234567",
+        ]
+        with patch.multiple(serve, **self.runtime):
+            batched = serve.mask_payload(rows)["messages"]
+            individual = [{"spans": serve.model_mask_spans(row)} for row in rows]
+            surrogate_free = serve.model_mask_spans("\ufffd郵件abc@example.com")
+        self.assertEqual(batched, individual)
+        self.assertEqual(batched[1]["spans"], [])
+        self.assertEqual(batched[4]["spans"], surrogate_free)
+        self.assertTrue(any(row["spans"] for row in batched))
+
+    def test_total_windows_are_chunked_across_messages(self):
+        rows = ["你" * 500, "電話91234567", "你" * 500]
+        with patch.multiple(serve, **self.runtime):
+            batched = serve.mask_payload(rows)["messages"]
+            batch_calls = self.runtime["_MODEL"].encoder.calls
+            shapes = list(self.runtime["_MODEL"].encoder.shapes)
+            individual = [{"spans": serve.model_mask_spans(row)} for row in rows]
+        self.assertEqual(batched, individual)
+        self.assertEqual(batch_calls, 3)
+        self.assertEqual([shape[0] for shape in shapes], [2, 16, 5])
+
+    def test_message_too_long_fails_before_any_encoder_call(self):
+        with patch.multiple(serve, **self.runtime), patch.object(serve, "_MAX_MASK_WINDOWS", 1):
+            with self.assertRaisesRegex(ValueError, "message too long"):
+                serve.mask_payload(["ok", "你" * 100])
+        self.assertEqual(self.runtime["_MODEL"].encoder.calls, 0)
+
+    def test_truncated_batch_fails_before_any_encoder_call(self):
+        tokenizer = self.runtime["_COLLATOR"].tokenizer
+
+        class Truncating(type(tokenizer)):
+            def __call__(self, text, max_length=512, **kwargs):
+                kwargs.pop("return_overflowing_tokens", None)
+                return super().__call__(text, max_length, **kwargs)
+
+        with patch.multiple(serve, **self.runtime), patch.object(
+            serve._COLLATOR, "tokenizer", Truncating()
+        ):
+            with self.assertRaises(serve.MaskTruncated):
+                serve.mask_payload(["ok", "x" * 100])
+        self.assertEqual(self.runtime["_MODEL"].encoder.calls, 0)
+
+    def test_empty_batch_runs_no_encoder_and_still_requires_the_head(self):
+        with patch.multiple(serve, **self.runtime):
+            self.assertEqual(serve.mask_payload([])["messages"], [])
+            self.assertEqual(self.runtime["_MODEL"].encoder.calls, 0)
+            self.assertEqual(self.runtime["_COLLATOR"].tokenizer.option_calls, 0)
+            with patch.object(serve, "_MASK_HEAD", None):
+                with self.assertRaises(RuntimeError):
+                    serve.mask_payload([])
+        self.assertEqual(self.runtime["_MODEL"].encoder.calls, 0)
 
 
 class ScamProbabilityTests(unittest.TestCase):

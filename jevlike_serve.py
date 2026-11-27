@@ -576,10 +576,12 @@ def mask_coverage_truncated(text: str, offsets, tokenizer=None) -> bool:
     return False
 
 
-def model_mask_spans(text: str) -> list[dict]:
-    """Character spans from the fine-tuned mask head. Empty when it is not loaded."""
+def model_mask_spans_batch(texts: list[str]) -> list[list[dict]]:
+    """Character spans for a batch of messages from the fine-tuned mask head."""
     global _MASK_OPTION_CACHE
     if _MASK_HEAD is None or _MODEL is None or _COLLATOR is None or _DEVICE is None:
+        return [[] for _ in texts]
+    if not texts:
         return []
     import torch
 
@@ -592,7 +594,6 @@ def model_mask_spans(text: str) -> list[dict]:
         spans_from_flags,
     )
 
-    safe_text = _sanitize_surrogates("" if text is None else str(text))
     tokenizer = _COLLATOR.tokenizer
     limit = 96
     if _MASK_CFG and _MASK_CFG.get("context_tokens"):
@@ -600,24 +601,62 @@ def model_mask_spans(text: str) -> list[dict]:
     stride = max(1, limit // 2)
     mask_option = (_MASK_CFG or {}).get("mask_option") or MASK_OPTION
     keep_option = (_MASK_CFG or {}).get("keep_option") or KEEP_OPTION
-    # Long messages are split into overlapping windows of the trained context length,
-    # so every character is scored instead of the tail being dropped.
-    encoded = tokenizer(
-        safe_text,
-        truncation=True,
-        max_length=limit,
-        stride=stride,
-        return_overflowing_tokens=True,
-        padding=True,
-        add_special_tokens=True,
-        return_offsets_mapping=True,
-        return_tensors="pt",
-    )
-    n_windows = int(encoded["input_ids"].shape[0])
-    if n_windows > _MAX_MASK_WINDOWS:
-        raise ValueError("message too long")
+    padding_side = getattr(tokenizer, "padding_side", "right")
+
+    prepared = []
+    windows = []
+    for text in texts:
+        safe_text = _sanitize_surrogates("" if text is None else str(text))
+        # Long messages are split into overlapping windows of the trained context length,
+        # so every character is scored instead of the tail being dropped.
+        encoded = tokenizer(
+            safe_text,
+            truncation=True,
+            max_length=limit,
+            stride=stride,
+            return_overflowing_tokens=True,
+            padding=True,
+            add_special_tokens=True,
+            return_offsets_mapping=True,
+            return_tensors="pt",
+        )
+        n_windows = int(encoded["input_ids"].shape[0])
+        if n_windows > _MAX_MASK_WINDOWS:
+            raise ValueError("message too long")
+        window_offsets = encoded["offset_mapping"].detach().cpu().tolist()
+        flat_offsets = [span for window in window_offsets for span in window]
+        if mask_coverage_truncated(safe_text, flat_offsets, tokenizer):
+            raise MaskTruncated("mask truncated")
+
+        input_ids = encoded["input_ids"].detach().cpu()
+        attention_mask = encoded["attention_mask"].detach().cpu()
+        first_window = len(windows)
+        trimmed_window_offsets = []
+        for row in range(n_windows):
+            width = int(attention_mask[row].sum().item())
+            if width <= 0:
+                width = int(input_ids[row].shape[0])
+            if padding_side == "left":
+                row_ids = input_ids[row, -width:].clone()
+                row_mask = attention_mask[row, -width:].clone()
+                row_offsets = window_offsets[row][-width:]
+            else:
+                row_ids = input_ids[row, :width].clone()
+                row_mask = attention_mask[row, :width].clone()
+                row_offsets = window_offsets[row][:width]
+            windows.append({"input_ids": row_ids, "attention_mask": row_mask, "width": width})
+            trimmed_window_offsets.append(row_offsets)
+        prepared.append(
+            {
+                "safe_text": safe_text,
+                "window_offsets": trimmed_window_offsets,
+                "first_window": first_window,
+                "window_count": n_windows,
+            }
+        )
+
     option_key = (_MODEL.encoder, tokenizer, _DEVICE, mask_option, keep_option)
-    window_probs: list[list[float]] = []
+    flat_probs: list[list[float]] = []
     with _SCORE_LOCK:
         with torch.no_grad():
             if _MASK_OPTION_CACHE is None or _MASK_OPTION_CACHE[0] != option_key:
@@ -637,22 +676,57 @@ def model_mask_spans(text: str) -> list[dict]:
                 pooled = pool_token_hidden(option_hidden, options["attention_mask"].bool())
                 _MASK_OPTION_CACHE = (option_key, pooled)
             pooled = _MASK_OPTION_CACHE[1]
-            for start in range(0, n_windows, _MASK_WINDOW_BATCH):
-                stop = min(n_windows, start + _MASK_WINDOW_BATCH)
-                batch_ids = encoded["input_ids"][start:stop].to(_DEVICE)
-                batch_mask = encoded["attention_mask"][start:stop].to(_DEVICE)
+            pad_id = tokenizer.pad_token_id if getattr(tokenizer, "pad_token_id", None) is not None else 0
+            for start in range(0, len(windows), _MASK_WINDOW_BATCH):
+                chunk = windows[start : start + _MASK_WINDOW_BATCH]
+                width = max(item["width"] for item in chunk)
+                batch_ids = torch.full(
+                    (len(chunk), width),
+                    pad_id,
+                    dtype=chunk[0]["input_ids"].dtype,
+                )
+                batch_mask = torch.zeros(
+                    (len(chunk), width),
+                    dtype=chunk[0]["attention_mask"].dtype,
+                )
+                for row, item in enumerate(chunk):
+                    if padding_side == "left":
+                        batch_ids[row, width - item["width"] :] = item["input_ids"]
+                        batch_mask[row, width - item["width"] :] = item["attention_mask"]
+                    else:
+                        batch_ids[row, : item["width"]] = item["input_ids"]
+                        batch_mask[row, : item["width"]] = item["attention_mask"]
                 context_hidden = _MODEL.encoder(
-                    input_ids=batch_ids,
-                    attention_mask=batch_mask,
+                    input_ids=batch_ids.to(_DEVICE),
+                    attention_mask=batch_mask.to(_DEVICE),
                 ).last_hidden_state
                 logits = mask_option_logits(_MASK_HEAD, context_hidden, pooled)
-                window_probs.extend(torch.sigmoid(logits).detach().cpu().tolist())
-    window_offsets = encoded["offset_mapping"].detach().cpu().tolist()
-    flat_offsets = [span for window in window_offsets for span in window]
-    if mask_coverage_truncated(safe_text, flat_offsets, tokenizer):
-        raise MaskTruncated("mask truncated")
-    flags = flags_from_window_offsets(safe_text, window_offsets, window_probs, _MASK_THRESHOLD)
-    return _to_utf16_spans(safe_text, spans_from_flags(safe_text, flags))
+                probabilities = torch.sigmoid(logits).detach().cpu()
+                for row, item in enumerate(chunk):
+                    if padding_side == "left":
+                        row_probs = probabilities[row, width - item["width"] :]
+                    else:
+                        row_probs = probabilities[row, : item["width"]]
+                    flat_probs.append(row_probs.tolist())
+
+    results = []
+    for item in prepared:
+        first = item["first_window"]
+        stop = first + item["window_count"]
+        window_probs = flat_probs[first:stop]
+        flags = flags_from_window_offsets(
+            item["safe_text"],
+            item["window_offsets"],
+            window_probs,
+            _MASK_THRESHOLD,
+        )
+        results.append(_to_utf16_spans(item["safe_text"], spans_from_flags(item["safe_text"], flags)))
+    return results
+
+
+def model_mask_spans(text: str) -> list[dict]:
+    """Character spans from the fine-tuned mask head. Empty when it is not loaded."""
+    return model_mask_spans_batch([text])[0]
 
 
 def mask_payload(messages: list) -> dict:
@@ -660,11 +734,9 @@ def mask_payload(messages: list) -> dict:
         raise ValueError("at most 10 messages")
     if _MASK_HEAD is None:
         raise RuntimeError("pii mask head is not loaded")
-    rows = []
-    for item in messages:
-        if not isinstance(item, str):
-            raise ValueError("message must be a string")
-        rows.append({"spans": model_mask_spans(item)})
+    if any(not isinstance(item, str) for item in messages):
+        raise ValueError("message must be a string")
+    rows = [{"spans": spans} for spans in model_mask_spans_batch(messages)]
     return {
         "ok": True,
         "model": "jevlike",
