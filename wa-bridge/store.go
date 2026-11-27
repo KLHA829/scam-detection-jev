@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 )
 
 const (
-	maxStoredPolls    = 5000
-	maxStoredMessages = 10000
+	maxStoredPolls       = 5000
+	maxStoredMessages    = 10000
+	defaultPruneInterval = 200
 )
 
 type StoredMessage struct {
@@ -27,7 +29,12 @@ type StoredMessage struct {
 }
 
 type BridgeStore struct {
-	db *sql.DB
+	db                *sql.DB
+	maxStoredMessages int
+	maxStoredPolls    int
+	pruneInterval     int
+	messageWrites     atomic.Int64
+	pollWrites        atomic.Int64
 }
 
 func NewBridgeStore(ctx context.Context, db *sql.DB) (*BridgeStore, error) {
@@ -90,7 +97,12 @@ CREATE TABLE IF NOT EXISTS bridge_unreconciled_contacts (
 	if err := ensureBridgeArchiveStateColumns(ctx, db); err != nil {
 		return nil, err
 	}
-	return &BridgeStore{db: db}, nil
+	return &BridgeStore{
+		db:                db,
+		maxStoredMessages: maxStoredMessages,
+		maxStoredPolls:    maxStoredPolls,
+		pruneInterval:     defaultPruneInterval,
+	}, nil
 }
 
 func ensureBridgeMessagesColumns(ctx context.Context, db *sql.DB) error {
@@ -204,6 +216,33 @@ DROP TABLE bridge_archive_state_old;`); err != nil {
 	return nil
 }
 
+func writeHitsPruneInterval(counter *atomic.Int64, interval int) bool {
+	if interval <= 0 {
+		interval = 1
+	}
+	return counter.Add(1)%int64(interval) == 0
+}
+
+func (s *BridgeStore) pruneMessages(ctx context.Context) {
+	_, _ = s.db.ExecContext(
+		ctx,
+		`DELETE FROM bridge_messages WHERE rowid IN (
+			SELECT rowid FROM bridge_messages ORDER BY ts_unix DESC, rowid DESC LIMIT -1 OFFSET ?
+		)`,
+		s.maxStoredMessages,
+	)
+}
+
+func (s *BridgeStore) prunePolls(ctx context.Context) {
+	_, _ = s.db.ExecContext(
+		ctx,
+		`DELETE FROM bridge_polls WHERE rowid IN (
+			SELECT rowid FROM bridge_polls ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET ?
+		)`,
+		s.maxStoredPolls,
+	)
+}
+
 func (s *BridgeStore) GetArchiveState(ctx context.Context, ourJID, chatJID string) (bool, bool, error) {
 	var archived bool
 	err := s.db.QueryRowContext(ctx, `SELECT archived FROM bridge_archive_state WHERE our_jid=$1 AND chat_jid=$2`, ourJID, chatJID).Scan(&archived)
@@ -246,13 +285,9 @@ func (s *BridgeStore) SavePollOptions(ctx context.Context, pollID, chatJID strin
 	if err != nil {
 		return fmt.Errorf("save poll options: %w", err)
 	}
-	_, _ = s.db.ExecContext(
-		ctx,
-		`DELETE FROM bridge_polls WHERE poll_id NOT IN (
-			SELECT poll_id FROM bridge_polls ORDER BY created_at DESC LIMIT ?
-		)`,
-		maxStoredPolls,
-	)
+	if writeHitsPruneInterval(&s.pollWrites, s.pruneInterval) {
+		s.prunePolls(ctx)
+	}
 	return nil
 }
 
@@ -319,13 +354,9 @@ func (s *BridgeStore) SaveMessage(ctx context.Context, msg StoredMessage) error 
 	if err != nil {
 		return fmt.Errorf("save message: %w", err)
 	}
-	_, _ = s.db.ExecContext(
-		ctx,
-		`DELETE FROM bridge_messages WHERE msg_id NOT IN (
-			SELECT msg_id FROM bridge_messages ORDER BY ts_unix DESC LIMIT ?
-		)`,
-		maxStoredMessages,
-	)
+	if writeHitsPruneInterval(&s.messageWrites, s.pruneInterval) {
+		s.pruneMessages(ctx)
+	}
 	return nil
 }
 
