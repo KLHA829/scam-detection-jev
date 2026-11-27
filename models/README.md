@@ -40,6 +40,21 @@ Worker 載入順序：
 
 `models/jevlike_hf_chinese_roberta_hn800.pt` 係**舊 baseline**（tag `jevlike-hf-hn800`，誤封 23.0%），須以 `JEVLIKE_CKPT` 明確指定才會載入。現行 `r1` head 喺同一個 366 條真 HK 測試集上誤封 9.6%（archive 線）／5.3%（block 線），代價係召回由 0.575 跌到 0.508。
 
+## 已發布的 PII mask Release
+
+| | |
+|--|--|
+| Tag | `jevlike-pii-mask-hn1` |
+| 頁面 | https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-pii-mask-hn1 |
+| 資產 | `jevlike_hf_pii_mask_hn1.pt`（約 2.3 MB） |
+| SHA-256 | `b6b644cd377e3b82f6f44d83618fd043b341b04c6b6ca1778e2da35d5d35220a` |
+
+```bash
+scripts/download_pii_mask_ckpt.sh
+```
+
+預設寫入 `models/jevlike_hf_pii_mask.pt`；設咗 `JEVLIKE_MASK_CKPT` 就寫去嗰個路徑（相對路徑由 repo root 計）。腳本會核對 SHA-256。`JEVLIKE_CKPT_FORCE=1` 可以強制重下載。
+
 **不要** 把 `hfl/chinese-roberta-wwm-ext` 編碼器（約 400 MB）commit 進 repo。第一次跑 `python jevlike_serve.py` 會寫入 Hugging Face cache（通常 `~/.cache/huggingface/`），Raspberry Pi 上可能要數分鐘。
 
 ## 編碼器 / Encoder
@@ -55,7 +70,13 @@ Worker 載入順序：
 
 `POST /v1/mask` 只用 `models/jevlike_hf_pii_mask.pt`（或 `JEVLIKE_MASK_CKPT`）呢個 jevlike `AttentionHead`。頭未載入就回 503，bot 唔會把原文送出去。呢個檔唔會取代 `r1` 評分頭。識別字規則只係訓練標註同離線 stub，唔會再同頭的結果合併。
 
-訓練（CPU 得，會下載編碼器一次）：
+下載已發佈 checkpoint（建議）：
+
+```bash
+scripts/download_pii_mask_ckpt.sh
+```
+
+或者自行訓練（CPU 得，會下載編碼器一次）：
 
 ```bash
 python scripts/train_pii_mask.py --output models/jevlike_hf_pii_mask.pt
