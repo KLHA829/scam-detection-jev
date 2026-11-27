@@ -8,11 +8,11 @@ Self-chat voice notes can be transcribed locally into Cantonese operator command
 - Legacy `wwebjs` uses `message.downloadMedia()`.
 - `lib/voice-commands.js` posts base64 audio to a loopback-only local ASR worker with language `yue`.
 - `lib/wa-handlers.test.js` proves a transcribed `唔好封` resolves a quoted review as leave, `解封` resolves an unblock prompt, and ASR failure sends a failure notice without acting.
-- `voice_asr_serve.py` uses ffmpeg + FunASR SenseVoiceSmall; offline Python tests avoid the model download.
+- `voice_asr_serve.py` uses ffmpeg + the WSYue Cantonese-fine-tuned SenseVoice model by default; an optional Qwen backend can be selected with `VOICE_ASR_BACKEND=qwen`. Offline Python tests avoid model downloads.
 
 ## How to get to it (user POV)
 
-Install `requirements-voice.txt`, start `python voice_asr_serve.py`, set `VOICE_COMMANDS_ENABLED=true`, then send a Cantonese voice note in your own WhatsApp self-chat. Quote a review/unblock poll when answering it.
+Install `requirements-voice.txt` (or `requirements-voice-qwen.txt` for the optional Qwen backend), start `python voice_asr_serve.py`, set `VOICE_COMMANDS_ENABLED=true`, then send a Cantonese voice note in your own WhatsApp self-chat. Quote a review/unblock poll when answering it.
 
 ## Driving it with verify-scam-bot
 
@@ -31,3 +31,4 @@ python3 -m unittest test_voice_asr_serve.py
 - Transcription or media-download failure must not block, archive, unblock, or resolve a poll.
 - `voice_asr_serve.py` does not read `.env`; export worker settings in its shell.
 - ffmpeg is required to decode WhatsApp Ogg/Opus audio.
+- The Qwen backend is command-accuracy-oriented but heavier; keep FunASR/WSYue as the default unless the operator explicitly chooses Qwen.

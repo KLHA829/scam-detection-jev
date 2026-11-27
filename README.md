@@ -125,7 +125,7 @@ python -m pip install -r requirements-voice.txt
 python voice_asr_serve.py
 ```
 
-Set `VOICE_COMMANDS_ENABLED=true` in `.env` before `npm start`. The default worker is `http://127.0.0.1:8768` and the bot refuses non-loopback ASR URLs so raw voice audio stays on this machine. Defaults use `VOICE_ASR_LANGUAGE=yue` and the Apache-2.0 `ASLP-lab/WSYue-ASR/sensevoice_small_yue` Cantonese-fine-tuned SenseVoice model. In a local 81-clip public WSYue smoke it lowered aggregate character error from 7.34% to 5.84% versus `FunAudioLLM/SenseVoiceSmall` and raised exact normalized transcripts from 35.8% to 48.1%. To use the smaller original model instead, export `VOICE_ASR_MODEL=FunAudioLLM/SenseVoiceSmall` for the worker. `voice_asr_serve.py` does not read `.env`; export worker settings in its shell. If transcription fails, the bot replies in the self-chat and does not act.
+Set `VOICE_COMMANDS_ENABLED=true` in `.env` before `npm start`. The default worker is `http://127.0.0.1:8768` and the bot refuses non-loopback ASR URLs so raw voice audio stays on this machine. Defaults use `VOICE_ASR_LANGUAGE=yue` and the Apache-2.0 `ASLP-lab/WSYue-ASR/sensevoice_small_yue` Cantonese-fine-tuned SenseVoice model. In a local 81-clip public WSYue smoke it lowered aggregate character error from 7.34% to 5.84% versus `FunAudioLLM/SenseVoiceSmall` and raised exact normalized transcripts from 35.8% to 48.1%. To use the smaller original model instead, export `VOICE_ASR_MODEL=FunAudioLLM/SenseVoiceSmall` for the worker. `voice_asr_serve.py` does not read `.env`; export worker settings in its shell. If transcription fails, the bot replies in the self-chat and does not act. For higher short-command accuracy at the cost of more RAM, the worker also has an optional Qwen backend: install `requirements-voice-qwen.txt`, export `VOICE_ASR_BACKEND=qwen`, and keep the default `Qwen/Qwen3-ASR-0.6B` or try `koelony/Qwen3-ASR-1.7B-Cantonese-HK`. In the local six-command probe with command context biasing, both Qwen models reached 6/6 exact transcripts; the 1.7B HK model was worse than WSYue on the 81-clip general-speech benchmark (8.70% vs 5.84% aggregate CER) and much heavier, so FunASR remains the default.
 
 ## Point the bot at your API
 
@@ -172,7 +172,9 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `VOICE_ASR_API_KEY` | Empty | Voice worker bearer auth; set the same key on bot and worker. Empty disables worker auth. |
 | `VOICE_ASR_TIMEOUT_MS` | `30000` | Bot's voice ASR request timeout in ms. |
 | `VOICE_ASR_HOST`, `VOICE_ASR_PORT` | `127.0.0.1`, `8768` | Voice worker bind address and port. Avoid an open bind without auth. |
-| `VOICE_ASR_MODEL`, `VOICE_ASR_DEVICE`, `VOICE_ASR_LANGUAGE` | `ASLP-lab/WSYue-ASR/sensevoice_small_yue`, `cpu`, `yue` | Local ASR model, device, and transcription language. Set the model to `FunAudioLLM/SenseVoiceSmall` for the smaller original download. |
+| `VOICE_ASR_BACKEND` | `funasr` | Voice worker backend: `funasr` or optional `qwen`. |
+| `VOICE_ASR_MODEL`, `VOICE_ASR_DEVICE`, `VOICE_ASR_LANGUAGE` | `ASLP-lab/WSYue-ASR/sensevoice_small_yue`, `cpu`, `yue` | Local ASR model, device, and transcription language. Qwen default model is `Qwen/Qwen3-ASR-0.6B` when `VOICE_ASR_BACKEND=qwen`. |
+| `VOICE_ASR_QWEN_DTYPE`, `VOICE_ASR_QWEN_CONTEXT` | `float32`, command phrases | Qwen dtype and context/hotword biasing for short operator commands. |
 | `VOICE_ASR_FFMPEG` | `ffmpeg` | FFmpeg executable used by the voice worker to decode WhatsApp audio. |
 | `WA_ACTION_GAP_MS` | `3000` | Gap between queued WhatsApp writes in ms. |
 | `CONTEXT_TURNS` | `4` | In-memory thread window capacity including current text; not a live scoring window. |

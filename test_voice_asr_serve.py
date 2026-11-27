@@ -30,6 +30,21 @@ class VoiceAsrServeTest(unittest.TestCase):
         self.assertEqual(serve.correct_command_transcript("解风91234567"), "解封91234567")
         self.assertEqual(serve.correct_command_transcript("外面刮風"), "外面刮風")
 
+
+    def test_qwen_backend_uses_command_context(self):
+        class FakeQwen:
+            def transcribe(self, **kwargs):
+                self.kwargs = kwargs
+                return [types.SimpleNamespace(text="唔好封")]
+
+        fake = FakeQwen()
+        with patch.object(serve, "BACKEND", "qwen"), patch.object(serve, "QWEN_CONTEXT", "封佢, 唔好封"):
+            with patch.object(serve, "convert_to_wav", return_value=b"wav"), patch.object(serve, "load_model", return_value=fake):
+                text = serve.transcribe_audio(b"ogg", "yue")
+        self.assertEqual(text, "唔好封")
+        self.assertEqual(fake.kwargs["language"], "Cantonese")
+        self.assertEqual(fake.kwargs["context"], "封佢, 唔好封")
+
     def test_decode_audio_validates_payload(self):
         audio, language = serve.decode_audio({"audioBase64": base64.b64encode(b"abc").decode(), "language": "yue"})
         self.assertEqual(audio, b"abc")

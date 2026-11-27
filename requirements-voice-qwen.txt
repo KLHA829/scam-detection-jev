@@ -1,0 +1,2 @@
+# Optional Qwen backend for voice_asr_serve.py. Install CPU torch first, then this file.
+qwen-asr>=0.0.6

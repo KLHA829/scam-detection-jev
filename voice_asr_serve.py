@@ -33,7 +33,14 @@ try:
     PORT = int(os.environ.get("VOICE_ASR_PORT", str(DEFAULT_PORT)) or DEFAULT_PORT)
 except ValueError:
     PORT = DEFAULT_PORT
-MODEL_ID = os.environ.get("VOICE_ASR_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+MODEL_ID = os.environ.get("VOICE_ASR_MODEL", "").strip()
+BACKEND = os.environ.get("VOICE_ASR_BACKEND", "funasr").strip().lower() or "funasr"
+if BACKEND not in {"funasr", "qwen"}:
+    raise ValueError(f"unsupported VOICE_ASR_BACKEND: {BACKEND}")
+DEFAULT_QWEN_MODEL = "Qwen/Qwen3-ASR-0.6B"
+if not MODEL_ID:
+    MODEL_ID = DEFAULT_QWEN_MODEL if BACKEND == "qwen" else DEFAULT_MODEL
+QWEN_CONTEXT = os.environ.get("VOICE_ASR_QWEN_CONTEXT", "封佢, 唔好封, 解封, 保持, 解封九一二三四五六七").strip()
 DEVICE = os.environ.get("VOICE_ASR_DEVICE", "cpu").strip() or "cpu"
 LANGUAGE = os.environ.get("VOICE_ASR_LANGUAGE", DEFAULT_LANGUAGE).strip() or DEFAULT_LANGUAGE
 API_KEY = os.environ.get("VOICE_ASR_API_KEY", "")
@@ -159,16 +166,28 @@ def load_model():
         if _MODEL_ERROR is not None:
             raise RuntimeError(_MODEL_ERROR)
         try:
-            from funasr import AutoModel
+            if BACKEND == "qwen":
+                import torch
+                from qwen_asr import Qwen3ASRModel
 
-            _MODEL = AutoModel(
-                model=resolve_model_path(MODEL_ID),
-                vad_model="fsmn-vad",
-                vad_kwargs={"max_single_segment_time": 30000},
-                device=DEVICE,
-                hub="hf",
-                disable_update=True,
-            )
+                dtype_name = os.environ.get("VOICE_ASR_QWEN_DTYPE", "float32").strip() or "float32"
+                _MODEL = Qwen3ASRModel.from_pretrained(
+                    MODEL_ID,
+                    dtype=getattr(torch, dtype_name),
+                    device_map="cpu" if DEVICE == "cpu" else DEVICE,
+                    max_new_tokens=256,
+                )
+            else:
+                from funasr import AutoModel
+
+                _MODEL = AutoModel(
+                    model=resolve_model_path(MODEL_ID),
+                    vad_model="fsmn-vad",
+                    vad_kwargs={"max_single_segment_time": 30000},
+                    device=DEVICE,
+                    hub="hf",
+                    disable_update=True,
+                )
         except Exception as exc:  # pragma: no cover - exact import/model errors are environment-specific
             _MODEL_ERROR = str(exc)
             raise RuntimeError(_MODEL_ERROR) from exc
@@ -178,31 +197,40 @@ def load_model():
 def transcribe_audio(audio: bytes, language: str) -> str:
     wav = convert_to_wav(audio)
     model = load_model()
-    from funasr.utils.postprocess_utils import rich_transcription_postprocess
+    if BACKEND != "qwen":
+        from funasr.utils.postprocess_utils import rich_transcription_postprocess
 
     fd, tmp_path = tempfile.mkstemp(suffix=".wav")
     try:
         with os.fdopen(fd, "wb") as tmp:
             tmp.write(wav)
         with _MODEL_LOCK:
-            result = model.generate(
-                input=tmp_path,
-                cache={},
-                language=language,
-                use_itn=True,
-                batch_size_s=60,
-                merge_vad=True,
-                merge_length_s=15,
-                output_dir=None,
-            )
+            if BACKEND == "qwen":
+                result = model.transcribe(audio=tmp_path, language="Cantonese", context=QWEN_CONTEXT)
+            else:
+                result = model.generate(
+                    input=tmp_path,
+                    cache={},
+                    language=language,
+                    use_itn=True,
+                    batch_size_s=60,
+                    merge_vad=True,
+                    merge_length_s=15,
+                    output_dir=None,
+                )
     finally:
         try:
             os.unlink(tmp_path)
         except OSError:
             pass
-    if not result or not isinstance(result[0], dict):
+    if not result:
         return ""
-    text = str(rich_transcription_postprocess(str(result[0].get("text") or ""))).strip()
+    if BACKEND == "qwen":
+        text = str(getattr(result[0], "text", "")).strip()
+    elif isinstance(result[0], dict):
+        text = str(rich_transcription_postprocess(str(result[0].get("text") or ""))).strip()
+    else:
+        return ""
     return correct_command_transcript(text)
 
 
