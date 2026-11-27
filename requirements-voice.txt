@@ -3,5 +3,6 @@
 #   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 #   pip install -r requirements-voice.txt
 funasr>=1.2.0
+huggingface_hub>=0.23.0
 torchaudio>=2.0.0
 soundfile>=0.12.1

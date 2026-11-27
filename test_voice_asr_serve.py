@@ -12,6 +12,24 @@ import voice_asr_serve as serve
 
 
 class VoiceAsrServeTest(unittest.TestCase):
+    def test_resolve_wsyue_model_downloads_only_the_cantonese_subfolder(self):
+        calls = []
+
+        def fake_download(repo, allow_patterns):
+            calls.append((repo, allow_patterns))
+            return "/tmp/wsyue"
+
+        resolved = serve.resolve_model_path("ASLP-lab/WSYue-ASR/sensevoice_small_yue", fake_download)
+        self.assertEqual(resolved, "/tmp/wsyue/sensevoice_small_yue")
+        self.assertEqual(calls, [("ASLP-lab/WSYue-ASR", ["sensevoice_small_yue/*"])])
+        self.assertEqual(serve.resolve_model_path("FunAudioLLM/SenseVoiceSmall", fake_download), "FunAudioLLM/SenseVoiceSmall")
+
+    def test_correct_command_transcript_only_repairs_command_homophones(self):
+        self.assertEqual(serve.correct_command_transcript("唔好风。"), "唔好封。")
+        self.assertEqual(serve.correct_command_transcript("风佢。"), "封佢。")
+        self.assertEqual(serve.correct_command_transcript("解风91234567"), "解封91234567")
+        self.assertEqual(serve.correct_command_transcript("外面刮風"), "外面刮風")
+
     def test_decode_audio_validates_payload(self):
         audio, language = serve.decode_audio({"audioBase64": base64.b64encode(b"abc").decode(), "language": "yue"})
         self.assertEqual(audio, b"abc")
@@ -47,6 +65,7 @@ class VoiceAsrServeTest(unittest.TestCase):
                 text = serve.transcribe_audio(b"ogg", "yue")
         self.assertEqual(text, "解除封鎖")
         self.assertEqual(fake_model.kwargs["language"], "yue")
+        self.assertIsNone(fake_model.kwargs["output_dir"])
         self.assertTrue(fake_model.path_existed)
 
 

@@ -22,7 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8768
-DEFAULT_MODEL = "FunAudioLLM/SenseVoiceSmall"
+DEFAULT_MODEL = "ASLP-lab/WSYue-ASR/sensevoice_small_yue"
 DEFAULT_LANGUAGE = "yue"
 MAX_JSON_BODY = 24 * 1024 * 1024
 MAX_AUDIO_BYTES = 12 * 1024 * 1024
@@ -116,6 +116,40 @@ def convert_to_wav(audio: bytes) -> bytes:
         raise RuntimeError(f"ffmpeg could not decode audio{': ' + detail if detail else ''}")
     return proc.stdout
 
+COMMAND_TRANSCRIPT_CORRECTIONS = (
+    ("唔好風", "唔好封"),
+    ("唔好风", "唔好封"),
+    ("唔想風", "唔想封"),
+    ("唔想风", "唔想封"),
+    ("風佢", "封佢"),
+    ("风佢", "封佢"),
+    ("解風", "解封"),
+    ("解风", "解封"),
+    ("風存", "封存"),
+    ("风存", "封存"),
+    ("風鎖", "封鎖"),
+    ("风鎖", "封鎖"),
+    ("風锁", "封鎖"),
+    ("风锁", "封鎖"),
+)
+
+
+def correct_command_transcript(text: str) -> str:
+    for wrong, right in COMMAND_TRANSCRIPT_CORRECTIONS:
+        text = text.replace(wrong, right)
+    return text
+
+
+def resolve_model_path(model_id: str, snapshot_download=None) -> str:
+    if model_id not in {"ASLP-lab/WSYue-ASR", "ASLP-lab/WSYue-ASR/sensevoice_small_yue"}:
+        return model_id
+    if snapshot_download is None:
+        from huggingface_hub import snapshot_download as download
+    else:
+        download = snapshot_download
+    root = download("ASLP-lab/WSYue-ASR", allow_patterns=["sensevoice_small_yue/*"])
+    return os.path.join(root, "sensevoice_small_yue")
+
 
 def load_model():
     global _MODEL, _MODEL_ERROR
@@ -128,7 +162,7 @@ def load_model():
             from funasr import AutoModel
 
             _MODEL = AutoModel(
-                model=MODEL_ID,
+                model=resolve_model_path(MODEL_ID),
                 vad_model="fsmn-vad",
                 vad_kwargs={"max_single_segment_time": 30000},
                 device=DEVICE,
@@ -159,6 +193,7 @@ def transcribe_audio(audio: bytes, language: str) -> str:
                 batch_size_s=60,
                 merge_vad=True,
                 merge_length_s=15,
+                output_dir=None,
             )
     finally:
         try:
@@ -167,7 +202,8 @@ def transcribe_audio(audio: bytes, language: str) -> str:
             pass
     if not result or not isinstance(result[0], dict):
         return ""
-    return str(rich_transcription_postprocess(str(result[0].get("text") or ""))).strip()
+    text = str(rich_transcription_postprocess(str(result[0].get("text") or ""))).strip()
+    return correct_command_transcript(text)
 
 
 class VoiceAsrHandler(BaseHTTPRequestHandler):
