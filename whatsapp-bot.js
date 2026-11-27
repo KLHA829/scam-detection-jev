@@ -493,9 +493,11 @@ async function handleSelfMessage(msg, deps) {
         throw new Error('voice transcription unavailable');
       }
       const media = await msg.downloadMedia();
-      body = normalizeVoiceTranscript(await deps.voiceCommandClient.transcribeMedia(media, {
-        context: voiceAsrContextForQuotedItem(quotedId, deps.reviewQueue),
-      }));
+      const asrContext = voiceAsrContextForQuotedItem(quotedId, deps.reviewQueue);
+      body = normalizeVoiceTranscript(await deps.voiceCommandClient.transcribeMedia(
+        media,
+        asrContext ? { context: asrContext } : {},
+      ));
     } catch (err) {
       log.warn('voice command transcription failed', { error: err.message });
       const sendFailure = () => deps.transport.sendText(wid, '語音指令暫時轉唔到文字，請用文字再試。');
