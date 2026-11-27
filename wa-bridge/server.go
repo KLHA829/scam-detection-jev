@@ -40,6 +40,12 @@ type LidMapping struct {
 	Pn  string `json:"pn,omitempty"`
 }
 
+type MediaResponse struct {
+	DataBase64 string `json:"dataBase64"`
+	Mimetype   string `json:"mimetype,omitempty"`
+	Seconds    int    `json:"seconds,omitempty"`
+}
+
 type BridgeBackend interface {
 	Health() HealthStatus
 	Events() *EventHub
@@ -48,6 +54,7 @@ type BridgeBackend interface {
 	SendText(ctx context.Context, chatID, text string) (string, error)
 	SendPoll(ctx context.Context, chatID, name string, options []string, allowMultiple bool) (string, error)
 	ForwardMessage(ctx context.Context, messageID, targetChatID string) (string, error)
+	DownloadMessageMedia(ctx context.Context, messageID string) (*MediaResponse, error)
 	ArchiveChat(ctx context.Context, chatID string, archived bool) error
 	MuteChat(ctx context.Context, chatID string, muted bool) error
 	BlockContact(ctx context.Context, id string, blocked bool) error
@@ -226,6 +233,20 @@ func NewBridgeHandler(backend BridgeBackend, token string) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"id": id})
+	}))
+
+	mux.HandleFunc("GET /v1/message/media", authed(func(w http.ResponseWriter, r *http.Request) {
+		messageID := strings.TrimSpace(r.URL.Query().Get("id"))
+		if messageID == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id query parameter is required"})
+			return
+		}
+		media, err := backend.DownloadMessageMedia(r.Context(), messageID)
+		if err != nil {
+			writeJSON(w, statusForError(err), map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, media)
 	}))
 
 	mux.HandleFunc("POST /v1/message/forward", authed(func(w http.ResponseWriter, r *http.Request) {

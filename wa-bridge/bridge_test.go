@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net"
@@ -802,6 +803,47 @@ func newLoggedInTestBridge(t *testing.T, ctx context.Context) *WhatsmeowBridge {
 	bridge.loggedIn = true
 	bridge.mu.Unlock()
 	return bridge
+}
+
+func TestSelfVoiceMessageCachedOnlyInSelfChat(t *testing.T) {
+	ctx := context.Background()
+	bridge := newLoggedInTestBridge(t, ctx)
+	selfJID := types.NewJID("85299990000", types.DefaultUserServer)
+	otherJID := types.NewJID("85260000000", types.DefaultUserServer)
+	audio := &waE2E.Message{AudioMessage: &waE2E.AudioMessage{
+		Mimetype: proto.String("audio/ogg"),
+		Seconds:  proto.Uint32(2),
+	}}
+
+	bridge.handleIncomingMessage(&events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: selfJID, Sender: selfJID, IsFromMe: true},
+			ID:            "voice-self",
+			Timestamp:     time.Now(),
+		},
+		Message: &waE2E.Message{DeviceSentMessage: &waE2E.DeviceSentMessage{Message: audio}},
+	})
+	bridge.voiceMediaMu.Lock()
+	_, selfCached := bridge.voiceMedia["voice-self"]
+	bridge.voiceMediaMu.Unlock()
+	if !selfCached {
+		t.Fatal("self-chat voice message must be cached for on-demand media download")
+	}
+
+	bridge.handleIncomingMessage(&events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: otherJID, Sender: selfJID, IsFromMe: true},
+			ID:            "voice-other-chat",
+			Timestamp:     time.Now(),
+		},
+		Message: audio,
+	})
+	bridge.voiceMediaMu.Lock()
+	_, otherCached := bridge.voiceMedia["voice-other-chat"]
+	bridge.voiceMediaMu.Unlock()
+	if otherCached {
+		t.Fatal("voice messages outside the self chat must not be cached")
+	}
 }
 
 type versionReadTrackingAppState struct {
@@ -2290,6 +2332,13 @@ func TestExtractMessageContent(t *testing.T) {
 		t.Fatalf("unexpected extended extract: %+v", ext)
 	}
 
+	audio := extractMessageContent(&waE2E.Message{AudioMessage: &waE2E.AudioMessage{
+		ContextInfo: &waE2E.ContextInfo{StanzaID: proto.String("poll-1")},
+	}})
+	if audio.msgType != "audio" || audio.quotedID != "poll-1" {
+		t.Fatalf("unexpected audio extract: %+v", audio)
+	}
+
 	edit := extractMessageContent(&waE2E.Message{
 		ProtocolMessage: &waE2E.ProtocolMessage{
 			Type: waE2E.ProtocolMessage_MESSAGE_EDIT.Enum(),
@@ -2524,6 +2573,13 @@ func (f *fakeBackend) ForwardMessage(_ context.Context, messageID, targetChatID 
 	f.lastCall = "forward:" + messageID + ":" + targetChatID
 	return "msg-fwd-1", nil
 }
+func (f *fakeBackend) DownloadMessageMedia(_ context.Context, messageID string) (*MediaResponse, error) {
+	if f.notReady {
+		return nil, errNotReady
+	}
+	f.lastCall = "media:" + messageID
+	return &MediaResponse{DataBase64: base64.StdEncoding.EncodeToString([]byte("voice")), Mimetype: "audio/ogg", Seconds: 2}, nil
+}
 func (f *fakeBackend) ArchiveChat(_ context.Context, chatID string, archived bool) error {
 	f.lastCall = "archive:" + chatID
 	if !archived {
@@ -2651,6 +2707,7 @@ func TestHTTPAndSSEServer(t *testing.T) {
 		{"POST", "/v1/send/text", map[string]any{"chatId": "852@c.us", "text": "hi"}, "text:852@c.us:hi"},
 		{"POST", "/v1/send/poll", map[string]any{"chatId": "852@c.us", "name": "Q", "options": []string{"A", "B"}}, "poll:852@c.us:Q:A|B"},
 		{"POST", "/v1/message/forward", map[string]any{"messageId": "m1", "targetChatId": "me@c.us"}, "forward:m1:me@c.us"},
+		{"GET", "/v1/message/media?id=voice-1", nil, "media:voice-1"},
 		{"POST", "/v1/chat/archive", map[string]any{"chatId": "852@c.us"}, "archive:852@c.us"},
 		{"POST", "/v1/chat/mute", map[string]any{"chatId": "852@c.us", "muted": false}, "unmute:852@c.us"},
 		{"POST", "/v1/contact/block", map[string]any{"id": "852@c.us"}, "block:852@c.us"},

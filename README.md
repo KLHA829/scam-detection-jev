@@ -110,6 +110,23 @@ OPERATOR_MODE=guided npm start
 
 Session keys and local message cache live in `WA_BRIDGE_DB_PATH` (default `./wa-bridge.db`, `0600` on POSIX) and `WA_BRIDGE_CURSOR_PATH` (default `./wa-bridge-cursor.json` for standalone sidecars; kept in memory under auto-start unless set). Keep `wa-bridge.db` across restarts to avoid re-scanning the QR code.
 
+## Optional: Cantonese voice commands in your self-chat
+
+Voice commands are opt-in and local-only. They apply only to voice notes in your own WhatsApp self-chat, so you can answer a review or unblock prompt by voice (for example 封佢、唔好封、解封、保持) instead of typing. Quote the review/unblock card when answering that card; direct commands such as 解封91234567 also work. Random voice notes are ignored when the transcript is not a command. Audio is not sent to the scam-review LLM.
+
+Install FFmpeg plus the optional ASR dependencies, then run the local worker beside `jevlike_serve.py`:
+
+```bash
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+python -m pip install -r requirements-voice.txt
+
+# Terminal — first start downloads the SenseVoiceSmall model once
+python voice_asr_serve.py
+```
+
+Set `VOICE_COMMANDS_ENABLED=true` in `.env` before `npm start`. The default worker is `http://127.0.0.1:8768` and the bot refuses non-loopback ASR URLs so raw voice audio stays on this machine. Defaults use `VOICE_ASR_LANGUAGE=yue` and `FunAudioLLM/SenseVoiceSmall`, which supports Cantonese. `voice_asr_serve.py` does not read `.env`; export worker settings in its shell. If transcription fails, the bot replies in the self-chat and does not act.
+
 ## Point the bot at your API
 
 Set `LLM_REVIEW_API_URL`, `LLM_REVIEW_MODEL`, and `LLM_REVIEW_API_KEY` when your server needs auth. `LLM_REVIEW_ENABLED` defaults to **true**.
@@ -150,6 +167,13 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `USER_RESTORED_CHATS_PATH` | `./user-restored-chats.json` | Chats the user moved out of the archive. Model verdicts there only send the self-chat review card, as for a saved contact; malicious-host matches still act. |
 | `OPERATOR_MODE` | Unset | `auto` or `guided` pins mode; otherwise use saved choice or ask on first run. |
 | `OPERATOR_MODE_PATH`, `REVIEW_QUEUE_PATH` | `./operator-mode.json`, `./review-queue.json` | Saved operator mode and guided review queue. |
+| `VOICE_COMMANDS_ENABLED` | `false` | Opt in to transcribing voice notes in your own self-chat as operator commands. |
+| `VOICE_ASR_BASE_URL` | `http://127.0.0.1:8768` | Bot's local voice ASR worker URL. |
+| `VOICE_ASR_API_KEY` | Empty | Voice worker bearer auth; set the same key on bot and worker. Empty disables worker auth. |
+| `VOICE_ASR_TIMEOUT_MS` | `30000` | Bot's voice ASR request timeout in ms. |
+| `VOICE_ASR_HOST`, `VOICE_ASR_PORT` | `127.0.0.1`, `8768` | Voice worker bind address and port. Avoid an open bind without auth. |
+| `VOICE_ASR_MODEL`, `VOICE_ASR_DEVICE`, `VOICE_ASR_LANGUAGE` | `FunAudioLLM/SenseVoiceSmall`, `cpu`, `yue` | Local ASR model, device, and transcription language. |
+| `VOICE_ASR_FFMPEG` | `ffmpeg` | FFmpeg executable used by the voice worker to decode WhatsApp audio. |
 | `WA_ACTION_GAP_MS` | `3000` | Gap between queued WhatsApp writes in ms. |
 | `CONTEXT_TURNS` | `4` | In-memory thread window capacity including current text; not a live scoring window. |
 | `CONTEXT_LLM_ENABLED` | On | Use masked recent-message review; `0` or `false` selects single-message review. |

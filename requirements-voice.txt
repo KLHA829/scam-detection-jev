@@ -1,0 +1,7 @@
+# Optional local Cantonese ASR worker for self-chat voice commands.
+# Install CPU torch first when it is not already installed:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements-voice.txt
+funasr>=1.2.0
+torchaudio>=2.0.0
+soundfile>=0.12.1

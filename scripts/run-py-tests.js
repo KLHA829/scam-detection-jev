@@ -39,13 +39,14 @@ if (!python) {
   process.exit(1);
 }
 
-const run = spawnSync(python, ['-m', 'unittest', 'test_jevlike_serve.py'], {
-  stdio: 'inherit',
-});
+for (const testFile of ['test_jevlike_serve.py', 'test_voice_asr_serve.py']) {
+  const run = spawnSync(python, ['-m', 'unittest', testFile], {
+    stdio: 'inherit',
+  });
 
-if (run.error) {
-  console.error(`[ERROR] failed to run ${python}: ${run.error.message}`);
-  process.exit(1);
+  if (run.error) {
+    console.error(`[ERROR] failed to run ${python}: ${run.error.message}`);
+    process.exit(1);
+  }
+  if (run.status !== 0) process.exit(run.status === null ? 1 : run.status);
 }
-
-process.exit(run.status === null ? 1 : run.status);

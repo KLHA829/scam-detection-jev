@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -34,6 +35,9 @@ const (
 	maxArchiveTransitionsPerChat = 64
 	metaKeyContactImportRevision = "lid_contact_import_revision"
 	lidContactImportRevision     = "1"
+	maxCachedVoiceMessages       = 16
+	maxVoiceMediaBytes           = 16 << 20
+	voiceMediaCacheTTL           = 10 * time.Minute
 )
 
 type putArchiveTransition struct {
@@ -184,6 +188,86 @@ type WhatsmeowBridge struct {
 	archiveMu          sync.Mutex
 	putArchiveQueue    map[string][]putArchiveTransition
 	archiveSyncPending map[string]bool
+
+	voiceMediaMu    sync.Mutex
+	voiceMedia      map[string]cachedVoiceMessage
+	voiceMediaOrder []string
+}
+
+type cachedVoiceMessage struct {
+	message   *waE2E.Message
+	createdAt time.Time
+}
+
+func (b *WhatsmeowBridge) isSelfChatID(chatID string) bool {
+	if chatID == "" {
+		return false
+	}
+	selfWid, selfLid := b.selfJIDs()
+	return chatID == selfWid || (selfLid != "" && chatID == selfLid)
+}
+
+func (b *WhatsmeowBridge) cacheVoiceMessage(messageID, chatID string, msg *waE2E.Message) {
+	unwrapped := unwrapE2EMessage(msg)
+	if messageID == "" || chatID == "" || unwrapped == nil || unwrapped.GetAudioMessage() == nil {
+		return
+	}
+	cloned, ok := proto.Clone(unwrapped).(*waE2E.Message)
+	if !ok || cloned == nil {
+		return
+	}
+	now := time.Now()
+	b.voiceMediaMu.Lock()
+	defer b.voiceMediaMu.Unlock()
+	for id, row := range b.voiceMedia {
+		if now.Sub(row.createdAt) > voiceMediaCacheTTL {
+			delete(b.voiceMedia, id)
+		}
+	}
+	kept := b.voiceMediaOrder[:0]
+	for _, id := range b.voiceMediaOrder {
+		if _, ok := b.voiceMedia[id]; ok {
+			kept = append(kept, id)
+		}
+	}
+	b.voiceMediaOrder = kept
+	for len(b.voiceMediaOrder) >= maxCachedVoiceMessages {
+		drop := b.voiceMediaOrder[0]
+		b.voiceMediaOrder = b.voiceMediaOrder[1:]
+		delete(b.voiceMedia, drop)
+	}
+	if _, exists := b.voiceMedia[messageID]; !exists {
+		b.voiceMediaOrder = append(b.voiceMediaOrder, messageID)
+	}
+	b.voiceMedia[messageID] = cachedVoiceMessage{message: cloned, createdAt: now}
+}
+
+func (b *WhatsmeowBridge) DownloadMessageMedia(ctx context.Context, messageID string) (*MediaResponse, error) {
+	if b.client == nil {
+		return nil, errNotReady
+	}
+	b.voiceMediaMu.Lock()
+	row, found := b.voiceMedia[messageID]
+	b.voiceMediaMu.Unlock()
+	if !found || row.message == nil || time.Since(row.createdAt) > voiceMediaCacheTTL {
+		return nil, errNotFound
+	}
+	data, err := b.client.Download(ctx, row.message.GetAudioMessage())
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, errNotFound
+	}
+	if len(data) > maxVoiceMediaBytes {
+		return nil, fmt.Errorf("voice media exceeds %d bytes", maxVoiceMediaBytes)
+	}
+	audio := row.message.GetAudioMessage()
+	return &MediaResponse{
+		DataBase64: base64.StdEncoding.EncodeToString(data),
+		Mimetype:   audio.GetMimetype(),
+		Seconds:    int(audio.GetSeconds()),
+	}, nil
 }
 
 func ensurePrivateSQLiteFile(dbPath string) error {
@@ -268,6 +352,7 @@ func NewWhatsmeowBridge(ctx context.Context, dbPath, logLevel string) (*Whatsmeo
 		syncRetryWake:      make(chan struct{}, 1),
 		putArchiveQueue:    make(map[string][]putArchiveTransition),
 		archiveSyncPending: make(map[string]bool),
+		voiceMedia:         make(map[string]cachedVoiceMessage),
 	}
 	cli := whatsmeow.NewClient(deviceStore, logger.Sub("client"))
 	cli.EmitAppStateEventsOnFullSync = true
@@ -1051,8 +1136,9 @@ func extractMessageContent(raw *waE2E.Message) extractedMessage {
 		quotedID, isForwarded := extractContextMeta(doc.GetContextInfo())
 		return extractedMessage{msgType: "document", body: doc.GetCaption(), quotedID: quotedID, isForwarded: isForwarded}
 	}
-	if msg.GetAudioMessage() != nil {
-		return extractedMessage{msgType: "audio"}
+	if audio := msg.GetAudioMessage(); audio != nil {
+		quotedID, isForwarded := extractContextMeta(audio.GetContextInfo())
+		return extractedMessage{msgType: "audio", quotedID: quotedID, isForwarded: isForwarded}
 	}
 	if msg.GetStickerMessage() != nil {
 		return extractedMessage{msgType: "sticker"}
@@ -1123,6 +1209,9 @@ func (b *WhatsmeowBridge) handleIncomingMessage(evt *events.Message) {
 	}
 
 	msgID := string(evt.Info.ID)
+	if extracted.msgType == "audio" && evt.Info.IsFromMe && (b.isSelfChatID(chatID) || senderID == chatID) {
+		b.cacheVoiceMessage(msgID, chatID, evt.Message)
+	}
 	_ = b.store.SaveMessage(ctx, StoredMessage{
 		ID:        msgID,
 		ChatJID:   chatID,

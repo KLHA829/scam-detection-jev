@@ -34,6 +34,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 | `lib/block-policy.js`, `lib/wa-actions.js`, `lib/action-pacer.js` | graded block, paced WhatsApp writes |
 | `lib/operator-mode.js`, `lib/review-queue.js` | self-chat choice: automatic, or ask before archive/block |
 | `lib/review-prompt.js`, `lib/review-guide.js`, `lib/deliver-review.js` | local facts, masked Cantonese explanation, poll card |
+| `lib/voice-commands.js`, `voice_asr_serve.py` | opt-in local Cantonese self-chat voice-command transcription |
 | `lib/action-notice.js` | self-chat receipt after archive/block; name and phone stay on the machine |
 | `stub-jevlike.js` | fixed probabilities for offline tests |
 

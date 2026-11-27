@@ -63,6 +63,7 @@ const {
   loadMaliciousHosts,
   startMaliciousHostsWatcher,
 } = require('./lib/malicious-hosts');
+const { createVoiceCommandClient, normalizeVoiceTranscript, voiceCommandsEnabled } = require('./lib/voice-commands');
 const {
   createLlmReviewCooldownStore,
   defaultLlmReviewCooldownPath,
@@ -452,8 +453,10 @@ async function isSelfChatId(transport, chatId) {
 }
 
 async function handleSelfMessage(msg, deps) {
-  const body = String(msg.body || '').trim();
-  if (!shouldProcessSelfMessageBody(body, Boolean(msg.hasQuotedMsg))) return;
+  let body = String(msg.body || '').trim();
+  const env = deps.env || process.env;
+  const voiceCandidate = (msg.type === 'audio' || msg.type === 'ptt') && !body && voiceCommandsEnabled(env);
+  if (!voiceCandidate && !shouldProcessSelfMessageBody(body, Boolean(msg.hasQuotedMsg))) return;
   const wid = selfWid(deps.transport);
   if (!wid) return;
   let isSelf;
@@ -466,6 +469,23 @@ async function handleSelfMessage(msg, deps) {
     return;
   }
   if (!isSelf) return;
+
+  if (voiceCandidate) {
+    try {
+      if (!deps.voiceCommandClient || typeof msg.downloadMedia !== 'function') {
+        throw new Error('voice transcription unavailable');
+      }
+      const media = await msg.downloadMedia();
+      body = normalizeVoiceTranscript(await deps.voiceCommandClient.transcribeMedia(media));
+    } catch (err) {
+      log.warn('voice command transcription failed', { error: err.message });
+      const sendFailure = () => deps.transport.sendText(wid, '語音指令暫時轉唔到文字，請用文字再試。');
+      if (deps.pacer && typeof deps.pacer.exclusive === 'function') await deps.pacer.exclusive(sendFailure);
+      else await sendFailure();
+      return;
+    }
+    if (!body || !shouldProcessSelfMessageBody(body, Boolean(msg.hasQuotedMsg))) return;
+  }
 
   let quotedId = null;
   if (msg.hasQuotedMsg && typeof msg.getQuotedMessageId === 'function') {
@@ -480,6 +500,7 @@ async function handleSelfMessage(msg, deps) {
     quotedId,
     operator: deps.operator,
     queue: deps.reviewQueue,
+    loose: voiceCandidate,
   });
   if (route.kind === 'reconfigure') {
     if (deps.operator.pinned()) {
@@ -927,6 +948,9 @@ async function main() {
   const userRestoredChats = createUserRestoredChats({
     filePath: defaultUserRestoredChatsPath(process.env),
   });
+  const voiceCommandClient = voiceCommandsEnabled(process.env)
+    ? createVoiceCommandClient(process.env)
+    : null;
   const transport = createWhatsAppTransport({ env: process.env, authPath: AUTH_PATH });
 
   try {
@@ -958,6 +982,8 @@ async function main() {
     contextLlmMessages: recentContext ? recentContext.limit : 0,
     operatorMode: operator.mode(),
     operatorSetup: operator.needsSetup(),
+    voiceCommandsEnabled: Boolean(voiceCommandClient),
+    voiceAsrWorker: voiceCommandClient ? voiceCommandClient.baseURL : null,
   });
 
   attachHandlers(transport, {
@@ -971,6 +997,7 @@ async function main() {
     llmCooldownStore,
     botContactNames,
     userRestoredChats,
+    voiceCommandClient,
   });
   await transport.initialize();
 }

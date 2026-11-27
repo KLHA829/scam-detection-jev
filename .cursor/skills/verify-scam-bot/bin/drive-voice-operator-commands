@@ -1,0 +1,75 @@
+#!/usr/bin/env node
+'use strict';
+
+/** Offline drive for local Cantonese self-chat voice commands. No WhatsApp, ASR model, or stub worker. */
+
+const { spawnSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const skillDir = path.resolve(__dirname, '..');
+const root = path.resolve(skillDir, '../../..');
+const evidenceRoot = path.join(skillDir, 'evidence');
+
+const TEST_NAMES = [
+  'normalizes Cantonese ASR output for existing commands',
+  'posts local audio as base64 and returns transcript text',
+  'rejects invalid media and invalid worker responses',
+  'applies a quoted review choice transcribed from a Cantonese voice note',
+  'runs a direct unblock command transcribed from a Cantonese voice note',
+  'does not act when voice transcription fails',
+];
+const TEST_FILES = [
+  'lib/voice-commands.test.js',
+  'lib/operator-review.test.js',
+  'lib/unblock-poll.test.js',
+  'lib/operator-commands.test.js',
+  'lib/wa-handlers.test.js',
+];
+
+function die(message) {
+  console.error(`drive-voice-operator-commands: ${message}`);
+  process.exit(1);
+}
+
+function stamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
+}
+
+const outDir = path.join(evidenceRoot, `${stamp()}-voice-operator-commands`);
+fs.mkdirSync(outDir, { recursive: true });
+const pattern = TEST_NAMES.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+const env = { ...process.env, LLM_REVIEW_COOLDOWN_MS: '0' };
+for (const key of ['OPERATOR_MODE', 'VOICE_COMMANDS_ENABLED', 'VOICE_ASR_BASE_URL', 'VOICE_ASR_API_KEY', 'VOICE_ASR_TIMEOUT_MS', 'VOICE_ASR_LANGUAGE']) delete env[key];
+
+const test = spawnSync(
+  process.execPath,
+  ['--test', '--test-reporter', 'tap', `--test-name-pattern=${pattern}`, ...TEST_FILES],
+  { cwd: root, env, encoding: 'utf8' },
+);
+const tap = `${test.stdout || ''}${test.stderr || ''}`;
+fs.writeFileSync(path.join(outDir, 'node-test.txt'), tap);
+const missing = TEST_NAMES.filter((name) => {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return !new RegExp(`^\\s*ok \\d+ - ${escaped}$`, 'm').test(tap);
+});
+const failLine = tap.split('\n').find((line) => line.startsWith('# fail ')) || '# fail missing';
+const passLine = tap.split('\n').find((line) => line.startsWith('# pass ')) || '# pass missing';
+const proved = test.status === 0 && failLine === '# fail 0' && missing.length === 0;
+const summary = {
+  feature: 'voice-operator-commands',
+  entry: `node --test ${TEST_FILES.join(' ')}`,
+  whatsapp: 'not started',
+  asrModel: 'mocked; no model download',
+  nodeTestExit: test.status,
+  passLine,
+  failLine,
+  missingTests: missing,
+  proved,
+};
+fs.writeFileSync(path.join(outDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
+console.log(`evidence: ${outDir}`);
+console.log(JSON.stringify(summary, null, 2));
+if (!proved) die('voice command tests did not all pass');

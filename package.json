@@ -16,7 +16,8 @@
     "test:e2e:boot:whatsmeow": "node scripts/e2e-boot-qr.js --transport whatsmeow",
     "stub": "node stub-jevlike.js",
     "jevlike": "python jevlike_serve.py",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "voice-asr": "python voice_asr_serve.py"
   },
   "engines": {
     "node": ">=20"
