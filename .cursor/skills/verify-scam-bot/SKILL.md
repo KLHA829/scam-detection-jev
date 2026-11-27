@@ -79,6 +79,16 @@ Other features use the `node --test` / `curl` commands in their feature files.
 
 Do not point smoke drives at live `jevlike_serve.py`. Doctor rejects health whose `model` is not `stub-jevlike`.
 
+## Mini-WhatsApp real-mask validation
+
+Use this only when proving a real PII-mask checkpoint end to end; it is not a replacement for the offline stub smoke above.
+
+1. Start the real worker separately with the checkpoint under test, for example `JEVLIKE_MASK_CKPT=/path/to/jevlike_hf_pii_mask.pt .venv/bin/python jevlike_serve.py`. Confirm the worker log names that checkpoint before driving traffic.
+2. Start Mini-WhatsApp with `node scripts/mini-whatsapp.js --with-bot` and **without** `--with-stub`; otherwise the harness replaces the real worker. Inherit or export `JEVLIKE_BASE_URL` so the bot points at the real worker. `--with-stub` is only for offline UI testing.
+3. `scripts/mini-whatsapp.js`'s exported `startMockLlmServer` does not log requests. When proving no raw PII reached the LLM, use a temporary local logging mock Chat Completions server and inspect its JSONL/request log.
+4. Desktop keyboard typing can drop Cantonese or other Unicode characters in the Mini-WhatsApp textarea. Send exact Unicode fixtures through the sanctioned local `/api/inbound` endpoint, then use the Web UI for chat selection and visual/archive assertions.
+5. For long-message mask probes, inspect HF tokenizer windows (`context_tokens` plus `stride`) rather than assuming character count equals token count. Record enough state/log evidence to show which checkpoint, masked transcript, LLM requests, and archive states were observed.
+
 **Windows:** `bin/launch-stub`, `bin/doctor`, and `bin/cleanup` are bash scripts — run them from Git Bash (or ensure `VERIFY_BASH` points at `Git\bin\bash.exe`). Node `bin/drive-*` that call doctor resolve Git Bash themselves and skip the broken Store/WSL `bash` stub on PATH. `bin/launch-stub` starts the stub via `bin/_start-stub-process.js` (records the real node pid). Pid ownership uses `bin/_stub-pid-looks-like.js` (Win32: child-tree walk + recorded pid + `/health` when cmdline is opaque).
 
 **CI:** `.github/workflows/test.yml` runs `node scripts/ci-static-gates.js`, then `scripts/ci-verify-smoke.sh` on Ubuntu and Windows (same drive sequence as above; uploads `evidence/` artifacts).
