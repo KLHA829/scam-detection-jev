@@ -16,6 +16,7 @@ import jevlike_serve as serve
 def tiny_mask_runtime(torch):
     class Tokenizer:
         option_calls = 0
+        pad_token_id = 0
 
         def __call__(
             self,
@@ -37,7 +38,7 @@ def tiny_mask_runtime(torch):
                 step = size - stride if return_overflowing_tokens else len(chars) + 1
                 rows = [chars[start : start + size] for start in range(0, max(1, len(chars) - stride), step)]
             if add_special_tokens:
-                rows = [[(0, [0, 0])] + row[: max_length - 2] + [(0, [0, 0])] for row in rows]
+                rows = [[(3, [0, 0])] + row[: max_length - 2] + [(3, [0, 0])] for row in rows]
             width = max(map(len, rows))
             rows = [row + [(0, [0, 0])] * (width - len(row)) for row in rows]
             tokens = torch.tensor([[token for token, _ in row] for row in rows])
@@ -51,9 +52,15 @@ def tiny_mask_runtime(torch):
         calls = 0
         option_calls = 0
 
+        def __init__(self):
+            self.shapes = []
+            self.seen_inputs = []
+
         def __call__(self, input_ids, attention_mask):
             self.calls += 1
             self.option_calls += int(input_ids.shape[0] == 2)
+            self.shapes.append(tuple(input_ids.shape))
+            self.seen_inputs.append((input_ids.detach().clone(), attention_mask.detach().clone()))
             hidden = torch.sin(input_ids.float().unsqueeze(-1) + torch.arange(64))
             return SimpleNamespace(last_hidden_state=hidden)
 
@@ -96,18 +103,25 @@ class MaskOptionCacheTests(unittest.TestCase):
         with patch.multiple(serve, **runtime), patch.object(
             pii_mask_head, "mask_option_logits", side_effect=record
         ):
-            cached = serve.mask_payload(rows)
-            self.assertEqual(runtime["_MODEL"].encoder.calls, 11)
+            uncached_batch = serve.mask_payload(rows)
+            chunks_per_batch = len(logits)
+            self.assertEqual(runtime["_MODEL"].encoder.calls, 1 + chunks_per_batch)
             self.assertEqual(runtime["_MODEL"].encoder.option_calls, 1)
             self.assertEqual(runtime["_COLLATOR"].tokenizer.option_calls, 1)
-            self.assertTrue(any(row["spans"] for row in cached["messages"]))
+            self.assertTrue(any(row["spans"] for row in uncached_batch["messages"]))
+            cached_batch = serve.mask_payload(rows)
+            self.assertEqual(runtime["_MODEL"].encoder.calls, 1 + 2 * chunks_per_batch)
+            self.assertEqual(runtime["_MODEL"].encoder.option_calls, 1)
+            self.assertEqual(runtime["_COLLATOR"].tokenizer.option_calls, 1)
+            self.assertEqual(cached_batch, uncached_batch)
+            self.assertEqual(len(logits), 2 * chunks_per_batch)
+            for before, after in zip(logits[:chunks_per_batch], logits[chunks_per_batch:]):
+                self.assertTrue(torch.equal(before, after))
             uncached = []
             for row in rows:
                 serve._MASK_OPTION_CACHE = None
                 uncached.append({"spans": serve.model_mask_spans(row)})
-            self.assertEqual(cached["messages"], uncached)
-            for before, after in zip(logits[:10], logits[10:]):
-                self.assertTrue(torch.equal(before, after))
+            self.assertEqual(cached_batch["messages"], uncached)
             self.assertEqual(serve.mask_payload([])["messages"], [])
             serve._MODEL = tiny_mask_runtime(torch)["_MODEL"]
             serve.model_mask_spans("new model")
@@ -162,6 +176,129 @@ class LongMessageMaskTests(unittest.TestCase):
         ):
             with self.assertRaises(serve.MaskTruncated):
                 serve.model_mask_spans("x" * 100)
+
+
+class BatchedMaskTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("torch is not installed")
+        self.torch = torch
+        self.runtime = tiny_mask_runtime(torch)
+
+    def test_mixed_lengths_empty_emoji_and_surrogates_keep_message_order(self):
+        rows = [
+            "電話91234567",
+            "",
+            "😀 驗證碼123456",
+            "ab",
+            "\ud800郵件abc@example.com",
+            "你" * 110 + "電話91234567",
+        ]
+        with patch.multiple(serve, **self.runtime):
+            batched = serve.mask_payload(rows)["messages"]
+            individual = [{"spans": serve.model_mask_spans(row)} for row in rows]
+            surrogate_free = serve.model_mask_spans("\ufffd郵件abc@example.com")
+        self.assertEqual(batched, individual)
+        self.assertEqual(batched[1]["spans"], [])
+        self.assertEqual(batched[4]["spans"], surrogate_free)
+        self.assertTrue(any(row["spans"] for row in batched))
+
+    def test_total_windows_are_chunked_across_messages(self):
+        rows = ["你" * 500, "電話91234567", "你" * 500]
+        with patch.multiple(serve, **self.runtime):
+            batched = serve.mask_payload(rows)["messages"]
+            batch_calls = self.runtime["_MODEL"].encoder.calls
+            shapes = list(self.runtime["_MODEL"].encoder.shapes)
+            individual = [{"spans": serve.model_mask_spans(row)} for row in rows]
+        self.assertEqual(batched, individual)
+        self.assertEqual(batch_calls, 3)
+        context_shapes = shapes[1:]
+        self.assertEqual(sum(shape[0] for shape in context_shapes), 21)
+        self.assertTrue(all(1 <= shape[0] <= serve._MASK_WINDOW_BATCH for shape in context_shapes))
+
+    def test_mixed_length_batch_bounds_padding_work_and_prevents_padding_leakage(self):
+        torch = self.torch
+        tokenizer = self.runtime["_COLLATOR"].tokenizer
+        tokenizer.pad_token_id = 200
+
+        class AttentionAwareEncoder:
+            def __init__(self):
+                self.calls = 0
+                self.shapes = []
+                self.seen_inputs = []
+
+            def __call__(self, input_ids, attention_mask):
+                self.calls += 1
+                self.shapes.append(tuple(input_ids.shape))
+                self.seen_inputs.append((input_ids.detach().clone(), attention_mask.detach().clone()))
+                base = torch.sin(input_ids.float().unsqueeze(-1) + torch.arange(64))
+                # Any non-zero attention on padding tokens would shift row_mean and perturb real tokens.
+                mask = attention_mask.unsqueeze(-1).float()
+                row_mean = (base * mask).sum(dim=1, keepdim=True) / mask.sum(dim=1, keepdim=True).clamp_min(1.0)
+                return SimpleNamespace(last_hidden_state=base + 0.1 * row_mean)
+
+        encoder = AttentionAwareEncoder()
+        self.runtime["_MODEL"] = SimpleNamespace(encoder=encoder)
+
+        rows = ["電話91234567"] * 9 + ["你" * 94]
+        with patch.multiple(serve, **self.runtime):
+            batched = serve.mask_payload(rows)["messages"]
+            context_shapes = list(encoder.shapes[1:])
+            context_inputs = list(encoder.seen_inputs[1:])
+            individual = [{"spans": serve.model_mask_spans(row)} for row in rows]
+
+        self.assertEqual(batched, individual)
+        self.assertEqual(context_shapes, [(9, 12), (1, 96)])
+        total_positions = sum(r * c for r, c in context_shapes)
+        self.assertLess(total_positions, 250)
+        for batch_ids, batch_mask in context_inputs:
+            self.assertTrue(torch.all(batch_ids[batch_mask == 0] == tokenizer.pad_token_id))
+            self.assertTrue(torch.all(batch_mask[batch_ids != tokenizer.pad_token_id] == 1))
+
+    def test_attention_mask_zeros_all_padded_positions_in_mixed_width_chunks(self):
+        torch = self.torch
+        rows = ["ab", "電話91234567", "abc@example.com"]
+        with patch.multiple(serve, **self.runtime):
+            batched = serve.mask_payload(rows)["messages"]
+            context_inputs = list(self.runtime["_MODEL"].encoder.seen_inputs[1:])
+            individual = [{"spans": serve.model_mask_spans(row)} for row in rows]
+        self.assertEqual(batched, individual)
+        for batch_ids, batch_mask in context_inputs:
+            self.assertTrue(torch.all(batch_ids[batch_mask == 0] == 0))
+            self.assertTrue(torch.all(batch_mask[batch_ids != 0] == 1))
+
+    def test_message_too_long_fails_before_any_encoder_call(self):
+        with patch.multiple(serve, **self.runtime), patch.object(serve, "_MAX_MASK_WINDOWS", 1):
+            with self.assertRaisesRegex(ValueError, "message too long"):
+                serve.mask_payload(["ok", "你" * 100])
+        self.assertEqual(self.runtime["_MODEL"].encoder.calls, 0)
+
+    def test_truncated_batch_fails_before_any_encoder_call(self):
+        tokenizer = self.runtime["_COLLATOR"].tokenizer
+
+        class Truncating(type(tokenizer)):
+            def __call__(self, text, max_length=512, **kwargs):
+                kwargs.pop("return_overflowing_tokens", None)
+                return super().__call__(text, max_length, **kwargs)
+
+        with patch.multiple(serve, **self.runtime), patch.object(
+            serve._COLLATOR, "tokenizer", Truncating()
+        ):
+            with self.assertRaises(serve.MaskTruncated):
+                serve.mask_payload(["ok", "x" * 100])
+        self.assertEqual(self.runtime["_MODEL"].encoder.calls, 0)
+
+    def test_empty_batch_runs_no_encoder_and_still_requires_the_head(self):
+        with patch.multiple(serve, **self.runtime):
+            self.assertEqual(serve.mask_payload([])["messages"], [])
+            self.assertEqual(self.runtime["_MODEL"].encoder.calls, 0)
+            self.assertEqual(self.runtime["_COLLATOR"].tokenizer.option_calls, 0)
+            with patch.object(serve, "_MASK_HEAD", None):
+                with self.assertRaises(RuntimeError):
+                    serve.mask_payload([])
+        self.assertEqual(self.runtime["_MODEL"].encoder.calls, 0)
 
 
 class ScamProbabilityTests(unittest.TestCase):
