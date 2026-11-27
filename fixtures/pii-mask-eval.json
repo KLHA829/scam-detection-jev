@@ -1,0 +1,476 @@
+{
+  "cases": [
+    {
+      "id": "phone_plain",
+      "kind": "pii",
+      "text": "你好，我係陳大文，電話91234567，聽日聯絡",
+      "expect": [
+        "陳大文",
+        "91234567"
+      ]
+    },
+    {
+      "id": "phone_intl",
+      "kind": "pii",
+      "text": "我叫蔡子軒，whatsapp +852 6123 4567 搵我",
+      "expect": [
+        "蔡子軒",
+        "+852 6123 4567"
+      ]
+    },
+    {
+      "id": "phone_cn_digits",
+      "kind": "pii",
+      "text": "我名叫蔡子軒，打去九一二三四五六七",
+      "expect": [
+        "蔡子軒",
+        "九一二三四五六七"
+      ]
+    },
+    {
+      "id": "phone_fullwidth",
+      "kind": "pii",
+      "text": "全形電話６１２３４５６７係我",
+      "expect": [
+        "６１２３４５６７"
+      ]
+    },
+    {
+      "id": "name_only",
+      "kind": "pii",
+      "text": "本人黃美玲，請回覆",
+      "expect": [
+        "黃美玲"
+      ]
+    },
+    {
+      "id": "nick",
+      "kind": "pii",
+      "text": "叫我阿明，今晚聯絡",
+      "expect": [
+        "阿明"
+      ]
+    },
+    {
+      "id": "email",
+      "kind": "pii",
+      "text": "回信到 chan.mei+test@example.com 就得",
+      "expect": [
+        "chan.mei+test@example.com"
+      ]
+    },
+    {
+      "id": "hkid",
+      "kind": "pii",
+      "text": "身份證 A123456(7) 影一張",
+      "expect": [
+        "A123456(7)"
+      ]
+    },
+    {
+      "id": "mainland_id",
+      "kind": "pii",
+      "text": "證件 440301199012345678 核對清楚",
+      "expect": [
+        "440301199012345678"
+      ]
+    },
+    {
+      "id": "otp_canto",
+      "kind": "pii",
+      "text": "你嘅驗證碼係 482913，唔好話俾人聽",
+      "expect": [
+        "482913"
+      ]
+    },
+    {
+      "id": "otp_english",
+      "kind": "pii",
+      "text": "Your OTP code is 771234",
+      "expect": [
+        "771234"
+      ]
+    },
+    {
+      "id": "bank_card",
+      "kind": "pii",
+      "text": "銀行卡 6222 1234 5678 9012 收到未",
+      "expect": [
+        "6222 1234 5678 9012"
+      ]
+    },
+    {
+      "id": "fps_account",
+      "kind": "pii",
+      "text": "轉數快 123-456789 今日過數",
+      "expect": [
+        "123-456789"
+      ]
+    },
+    {
+      "id": "payme",
+      "kind": "pii",
+      "text": "PayMe ID: u482913ab 過數俾我",
+      "expect": [
+        "u482913ab"
+      ]
+    },
+    {
+      "id": "url_path",
+      "kind": "pii",
+      "text": "請開 https://example88.test/login?token=secret1234 睇詳情",
+      "expect": [
+        "/login?token=secret1234"
+      ],
+      "allow_url_overmask": true
+    },
+    {
+      "id": "url_userinfo",
+      "kind": "pii",
+      "text": "登入 https://user123@example88.test/home 確認",
+      "expect": [
+        "user123",
+        "/home"
+      ],
+      "allow_url_overmask": true
+    },
+    {
+      "id": "short_url",
+      "kind": "pii",
+      "text": "按 https://bit.ly/ref1234 領取",
+      "expect": [
+        "ref1234"
+      ],
+      "allow_url_overmask": true
+    },
+    {
+      "id": "long_tail_phone",
+      "kind": "pii",
+      "text": "呢段係好長好長嘅正常對話，講天氣講食飯講屋企人講新聞講股票講旅行講返工講放假講飲茶講行山講買餸講電影講健康講政府新措施，最後先留電話 +852 6123 4567 俾你",
+      "expect": [
+        "+852 6123 4567"
+      ]
+    },
+    {
+      "id": "holdout_name_phone_context",
+      "kind": "pii",
+      "text": "我叫做蔡子軒，電話係 6123 4567，夜晚先方便",
+      "expect": [
+        "蔡子軒",
+        "6123 4567"
+      ]
+    },
+    {
+      "id": "holdout_nick_no_phone",
+      "kind": "pii",
+      "text": "我個名叫阿珍，之後先傾",
+      "expect": [
+        "阿珍"
+      ]
+    },
+    {
+      "id": "holdout_otp_alt",
+      "kind": "pii",
+      "text": "個OTP係 998877，快啲入",
+      "expect": [
+        "998877"
+      ]
+    },
+    {
+      "id": "holdout_email_alt",
+      "kind": "pii",
+      "text": "email係 test123@gmail.com，send 文件過嚟",
+      "expect": [
+        "test123@gmail.com"
+      ]
+    },
+    {
+      "id": "holdout_hkid_alt",
+      "kind": "pii",
+      "text": "HKID: B234567(8) 唔該",
+      "expect": [
+        "B234567(8)"
+      ]
+    },
+    {
+      "id": "holdout_whatsapp_alt",
+      "kind": "pii",
+      "text": "你可以直接 whatsapp 6812 3457 搵我",
+      "expect": [
+        "6812 3457"
+      ]
+    },
+    {
+      "id": "holdout_fps_alt",
+      "kind": "pii",
+      "text": "FPS 987-654321 係收款",
+      "expect": [
+        "987-654321"
+      ]
+    },
+    {
+      "id": "holdout_url_alt",
+      "kind": "pii",
+      "text": "入去 https://secure-login-example.test/verify?session=abcd9876",
+      "expect": [
+        "/verify?session=abcd9876"
+      ],
+      "allow_url_overmask": true
+    },
+    {
+      "id": "address",
+      "kind": "pii",
+      "text": "我住香港九龍旺角彌敦道123號8樓A室，今晚喺屋企",
+      "expect": [
+        "香港九龍旺角彌敦道123號8樓A室"
+      ]
+    },
+    {
+      "id": "birthday",
+      "kind": "pii",
+      "text": "我1990年1月23日出生，身份證明天補俾你",
+      "expect": [
+        "1990年1月23日"
+      ]
+    },
+    {
+      "id": "passport",
+      "kind": "pii",
+      "text": "護照號碼 E12345678，下星期飛",
+      "expect": [
+        "E12345678"
+      ]
+    },
+    {
+      "id": "expiry_cvv",
+      "kind": "pii",
+      "text": "卡到期日 12/29，CVV 123",
+      "expect": [
+        "12/29",
+        "123"
+      ]
+    },
+    {
+      "id": "telegram",
+      "kind": "pii",
+      "text": "加我 Telegram @chan_test123",
+      "expect": [
+        "@chan_test123"
+      ]
+    },
+    {
+      "id": "holdout2_address_variant",
+      "kind": "pii",
+      "text": "我搬咗去新界沙田大圍道77號2樓B室，得閒嚟坐",
+      "expect": [
+        "新界沙田大圍道77號2樓B室"
+      ]
+    },
+    {
+      "id": "holdout2_birthdate_alt",
+      "kind": "pii",
+      "text": "出生日期係1988年12月3日，唔該",
+      "expect": [
+        "1988年12月3日"
+      ]
+    },
+    {
+      "id": "holdout2_passport_alt",
+      "kind": "pii",
+      "text": "我本passport係 K99887766，check 下",
+      "expect": [
+        "K99887766"
+      ]
+    },
+    {
+      "id": "holdout2_phone_english_mix",
+      "kind": "pii",
+      "text": "call 我 6123 4567 今晚",
+      "expect": [
+        "6123 4567"
+      ]
+    },
+    {
+      "id": "holdout2_email_domain",
+      "kind": "pii",
+      "text": "send 去 first_last99@outlook.com 啦",
+      "expect": [
+        "first_last99@outlook.com"
+      ]
+    },
+    {
+      "id": "holdout2_hkid_lower",
+      "kind": "pii",
+      "text": "身份證 b234567(8) 影低",
+      "expect": [
+        "b234567(8)"
+      ]
+    },
+    {
+      "id": "holdout2_ig_handle",
+      "kind": "pii",
+      "text": "IG @traveler2026 加我",
+      "expect": [
+        "@traveler2026"
+      ]
+    },
+    {
+      "id": "holdout2_phone_mid_long",
+      "kind": "pii",
+      "text": "講天氣講食飯講屋企人講新聞講股票講旅行，電話91234567，之後再講返工講放假講飲茶講行山講買餸講電影",
+      "expect": [
+        "91234567"
+      ]
+    },
+    {
+      "id": "neg_debt_org",
+      "kind": "negative",
+      "text": "我係收數公司，你筆數要還",
+      "expect": []
+    },
+    {
+      "id": "neg_bank_notice",
+      "kind": "negative",
+      "text": "如非本人操作，請即聯絡銀行",
+      "expect": []
+    },
+    {
+      "id": "neg_role",
+      "kind": "negative",
+      "text": "我係張經理，下晝三點開會",
+      "expect": []
+    },
+    {
+      "id": "neg_year",
+      "kind": "negative",
+      "text": "今晚2026年見，唔好遲到",
+      "expect": []
+    },
+    {
+      "id": "neg_otp_warning",
+      "kind": "negative",
+      "text": "小心詐騙，唔好將驗證碼話俾人聽",
+      "expect": []
+    },
+    {
+      "id": "neg_transfer_warning",
+      "kind": "negative",
+      "text": "呢單係新聞，講轉帳要小心",
+      "expect": []
+    },
+    {
+      "id": "neg_fps_word",
+      "kind": "negative",
+      "text": "朋友話轉數快比我飯錢，唔使急",
+      "expect": []
+    },
+    {
+      "id": "neg_amount",
+      "kind": "negative",
+      "text": "五十蚊就得，唔使五百",
+      "expect": []
+    },
+    {
+      "id": "neg_order_date",
+      "kind": "negative",
+      "text": "訂單編號 20261127，三月十二日送到",
+      "expect": []
+    },
+    {
+      "id": "neg_family_context",
+      "kind": "negative",
+      "text": "講天氣講食飯講屋企人講新聞講股票",
+      "expect": []
+    },
+    {
+      "id": "neg_family_direct",
+      "kind": "negative",
+      "text": "屋企人話唔使急",
+      "expect": []
+    },
+    {
+      "id": "neg_government",
+      "kind": "negative",
+      "text": "講健康講政府新措施",
+      "expect": []
+    },
+    {
+      "id": "neg_common_surname_chars",
+      "kind": "negative",
+      "text": "多謝你，許多朋友曾經講過方法簡單",
+      "expect": []
+    },
+    {
+      "id": "neg_holdout_family",
+      "kind": "negative",
+      "text": "屋企人今晚煮飯，唔使急",
+      "expect": []
+    },
+    {
+      "id": "neg_holdout_government",
+      "kind": "negative",
+      "text": "政府新聞稿講咗交通安全",
+      "expect": []
+    },
+    {
+      "id": "neg_holdout_order",
+      "kind": "negative",
+      "text": "訂單編號 88990011 已經出貨",
+      "expect": []
+    },
+    {
+      "id": "neg_holdout_reference",
+      "kind": "negative",
+      "text": "參考編號 33445566 三月後到期",
+      "expect": []
+    },
+    {
+      "id": "neg_holdout_whatsapp",
+      "kind": "negative",
+      "text": "whatsapp 我明天先覆你",
+      "expect": []
+    },
+    {
+      "id": "neg_holdout_english_call",
+      "kind": "negative",
+      "text": "Please call me after lunch",
+      "expect": []
+    },
+    {
+      "id": "neg_holdout_english_otp",
+      "kind": "negative",
+      "text": "Your OTP code is not needed here",
+      "expect": []
+    },
+    {
+      "id": "neg2_reference_english",
+      "kind": "negative",
+      "text": "reference 12345678 expires next month",
+      "expect": []
+    },
+    {
+      "id": "neg2_common_words",
+      "kind": "negative",
+      "text": "森林旁邊好緊張，方法簡單又健康",
+      "expect": []
+    },
+    {
+      "id": "neg2_government_long",
+      "kind": "negative",
+      "text": "政府新措施係新聞重點，屋企人都唔使急",
+      "expect": []
+    },
+    {
+      "id": "neg2_date_amount",
+      "kind": "negative",
+      "text": "2026年11月27日消費5000蚊",
+      "expect": []
+    },
+    {
+      "id": "neg2_otp_advice",
+      "kind": "negative",
+      "text": "Your OTP code is private, do not share it",
+      "expect": []
+    }
+  ]
+}

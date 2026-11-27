@@ -27,6 +27,18 @@ LURE_WORDS = (
     "小心",
     "新聞",
     "新闻",
+    "轉數快",
+    "转数快",
+    "FPS",
+    "fps",
+    "PayMe",
+    "payme",
+    "WhatsApp",
+    "whatsapp",
+    "OTP",
+    "otp",
+    "code",
+    "CODE",
 )
 
 
@@ -191,12 +203,16 @@ def score_threshold(cache, probs, threshold: float) -> dict:
 def choose_threshold(cache, probs) -> tuple[float, dict]:
     best = None
     best_threshold = 0.5
+    best_key = None
     for step in range(20, 95, 5):
         threshold = step / 100
         stats = score_threshold(cache, probs, threshold)
-        if stats["hard_negative_rows_flagged"] > 0:
-            continue
-        if best is None or stats["f1"] > best["f1"]:
+        # Character F1 already charges false-masked hard-negative characters as FP.
+        # Prefer recall/privacy balance over a degenerate checkpoint that merely keeps
+        # every hard-negative row untouched; use row flags only as a tie-breaker.
+        key = (stats["f1"], -stats["hard_negative_rows_flagged"], threshold)
+        if best_key is None or key > best_key:
+            best_key = key
             best = stats
             best_threshold = threshold
     if best is None:

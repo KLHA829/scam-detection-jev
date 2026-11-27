@@ -61,6 +61,14 @@ Worker 載入順序：
 python scripts/train_pii_mask.py --output models/jevlike_hf_pii_mask.pt
 ```
 
-有 `r1` 檔時，頭的初始權重從 `r1` 抄出再練（rank 256，同一個凍結編碼器）。輸出唔會覆蓋 `jevlike_hf_chinese_roberta_r1.pt`。標註係合成句子：規則已識嘅電話／戶口，加上規則漏咗嘅「我叫」、中文數字電話。機構名、職銜、年份、淨係講「驗證碼」嘅句子係負例。
+有 `r1` 檔時，頭的初始權重從 `r1` 抄出再練（rank 256，同一個凍結編碼器）。輸出唔會覆蓋 `jevlike_hf_chinese_roberta_r1.pt`。標註係合成句子：規則已識嘅電話／戶口，加上規則漏咗嘅「我叫」、中文數字電話、地址、出生日期、護照、到期日/CVV 同社交帳號。負例包括機構名、職銜、年份、淨係講「驗證碼」嘅句子、日常廣東話用字（例如屋企人、政府）、訂單/參考編號、日期同金額。
 
-一次 CPU 訓練（360 條訓練句、120 條換咗姓氏同句式嘅驗證句）驗證集字元 F1 係 1.0、規則覆蓋唔到嘅形式召回 1.0、留出嘅負例冇被標。呢個唔係 366 則真實香港對話嘅數字。抽查：`我叫陳大文`、`叫我做陳大文`、`九一二三四五六七` 會被頭標出；`驗證碼 123456` 這個成詞數字頭可能漏（機率約 0.03）。運行時唔再用規則補遮。模型標中「驗證碼」「小心」呢類詞會被抹走，避免大模型睇唔到騙案字眼。權重檔已 gitignore，唔會進 repo。
+固定評估（需要已下載 encoder 同 mask checkpoint）：
+
+```bash
+.venv/bin/python scripts/eval_pii_mask.py \
+  --checkpoint models/jevlike_hf_pii_mask.pt \
+  --output /tmp/pii-mask-eval.json
+```
+
+評估 fixture 喺 `fixtures/pii-mask-eval.json`，覆蓋電話、姓名、OTP、證件、戶口、URL secret、地址、生日、護照、CVV、社交帳號、長訊息，同埋唔應該遮嘅日常句子。呢個唔係 366 則真實香港對話嘅數字。運行時唔再用規則補遮。模型標中「驗證碼」「小心」、FPS/PayMe/WhatsApp 呢類證據詞會被抹走，避免大模型睇唔到騙案字眼。權重檔已 gitignore，唔會進 repo。

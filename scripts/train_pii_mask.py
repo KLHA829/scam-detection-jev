@@ -236,7 +236,7 @@ def main() -> None:
             "hard_negative_rows_flagged": stats["hard_negative_rows_flagged"],
             "threshold": threshold,
         }))
-        candidate_score = (-int(stats["hard_negative_rows_flagged"]), float(stats["f1"]))
+        candidate_score = (float(stats["f1"]), -int(stats["hard_negative_rows_flagged"]))
         if best_state is None or candidate_score > best_score:
             best_score = candidate_score
             best_state = {key: value.detach().cpu().clone() for key, value in head.state_dict().items()}
