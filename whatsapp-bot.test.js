@@ -23,7 +23,6 @@ const { createRecentContext } = require('./lib/context-llm');
 const { createOperatorState } = require('./lib/operator-mode');
 const { createReviewQueue } = require('./lib/review-queue');
 const { llmChatResponse } = require('./lib/test-llm');
-const { findMaskSpans } = require('./test/support/mask-spans-stub');
 const {
   createStubJevlikeClient,
   createStubJevlikeFetch,
@@ -553,6 +552,7 @@ describe('mask cache reuse through WhatsApp orchestration', () => {
     threadContext.push(chatId, prior, { messageId: 'prior-inbound' });
     recentContext.push(chatId, prior, { messageId: 'prior-inbound' });
     const batches = [];
+    const stubMaskClient = createStubJevlikeClient();
     const sent = [];
     const events = [];
     const client = {
@@ -600,7 +600,7 @@ describe('mask cache reuse through WhatsApp orchestration', () => {
       maskClient: {
         async maskMessages(messages) {
           batches.push([...messages]);
-          return { messages: messages.map((text) => ({ spans: findMaskSpans(text) })) };
+          return stubMaskClient.maskMessages(messages);
         },
       },
       llmReview: {
