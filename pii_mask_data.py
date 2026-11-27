@@ -2,7 +2,7 @@
 
 Labels are the identifier rules plus forms those rules miss: 我叫/我名叫,
 Chinese-numeral phones, fullwidth digits, addresses, birthdates, passports,
-card expiry/CVV pairs, and social handles. Hard negatives (organisation tails,
+card expiry/CVV pairs, social handles, and zero-width/Unicode-digit phones. Hard negatives (organisation tails,
 role titles, years, bare lure words, common Cantonese words, order/reference
 numbers, dates, and amounts) stay unlabelled.
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import random
 import re
+import unicodedata
 
 import jevlike_serve as serve
 
@@ -26,7 +27,10 @@ _CN_PHONE = re.compile(
     rf"(?:電話|电话|打去|打俾|whatsapp|wa|號碼|号码)[^\n]{{0,6}}([{_CN_DIGITS}]{{8,11}})"
 )
 _FW_PHONE = re.compile(r"(?<![0-9０-９])[４５６７９][０-９]{7}(?![0-9０-９])")
-_ADDRESS = re.compile(r"((?:香港|九龍|新界)[\u4e00-\u9fff]{2,8}(?:道|街|路)[0-9]{1,4}號[0-9]{1,2}樓[A-Z]室)")
+_ADDRESS = re.compile(r"((?:(?:香港|九龍|新界)?[\u4e00-\u9fff]{2,8}(?:道|街|路))[0-9]{1,4}號(?:[\u4e00-\u9fff]{1,8}(?:大廈|中心|樓|閣))?(?:[0-9]{1,2}樓)?[A-Z]?室?)")
+_ISO_BIRTHDATE = re.compile(r"(?:生日|出生日期)(?:係)?\s*((?:19|20)[0-9]{2}-[0-9]{2}-[0-9]{2})")
+_CARD_CVV = re.compile(r"((?:信用卡|扣帳卡|扣账卡)\s*(?:CVV|安全碼)\s*[:：]?\s*[0-9]{3,4})", re.I)
+_ZERO_WIDTH = "\u200b\u200c\u200d\ufeff"
 _BIRTHDATE = re.compile(r"((?:19|20)[0-9]{2}年[0-9]{1,2}月[0-9]{1,2}日)(?=出生)")
 _BIRTHDAY_AFTER = re.compile(r"生日係\s*((?:19|20)[0-9]{2}年[0-9]{1,2}月[0-9]{1,2}日)")
 _PASSPORT = re.compile(r"(?:護照(?:號碼)?|passport)\s*[:：#]?\s*([A-Z][0-9]{7,8})", re.I)
@@ -66,7 +70,13 @@ _HARD_NEGATIVES = (
     "我部電話壞咗，遲啲先打",
     "電話號碼之後先話你知",
     "佢叫我小心啲，唔好亂俾驗證碼人",
+    "多謝你，唔該晒，收到",
+    "生日快樂，今日開心啲",
+    "用信用卡買嘢有積分，唔使急",
+    "地址證明之後先交",
+    "護照過期要續期",
 )
+
 
 _HARD_NEGATIVE_FRAMES = (
     "講天氣講食飯講屋企人講新聞講股票",
@@ -97,6 +107,22 @@ _HARD_NEGATIVE_FRAMES = (
     "whatsapp 我遲啲覆你",
     "Your OTP code is not needed here",
     "Please call me tomorrow",
+    "Your OTP code is private, never share it",
+    "Do not share it with anyone",
+    "Keep it private, please",
+    "HKID copy can wait until tomorrow",
+    "passport control opens at {hour}",
+    "IG is down today",
+    "小心诈骗，不要把验证码告诉别人",
+    "😀 屋企人話唔使急 😀",
+    "全形金額５０００蚊",
+    "講天氣講食飯講屋企人講天氣講食飯講屋企人講天氣講食飯講屋企人講健康講政府新措施",
+    "屋企人話唔使急",
+    "用信用卡買嘢有積分，唔使急",
+    "唔該晒，收到",
+    "得閒嚟坐",
+    "搬咗啲嘢入屋，得閒嚟坐",
+    "影低啲重點，唔使急",
 )
 
 
@@ -114,6 +140,8 @@ def extra_gold_spans(text: str) -> list[dict]:
         (_ADDRESS, "address"),
         (_BIRTHDATE, "birthdate"),
         (_BIRTHDAY_AFTER, "birthdate"),
+        (_ISO_BIRTHDATE, "birthdate"),
+        (_CARD_CVV, "card_cvv"),
         (_PASSPORT, "passport"),
         (_CVV, "cvv"),
         (_EXPIRY, "expiry"),
@@ -128,6 +156,38 @@ def extra_gold_spans(text: str) -> list[dict]:
                     "label": label,
                 }
             )
+    spans.extend(_normalized_phone_spans(text))
+    return serve._drop_order_reference_spans(text, spans)
+
+
+def _normalized_phone_spans(text: str) -> list[dict]:
+    """Label HK phones split by zero-width characters or written with Unicode digits.
+
+    This is training-label normalization only; the live mask still learns from
+    the original text and never rewrites it.
+    """
+    normalized = []
+    owners = []
+    for index, char in enumerate(text):
+        if char in _ZERO_WIDTH:
+            continue
+        folded = unicodedata.normalize("NFKC", char)
+        for out in folded:
+            normalized.append(out)
+            owners.append(index)
+    body = "".join(normalized)
+    patterns = (
+        re.compile(r"(?:\+|00)?852[\s-]*[45679][0-9]{3}[\s-]?[0-9]{4}(?![0-9])"),
+        re.compile(r"(?<![0-9])[45679][0-9]{3}[\s-]?[0-9]{4}(?![0-9])"),
+    )
+    spans = []
+    for pattern in patterns:
+        for match in pattern.finditer(body):
+            if match.end() <= match.start():
+                continue
+            start = owners[match.start()]
+            end = owners[match.end() - 1] + 1
+            spans.append({"start": start, "end": end, "label": "phone"})
     return spans
 
 
@@ -206,8 +266,14 @@ def _fill(rng: random.Random, frame: str, surnames: list[str], givens: tuple[str
     fw_phone = _local_phone(rng).translate(_FW_MAP)
     district = rng.choice(("香港", "九龍", "新界"))
     street = rng.choice(("彌敦道", "皇后大道", "青山道", "英皇道", "德輔道"))
-    address = f"{district}{street}{rng.randrange(1, 999)}號{rng.randrange(1, 40)}樓{rng.choice('ABCDE')}室"
+    building = rng.choice(("", "示範大廈", "美麗大廈", "幸福中心", "安康樓"))
+    address = f"{district}{street}{rng.randrange(1, 999)}號{building}{rng.randrange(1, 40)}樓{rng.choice('ABCDE')}室"
     birthdate = f"{rng.randrange(1940, 2010)}年{rng.randrange(1, 13)}月{rng.randrange(1, 29)}日"
+    iso_birthdate = f"{rng.randrange(1940, 2010)}-{rng.randrange(1, 13):02d}-{rng.randrange(1, 29):02d}"
+    zw_source = _local_phone(rng)
+    zw_phone = zw_source[:4] + "\u200b" + zw_source[4:]
+    homoglyph_phone = "".join(chr(0x1D7CE + int(digit)) for digit in _local_phone(rng))
+    mixed_width_phone = fw_phone[:4] + _local_phone(rng)[4:]
     passport = f"{rng.choice('EHKZ')}{rng.randrange(10000000, 99999999)}"
     expiry = f"{rng.randrange(1, 13):02d}/{rng.randrange(26, 35)}"
     cvv = f"{rng.randrange(100, 999)}"
@@ -232,6 +298,10 @@ def _fill(rng: random.Random, frame: str, surnames: list[str], givens: tuple[str
         fw_phone=fw_phone,
         address=address,
         birthdate=birthdate,
+        iso_birthdate=iso_birthdate,
+        zw_phone=zw_phone,
+        homoglyph_phone=homoglyph_phone,
+        mixed_width_phone=mixed_width_phone,
         passport=passport,
         expiry=expiry,
         cvv=cvv,
@@ -269,7 +339,27 @@ _TRAIN_FRAMES = (
     "個OTP係 {otp}，快啲入",
     "email係 {email}，send 文件過嚟",
     "入去 {url_verify}",
+    "HKID: {hkid} 唔該",
+    "我本passport係 {passport}，check 下",
+    "IG {telegram} 加我",
+    "信用卡CVV {cvv}",
+    "生日 {iso_birthdate}",
+    "住址 {address}",
+    "我叫{name}，电话{phone}，请回复",
+    "验证码 {otp} 请收好",
+    "😀 我係{name}，電話{phone} 😀",
+    "我係{name}\n電話{phone}\n唔該",
+    "電話 {zw_phone} 搵我",
+    "號碼 {homoglyph_phone} 留低",
+    "電話 {mixed_width_phone} 留低",
+    "講天氣講食飯講屋企人講新聞講股票，電話{phone}，之後講返工講放假講飲茶講行山",
+    "住址 {address}，唔該",
+    "我搬咗去{address}，得閒嚟坐",
+    "我叫{name}，whatsapp {phone} 搵我",
+    "身份證 {hkid} 影低",
 )
+
+
 _TEST_FRAMES = (
     "本人{name}，請打{phone}找我",
     "我名叫{name}，之後聯絡",
@@ -299,6 +389,18 @@ _TEST_FRAMES = (
     "OTP {otp} 快啲用",
     "email: {email} 麻煩你",
     "前往 {url_verify} 驗證",
+    "HKID: {hkid} 請核對",
+    "我本passport係 {passport}，唔該",
+    "IG {telegram} 加朋友",
+    "信用卡CVV {cvv} 請收好",
+    "生日 {iso_birthdate} 唔好記錯",
+    "住址 {address} 今晚見",
+    "我叫{name}，电话{phone}，请回复",
+    "验证码 {otp} 请收好",
+    "😀 我係{name}，電話{phone} 😀",
+    "我係{name}\n電話{phone}\n今晚聯絡",
+    "電話 {zw_phone} 搵我",
+    "號碼 {homoglyph_phone} 留低",
 )
 
 
@@ -326,7 +428,7 @@ def generate_split(split: str, count: int, seed: int) -> list[dict]:
     negatives = _HARD_NEGATIVES[:5] if split == "train" else _HARD_NEGATIVES[5:]
     for text in negatives:
         rows.append({"text": text, "spans": gold_spans(text), "hard_negative": True})
-    for _ in range(max(10, count // 3)):
+    for _ in range(max(10, count // 2)):
         text = _negative_fill(rng, rng.choice(_HARD_NEGATIVE_FRAMES))
         rows.append({"text": text, "spans": gold_spans(text), "hard_negative": True})
     rng.shuffle(rows)

@@ -82,7 +82,7 @@ curl -s -X POST localhost:8766/v1/mask -H 'content-type: application/json' -d '{
 npm start                 # terminal 2
 ```
 
-掃 QR。預設（`WA_TRANSPORT=whatsmeow`）Session 存在 `wa-bridge.db`（若設為 `WA_TRANSPORT=wwebjs` 則在 `.wwebjs_auth/`）。權重見 Release [jevlike-hf-r1](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1) 同 [jevlike-pii-mask-hn1](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-pii-mask-hn1)。不要把 `.pt`、`.db` 或 encoder 推進 git。詳見 [models/README.md](models/README.md)。
+掃 QR。預設（`WA_TRANSPORT=whatsmeow`）Session 存在 `wa-bridge.db`（若設為 `WA_TRANSPORT=wwebjs` 則在 `.wwebjs_auth/`）。權重見 Release [jevlike-hf-r1](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1) 同 [jevlike-pii-mask-hn2](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-pii-mask-hn2)。不要把 `.pt`、`.db` 或 encoder 推進 git。詳見 [models/README.md](models/README.md)。
 
 Pi 建議 4 GB RAM 以上。`JEVLIKE_DEVICE=cpu` 為預設。
 

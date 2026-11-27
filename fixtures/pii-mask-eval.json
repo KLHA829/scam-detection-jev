@@ -471,6 +471,165 @@
       "kind": "negative",
       "text": "Your OTP code is private, do not share it",
       "expect": []
+    },
+    {
+      "id": "miniwa_mixed_identity_long",
+      "kind": "pii",
+      "text": "我係梁小英，電郵 fixture.leung@example.com，身份證 A123456(7)，住址 九龍灣測試道123號示範大廈8樓A室，生日 1975-04-23，護照 P00000000，信用卡CVV 000，Telegram @fixture_user_2026。WhatsApp 安全中心要求登入 http://fake-login-example.test/login 輸入驗證碼 771234",
+      "expect": [
+        "梁小英",
+        "fixture.leung@example.com",
+        "A123456(7)",
+        "九龍灣測試道123號示範大廈8樓A室",
+        "1975-04-23",
+        "P00000000",
+        "信用卡CVV 000",
+        "@fixture_user_2026",
+        "771234"
+      ],
+      "allow_url_overmask": true
+    },
+    {
+      "id": "boundary_address_building",
+      "kind": "pii",
+      "text": "住址 九龍灣測試道123號示範大廈8樓A室，唔該",
+      "expect": [
+        "九龍灣測試道123號示範大廈8樓A室"
+      ]
+    },
+    {
+      "id": "boundary_card_cvv",
+      "kind": "pii",
+      "text": "信用卡CVV 000，唔好影出去",
+      "expect": [
+        "信用卡CVV 000"
+      ]
+    },
+    {
+      "id": "robust_emoji_name_phone",
+      "kind": "pii",
+      "text": "😀😀 我係蔡子軒，電話 6123 4567 😀",
+      "expect": [
+        "蔡子軒",
+        "6123 4567"
+      ]
+    },
+    {
+      "id": "robust_linebreak_name_phone",
+      "kind": "pii",
+      "text": "我係蔡子軒\n電話 6123 4567\n今晚聯絡",
+      "expect": [
+        "蔡子軒",
+        "6123 4567"
+      ]
+    },
+    {
+      "id": "robust_simplified_name_phone",
+      "kind": "pii",
+      "text": "我叫蔡子轩，电话 6123 4567，请回复",
+      "expect": [
+        "蔡子轩",
+        "6123 4567"
+      ]
+    },
+    {
+      "id": "robust_zero_width_phone",
+      "kind": "pii",
+      "text": "電話 6123​4567 搵我",
+      "expect": [
+        "6123",
+        "4567"
+      ]
+    },
+    {
+      "id": "robust_homoglyph_phone",
+      "kind": "pii",
+      "text": "號碼 𝟔𝟏𝟐𝟑𝟒𝟓𝟔𝟕 留低",
+      "expect": [
+        "𝟔𝟏𝟐𝟑𝟒𝟓𝟔𝟕"
+      ]
+    },
+    {
+      "id": "robust_mixed_width_phone",
+      "kind": "pii",
+      "text": "電話 ６１２３4567 留低",
+      "expect": [
+        "６１２３4567"
+      ]
+    },
+    {
+      "id": "robust_chunk_boundary_phone",
+      "kind": "pii",
+      "text": "講天氣講食飯講屋企人講天氣講食飯講屋企人講天氣講食飯講屋企人講天氣講食飯講屋企人講天氣講食飯講屋企人講天氣講食飯講屋企人講天氣講食飯講屋企人講天氣講食飯講屋企人最後電話 6123 4567 俾你，之後繼續講返工講放假講飲茶講行山講買餸講電影講健康講政府新措施之後繼續講返工講放假講飲茶講行山講買餸講電影講健康講政府新措施",
+      "expect": [
+        "6123 4567"
+      ]
+    },
+    {
+      "id": "neg3_never_share",
+      "kind": "negative",
+      "text": "Never share it with anyone, even if they say they are bank staff",
+      "expect": []
+    },
+    {
+      "id": "neg3_polite",
+      "kind": "negative",
+      "text": "多謝你，唔該晒，收到",
+      "expect": []
+    },
+    {
+      "id": "neg3_hkid_label",
+      "kind": "negative",
+      "text": "HKID copy can wait until tomorrow",
+      "expect": []
+    },
+    {
+      "id": "neg3_passport_control",
+      "kind": "negative",
+      "text": "passport control opens at nine",
+      "expect": []
+    },
+    {
+      "id": "neg3_ig_word",
+      "kind": "negative",
+      "text": "IG is down today",
+      "expect": []
+    },
+    {
+      "id": "neg3_credit_card_promo",
+      "kind": "negative",
+      "text": "用信用卡買嘢有積分，唔使急",
+      "expect": []
+    },
+    {
+      "id": "neg3_birthday_greeting",
+      "kind": "negative",
+      "text": "生日快樂，今日開心啲",
+      "expect": []
+    },
+    {
+      "id": "neg3_address_proof",
+      "kind": "negative",
+      "text": "地址證明之後先交",
+      "expect": []
+    },
+    {
+      "id": "neg3_emoji_family",
+      "kind": "negative",
+      "text": "😀 屋企人話唔使急 😀",
+      "expect": []
+    },
+    {
+      "id": "neg3_simplified_warning",
+      "kind": "negative",
+      "text": "小心诈骗，不要把验证码告诉别人",
+      "expect": []
+    },
+    {
+      "id": "neg3_fullwidth_amount",
+      "kind": "negative",
+      "text": "全形金額５０００蚊",
+      "expect": []
     }
   ]
 }
