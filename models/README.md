@@ -44,16 +44,18 @@ Worker 載入順序：
 
 | | |
 |--|--|
-| Tag | `jevlike-pii-mask-hn1` |
-| 頁面 | https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-pii-mask-hn1 |
-| 資產 | `jevlike_hf_pii_mask_hn1.pt`（約 2.3 MB） |
-| SHA-256 | `b6b644cd377e3b82f6f44d83618fd043b341b04c6b6ca1778e2da35d5d35220a` |
+| Tag | `jevlike-pii-mask-hn2` |
+| 頁面 | https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-pii-mask-hn2 |
+| 資產 | `jevlike_hf_pii_mask_hn2.pt`（約 2.3 MB） |
+| SHA-256 | `55a52625d328f58e5aa227039b31f83308f8a5e2b233ca61ad7de614a8a9a5fa` |
 
 ```bash
 scripts/download_pii_mask_ckpt.sh
 ```
 
 預設寫入 `models/jevlike_hf_pii_mask.pt`；設咗 `JEVLIKE_MASK_CKPT` 就寫去嗰個路徑（相對路徑由 repo root 計）。腳本會核對 SHA-256。`JEVLIKE_CKPT_FORCE=1` 可以強制重下載。
+
+`hn2` 喺 `fixtures/pii-mask-eval.json`（85 案）嘅固定評估：precision 0.9805、recall 1.0000、F1 0.9901；67/67 個 secret 全遮，36/36 條 hard-negative 冇誤遮。
 
 **不要** 把 `hfl/chinese-roberta-wwm-ext` 編碼器（約 400 MB）commit 進 repo。第一次跑 `python jevlike_serve.py` 會寫入 Hugging Face cache（通常 `~/.cache/huggingface/`），Raspberry Pi 上可能要數分鐘。
 
@@ -82,7 +84,7 @@ scripts/download_pii_mask_ckpt.sh
 python scripts/train_pii_mask.py --output models/jevlike_hf_pii_mask.pt
 ```
 
-有 `r1` 檔時，頭的初始權重從 `r1` 抄出再練（rank 256，同一個凍結編碼器）。輸出唔會覆蓋 `jevlike_hf_chinese_roberta_r1.pt`。標註係合成句子：規則已識嘅電話／戶口，加上規則漏咗嘅「我叫」、中文數字電話、地址、出生日期、護照、到期日/CVV 同社交帳號。負例包括機構名、職銜、年份、淨係講「驗證碼」嘅句子、日常廣東話用字（例如屋企人、政府）、訂單/參考編號、日期同金額。
+有 `r1` 檔時，頭的初始權重從 `r1` 抄出再練（rank 256，同一個凍結編碼器）。輸出唔會覆蓋 `jevlike_hf_chinese_roberta_r1.pt`。標註係合成句子：規則已識嘅電話／戶口，加上規則漏咗嘅「我叫」、中文數字電話、地址、出生日期、護照、到期日/CVV 同社交帳號。負例包括機構名、職銜、年份、淨係講「驗證碼」嘅句子、日常廣東話用字（例如屋企人、政府）、訂單/參考編號、日期、金額、禮貌句同英文 privacy warning。fixture 亦覆蓋 emoji、繁簡/中英混寫、line breaks、全半形、zero-width/Unicode digit 電話、長訊息 chunk boundary，以及地址大廈名同信用卡 CVV 邊界。
 
 固定評估（需要已下載 encoder 同 mask checkpoint）：
 

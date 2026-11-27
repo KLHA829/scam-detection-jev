@@ -496,6 +496,9 @@ class PiiMaskLabelTests(unittest.TestCase):
             "護照號碼 E12345678": "E12345678",
             "卡到期日 12/29，CVV 123": "12/29",
             "加我 Telegram @chan_test123": "@chan_test123",
+            "住址 九龍灣測試道123號示範大廈8樓A室": "九龍灣測試道123號示範大廈8樓A室",
+            "生日 1975-04-23": "1975-04-23",
+            "信用卡CVV 000": "信用卡CVV 000",
         }
         for text, expected in examples.items():
             self.assertIn(expected, _covered(text, data.gold_spans(text)))
@@ -511,6 +514,15 @@ class PiiMaskLabelTests(unittest.TestCase):
         self.assertIn("123456", covered)
         self.assertNotIn("驗證碼", covered)
         self.assertNotIn("小心", covered)
+
+    def test_single_character_model_flags_are_ignored(self):
+        from pii_mask_head import spans_from_flags
+
+        self.assertEqual(spans_from_flags("屋企人話唔使急", [True] + [False] * 7), [])
+        text = "叫我阿明"
+        flags = [False] * len(text)
+        flags[2] = flags[3] = True
+        self.assertEqual(spans_from_flags(text, flags), [{"start": 2, "end": 4, "label": "model"}])
 
     def test_service_and_english_otp_lure_words_are_cleared(self):
         from pii_mask_head import clear_lure_chars, spans_from_flags
@@ -712,10 +724,10 @@ class ThresholdTests(unittest.TestCase):
 
         cache = {
             "rows": [
-                {"text": "a", "spans": [{"start": 0, "end": 1, "label": "otp"}], "hard_negative": False},
-                {"text": "b", "spans": [], "hard_negative": True},
+                {"text": "aa", "spans": [{"start": 0, "end": 2, "label": "otp"}], "hard_negative": False},
+                {"text": "bb", "spans": [], "hard_negative": True},
             ],
-            "offsets": [[(0, 1)], [(0, 1)]],
+            "offsets": [[(0, 2)], [(0, 2)]],
         }
         threshold, stats = choose_threshold(cache, [[0.45], [0.5]])
         self.assertLessEqual(threshold, 0.45)
@@ -1172,6 +1184,14 @@ class SyntheticLabelTests(unittest.TestCase):
         spoken = "電話一二三四五六七八"
         self.assertEqual(serve.find_mask_spans(spoken), [])
         self.assertEqual(data.extra_gold_spans(spoken)[0]["label"], "phone")
+
+    def test_zero_width_and_unicode_digit_phones_are_gold(self):
+        import pii_mask_data as data
+
+        zero_width = "電話 6123\u200b4567 搵我"
+        self.assertIn("6123\u200b4567", _covered(zero_width, data.gold_spans(zero_width)))
+        unicode_digits = "號碼 𝟔𝟏𝟐𝟑𝟒𝟓𝟔𝟕 留低"
+        self.assertIn("𝟔𝟏𝟐𝟑𝟒𝟓𝟔𝟕", _covered(unicode_digits, data.gold_spans(unicode_digits)))
 
     def test_generate_split_labels_positives_and_keeps_hard_negatives_clear(self):
         import pii_mask_data as data

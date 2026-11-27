@@ -107,7 +107,8 @@ def spans_from_flags(text: str, flags: list[bool], label: str = "model") -> list
             stop = end
             while stop > index and text[stop - 1].isspace():
                 stop -= 1
-            if stop > index:
+            # Supported PII atoms are multi-character; isolated one-character flags are token-boundary noise.
+            if stop - index > 1:
                 spans.append({"start": index, "end": stop, "label": label})
             index = end
         else:

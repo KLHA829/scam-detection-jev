@@ -4,9 +4,9 @@
 # asset; Hugging Face Hub supplies it the first time jevlike_serve.py starts.
 #
 # Canonical release:
-#   Tag:    jevlike-pii-mask-hn1
-#   Asset:  jevlike_hf_pii_mask_hn1.pt
-#   SHA256: b6b644cd377e3b82f6f44d83618fd043b341b04c6b6ca1778e2da35d5d35220a
+#   Tag:    jevlike-pii-mask-hn2
+#   Asset:  jevlike_hf_pii_mask_hn2.pt
+#   SHA256: 55a52625d328f58e5aa227039b31f83308f8a5e2b233ca61ad7de614a8a9a5fa
 #
 # Usage:
 #   scripts/download_pii_mask_ckpt.sh
@@ -18,9 +18,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TAG="jevlike-pii-mask-hn1"
-ASSET="jevlike_hf_pii_mask_hn1.pt"
-EXPECTED_SHA256="b6b644cd377e3b82f6f44d83618fd043b341b04c6b6ca1778e2da35d5d35220a"
+TAG="jevlike-pii-mask-hn2"
+ASSET="jevlike_hf_pii_mask_hn2.pt"
+EXPECTED_SHA256="55a52625d328f58e5aa227039b31f83308f8a5e2b233ca61ad7de614a8a9a5fa"
 DEST="${JEVLIKE_MASK_CKPT:-$ROOT/models/jevlike_hf_pii_mask.pt}"
 case "$DEST" in
   /*) ;;
