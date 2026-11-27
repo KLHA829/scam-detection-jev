@@ -20,7 +20,7 @@ class VoiceAsrServeTest(unittest.TestCase):
             return "/tmp/wsyue"
 
         resolved = serve.resolve_model_path("ASLP-lab/WSYue-ASR/sensevoice_small_yue", fake_download)
-        self.assertEqual(resolved, "/tmp/wsyue/sensevoice_small_yue")
+        self.assertEqual(resolved, os.path.join("/tmp/wsyue", "sensevoice_small_yue"))
         self.assertEqual(calls, [("ASLP-lab/WSYue-ASR", ["sensevoice_small_yue/*"])])
         self.assertEqual(serve.resolve_model_path("FunAudioLLM/SenseVoiceSmall", fake_download), "FunAudioLLM/SenseVoiceSmall")
 
