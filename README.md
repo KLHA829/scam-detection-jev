@@ -144,6 +144,7 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `HEURISTIC_ENABLED` | `true` | Enables link rules and the curated blocklist fast path. |
 | `BLOCK_ENABLED` | `true` | Enables malicious-host auto-block of unsaved contacts, not model-based blocking. |
 | `MALICIOUS_HOSTS_PATH` | `data/malicious-hosts.json` in the repo | Maintained host list override. |
+| `MALICIOUS_FEED_HOSTS_PATH` | `data/threat-feed-hosts.json` in the repo | Offline PhishTank verified-online snapshot. A feed host match **never archives or blocks**; it only adds a line to the review LLM prompt as strong scam evidence. Refresh with `node scripts/update-threat-feeds.js` — manual/cron only; the bot itself never downloads. |
 | `MALICIOUS_HOSTS_ALLOW_EMPTY` | Off | Set `1` or `true` to allow a reload with `hosts:[]` to clear the in-memory list. |
 | `BLOCK_LOG_PATH` | `./blocks.jsonl` | Local block history used by operator commands. |
 | `BOT_CONTACT_NAMES_PATH` | `./bot-contact-names.json` | Contacts whose name the bot wrote (block or `（可疑推銷）` label); only those names do not count as saved contacts. |
@@ -311,7 +312,7 @@ BLOCK_LOG_PATH="$STATE_DIR/blocks.jsonl" npm start
 | `lib/jevlike-client.js` | `createMaskClient`, `/v1/mask` |
 | `lib/llm-review.js` | Primary LLM after mask |
 | `lib/context-llm.js` | Context LLM when `CONTEXT_LLM_ENABLED` is on |
-| `lib/malicious-hosts.js`, `data/malicious-hosts.json` | Hosts that may auto-block unsaved contacts |
+| `lib/malicious-hosts.js`, `data/malicious-hosts.json` | Hosts that may auto-block unsaved contacts. `data/threat-feed-hosts.json` is a PhishTank verified-online snapshot from `scripts/update-threat-feeds.js`; it is a review-LLM signal only and never archives or blocks |
 | `jevlike_serve.py` | Worker: `/v1/mask` required; `/v1/score` optional for lab |
 | `lab/score-message.js` | Lab-only `/v1/score` helper |
 | `scripts/download_jevlike_ckpt.sh` | Pulls r1 head from GitHub Release |
