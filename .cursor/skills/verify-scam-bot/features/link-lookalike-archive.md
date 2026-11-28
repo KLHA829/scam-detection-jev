@@ -13,7 +13,7 @@ An unsaved contact who sends a lookalike host, or a short link that also asks fo
 - `lookalike-shapes` hits `whatsapp-secure.com`, a one-character misspelling, a homoglyph, and a `userinfo@evil` URL.
 - `allowlist` leaves `sf-express.com`, `hsbc.com.hk`, `wa.me`, `chat.whatsapp.com`, and `whatsapp.com` unflagged.
 - `hsbc-regional` sends official UK, China, Australia, and Singapore HSBC domains and their subdomains to mask → LLM without a lookalike rule hit. Lookalikes on unrelated hosts still hit. Covered by `bin/drive-mask-before-llm`.
-- `short-solicit` hits a short link only together with an OTP ask, an impersonation claim, or an urgent account-and-money ask. A bare `bit.ly` link does not hit.
+- `short-solicit` hits a short link together with any coarse solicitation keyword (money, credential, login or impersonation word). A bare `bit.ly` link does not hit.
 - `warning-only-review` in `lib/link-rules.test.js` covers narrative/quoted/English warnings, fake + genuine URLs, all hard-link types, both contact states and both review paths, mask failure, direct asks and repeated flagged links. Included in `bin/drive-mask-before-llm`.
 - Short-link solicitation uses coarse flat keywords only (`SOLICIT_HINT_RE` in `lib/link-rules.js`): any shortener host plus a money, credential, login or impersonation word routes the message to masked review. There is no negation stripping or distance binding — a hit never archives or blocks, so precision is the LLM's job, not the regex's.
 - `short-link-advice` sends authority mentions and anti-scam advice to mask → LLM, not a rule-only archive. Impersonation requires an affirmative self-identification or a WhatsApp official header, not the bare words 銀行職員 / WhatsApp 官方. Locked by `sends short-link advice and authority mentions to masked AI review` and `flags affirmative impersonation short-link scams for AI review` in `lib/link-rules.test.js`; included in `bin/drive-mask-before-llm`.
@@ -40,7 +40,7 @@ Preconditions:
 
 ```bash
 node --test --test-reporter tap \
-  --test-name-pattern 'does not flag allowlisted hosts, a bare short link, or a short link with bill-splitting' \
+  --test-name-pattern 'does not flag allowlisted hosts or a bare short link' \
   lib/link-rules.test.js
 ```
 
@@ -60,7 +60,7 @@ Exit code `0`. `https://whatsapp-secure.com/login` is id `lookalike_domain`.
 
 ```bash
 node --test --test-reporter tap \
-  --test-name-pattern 'flags a short link only together with OTP, impersonation, or an urgent account ask' \
+  --test-name-pattern 'flags a short link with any solicitation keyword for review' \
   lib/link-rules.test.js
 ```
 
@@ -86,7 +86,7 @@ node --test --test-reporter tap \
 
 Exit code `0`. Saved-contact recommendations are deferred and make no automatic writes.
 
-- **Proof.** Save TAP to `.cursor/skills/verify-scam-bot/evidence/<UTC-stamp>-link-lookalike-archive/node-test.txt`. The file contains `ok` for `archives an unsaved lookalike without auto-block` and for `does not flag allowlisted hosts, a bare short link, or a short link with bill-splitting`.
+- **Proof.** Save TAP to `.cursor/skills/verify-scam-bot/evidence/<UTC-stamp>-link-lookalike-archive/node-test.txt`. The file contains `ok` for `archives an unsaved lookalike without auto-block` and for `does not flag allowlisted hosts or a bare short link`.
 
 ## Gotchas
 
