@@ -1,6 +1,6 @@
 # Malicious-host auto-block
 
-Unsaved contacts are **auto-blocked only** when the current message URL matches a host in `data/malicious-hosts.json` (exact or suffix). The contact name becomes `封鎖·惡意域名`, the chat is archived, and `blocks.jsonl` gains a line. Saved contacts never auto-block. Lookalike heuristics, short links, jevlike lab scores, and LLM answers do not auto-block.
+Unsaved contacts are **auto-blocked only** when the current message URL matches a host in `data/malicious-hosts.json` (exact or suffix) **and** masked LLM review confirms scam. The contact name becomes `封鎖·惡意域名`, the chat is archived, and `blocks.jsonl` gains a line. Saved contacts never auto-block. Lookalike heuristics, short links, jevlike lab scores, and LLM answers alone do not auto-block.
 
 ## Sub-features
 
@@ -11,8 +11,8 @@ Unsaved contacts are **auto-blocked only** when the current message URL matches 
 - `unsaved-block` calls `blockContact` with `封鎖·惡意域名` when the heuristic id is `malicious_host`.
 - `score-free-records` new block records, guided queue entries, and action log lines omit the live placeholder score; old scored queue entries remain actionable. Separate proof: `node --test lib/placeholder-score.test.js` (not included in `bin/drive-malicious-host-block`).
 - `email-archive-only` archives a blocklisted email domain without calling `blockContact`; a separate blocklisted URL in the same message can still block.
-- `forwarded-warning-review` drives the WhatsApp message handler: warning-only scam reports go to masked AI review for saved/unsaved and forwarded/pasted senders; forwarded lures, direct mixed solicitations and repeated flagged links retain hard-link handling.
-- `before-llm` blocks without waiting for mask/LLM (exclusive to known malicious URLs; test names may still say `scorer`).
+- `forwarded-warning-review` drives the WhatsApp message handler: both anti-scam warnings and lures quoting a blocklisted URL route through masked AI review (with a device-checked system prompt note, no raw host leak); benign warnings stay ignored while AI-confirmed lures from unsaved senders block.
+- `no-jevlike-score` blocks after masked LLM confirmation without waiting for jevlike `/v1/score`.
 - `saved-alert-only` suspicious DMs from saved contacts open a review card even in automatic mode or before setup. No archive or block runs until the operator chooses. If a queued action finds the contact was just saved, the bot defers it as well.
 - `hold-setup` while the first-run setup poll is unanswered, `holdBlock` suppresses automatic blocks and still lets unsaved chats archive.
 
@@ -43,13 +43,13 @@ Exit code `0`. `summary.json` has `"proved": true`.
 ```bash
 node --test --test-reporter tap lib/malicious-hosts.test.js
 node --test --test-reporter tap \
-  --test-name-pattern 'blocks a malicious host without waiting for the scorer|holds auto-block while the setup choice is unanswered' \
+  --test-name-pattern 'blocks a malicious host after masked LLM confirmation without waiting for the scorer|holds auto-block while the setup choice is unanswered' \
   lib/block-policy.test.js
 ```
 
 Exit code `0`. TAP shows block with `blockReason` `malicious_host` and contact name `封鎖·惡意域名`.
 
-- **Proof.** Save TAP to `.cursor/skills/verify-scam-bot/evidence/<UTC-stamp>-malicious-host-block/node-test.txt`. Include `ok` for `blocks an unsaved contact on a listed host without waiting for the scorer`.
+- **Proof.** Save TAP to `.cursor/skills/verify-scam-bot/evidence/<UTC-stamp>-malicious-host-block/node-test.txt`. Include `ok` for `blocks an unsaved contact on a listed host after masked LLM confirmation without waiting for jevlike score`.
 
 ## Gotchas
 

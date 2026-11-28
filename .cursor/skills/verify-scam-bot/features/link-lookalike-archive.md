@@ -9,9 +9,8 @@ An unsaved contact who sends a lookalike host goes to masked AI review and is ar
 - `allowlist` leaves `sf-express.com`, `hsbc.com.hk`, `wa.me`, `chat.whatsapp.com`, and `whatsapp.com` unflagged.
 - `hsbc-regional` sends official UK, China, Australia, and Singapore HSBC domains and their subdomains to mask → LLM without a lookalike rule hit. Lookalikes on unrelated hosts still hit. Covered by `bin/drive-mask-before-llm`.
 - `short-links-to-ai` routes short links (with or without OTP, money, impersonation, or advice text) directly to masked AI review without a link-rule hit (`routes short links (including OTP, money, and impersonation text) directly to masked AI review` and `sends short-link advice and authority mentions to masked AI review` in `lib/link-rules.test.js`, included in `bin/drive-mask-before-llm`).
-- `warning-only-review` in `lib/link-rules.test.js` covers narrative/quoted/English warnings, fake + genuine URLs, malicious-host and lookalike links, both contact states and both review paths, mask failure, direct asks and repeated flagged links. Included in `bin/drive-mask-before-llm`.
+- `curated-host-review` in `lib/link-rules.test.js` covers routing both warnings and lures containing a curated malicious host through mask → LLM with a device-checked system note (never leaking raw hostnames), across both contact states and both review paths, plus mask failure fail-closed. Included in `bin/drive-mask-before-llm`.
 - `saved-alert-only` sends a saved contact's lookalike hit or short-link lure to masked AI review and opens an operator review card only if AI confirms the scam.
-- `before-llm` acts on the link rule without waiting for mask/LLM (test names may still say `scorer`).
 - Advice remains fail-closed on mask errors (`fails closed when masking short-link advice fails`, also in `bin/drive-mask-before-llm`).
 
 ## How to get to it (user POV)

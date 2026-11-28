@@ -237,11 +237,11 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('archives on explicit malicious URL even when score is low', () => {
+  it('waits for masked LLM confirmation even on a curated malicious URL', () => {
     const low = scoreResult({ score: 4, label: 'not_scam' });
     assert.deepEqual(
       decideIncomingAction(low, '85261234567', true, { hit: true, id: 'malicious_host' }),
-      { action: 'archive', archiveReason: 'obvious_scam' },
+      { action: 'ignore', archiveReason: null },
     );
   });
 
@@ -285,21 +285,21 @@ describe('decideIncomingAction matrix', () => {
     );
   });
 
-  it('only malicious_host archives without AI and auto-blocks afterwards', () => {
+  it('only malicious_host upgrades an AI-confirmed archive to auto-block for unsaved contacts', () => {
     const high = scoreResult({ score: 99, label: 'scam' });
-    const lookalike = { hit: true, id: 'lookalike_domain', archiveReason: 'obvious_scam' };
+    const lookalike = { hit: true, id: 'lookalike_domain', archiveReason: null };
     const d = decideIncomingAction(high, '14155550123', false, lookalike);
     assert.equal(d.action, 'ignore');
     assert.equal(d.archiveReason, null);
-    const notBlocked = applyBlockPolicy(d, {
+    const notBlocked = applyBlockPolicy({ action: 'archive', archiveReason: 'llm_review_scam' }, {
       savedContact: false,
       scoreResult: high,
       heuristic: lookalike,
     });
-    assert.equal(notBlocked.action, 'ignore');
+    assert.equal(notBlocked.action, 'archive');
 
-    const malicious = { hit: true, id: 'malicious_host', archiveReason: 'obvious_scam' };
-    const blocked = applyBlockPolicy(decideIncomingAction(high, '14155550123', false, malicious), {
+    const malicious = { hit: true, id: 'malicious_host', archiveReason: null };
+    const blocked = applyBlockPolicy({ action: 'archive', archiveReason: 'llm_review_scam' }, {
       savedContact: false,
       scoreResult: high,
       heuristic: malicious,

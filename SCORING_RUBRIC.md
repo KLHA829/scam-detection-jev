@@ -8,10 +8,10 @@ Facts about live decisions and lab-only jevlike thresholds. Setup and env wiring
 
 | Stage | Trigger | Archive reason | Block |
 |-------|---------|----------------|-------|
-| Known malicious URL | Blocklisted URL on **current** message, subject to the warning-only exception below | `obvious_scam` without AI | Unsaved + malicious-host match only |
-| Blocklisted email domain | Email address with a listed host on **current** message, subject to the warning-only exception below | `obvious_scam` without AI | Never |
+| Known malicious URL | Blocklisted URL on **current** message; bypasses cooldown and appends device-checked note (no raw host) to LLM prompt | Mask → AI (`context_llm` or `llm_review_scam`) | Unsaved + malicious-host match + AI confirms scam |
+| Blocklisted email domain | Email address with a listed host on **current** message; bypasses cooldown and appends device-checked note (no raw host) to LLM prompt | Mask → AI (`context_llm` or `llm_review_scam`) | Never |
 | Link lookalike rule | Brand lookalike host (`lookalike_domain`). Short links and phrase tropes have no separate heuristic rule and go straight to masked AI review. | Mask → AI; no rule-only archive | Never from the rule |
-| Context LLM (default) | `CONTEXT_LLM_ENABLED` on (default when unset); not skipped by a direct archive | `context_llm` when model says `archive` or `block` with sufficient confidence; otherwise `pitch: true` only renames an unsaved sender to `（可疑推銷）` | Never from LLM |
+| Context LLM (default) | `CONTEXT_LLM_ENABLED` on (default when unset) | `context_llm` when model says `archive` or `block` with sufficient confidence; otherwise `pitch: true` only renames an unsaved sender to `（可疑推銷）` | Never from LLM alone |
 | Primary LLM | `CONTEXT_LLM_ENABLED=0` or `false` | `llm_review_scam` only when label is `scam` and confidence meets `LLM_REVIEW_MIN_CONFIDENCE` (default 0.7) | Never from LLM |
 | No action | `not_scam`, `no_action`, low confidence, mask failure, LLM off or unavailable, error, `unknown` | None | None |
 
@@ -31,12 +31,12 @@ End-to-end order: [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#ac
 
 | Contact | Malicious-host URL on current message | Blocklisted email | Lookalike host |
 |---------|--------------------------------------|-------------------|-------------------------|
-| Unsaved | May **block** (`封鎖·惡意域名`) after archive | Archive only | AI review only; never auto-block |
-| Saved | Operator alert only | Operator alert only | Masked AI review; operator alert only if AI confirms scam |
+| Unsaved | May **block** (`封鎖·惡意域名`) after AI confirms scam | Archive only after AI confirms scam | AI review only; never auto-block |
+| Saved | Masked AI review; operator alert only if AI confirms scam | Masked AI review; operator alert only if AI confirms scam | Masked AI review; operator alert only if AI confirms scam |
 
 Saved contacts also get an alert rather than an automatic archive when flagged by either model, regardless of operator mode.
 
-Warning-only scam reports go to **mask → LLM** before malicious-host and lookalike rules, regardless of saved status or forwarding metadata. They require scam framing, no direct solicitation outside quoted/reported/negated speech, and exactly one hard-hit URL occurrence. Extra genuine-site references are fine; direct asks, repeated flagged URLs and second flagged links retain normal link rules. The review can archive, but cannot auto-block; normal mask, enablement and cooldown rules apply.
+All messages — including anti-scam warnings quoting a blocklisted URL or lookalike — go through **mask → LLM** (no linguistic warning-only regexes). When a message matches `data/malicious-hosts.json`, the bot appends a device-checked note (never the raw hostname) so the LLM classifies lures as scam while leaving anti-scam warnings as `no_action`/`not_scam`. Mask failure or disabled LLM fails closed (no archive or block).
 
 List file: [`data/malicious-hosts.json`](data/malicious-hosts.json). Optional path override: `MALICIOUS_HOSTS_PATH`. Empty `hosts:[]` keeps the previous list unless `MALICIOUS_HOSTS_ALLOW_EMPTY=1`.
 

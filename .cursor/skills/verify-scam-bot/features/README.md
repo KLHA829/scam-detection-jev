@@ -2,7 +2,7 @@
 
 Maintained recipes for operator-facing behavior. Read this index, then the feature file.
 
-Live inbound: curated blocklist fast path → else **mask → LLM**. jevlike **`POST /v1/score`** is **lab/eval only** — not live archive proof.
+Live inbound: structural link check → **mask → LLM** → block policy. jevlike **`POST /v1/score`** is **lab/eval only** — not live archive proof.
 
 ## Baseline preconditions
 
