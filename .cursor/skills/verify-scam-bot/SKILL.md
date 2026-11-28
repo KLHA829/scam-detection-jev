@@ -5,7 +5,7 @@ description: "Drive the local WhatsApp scam-DM bot (scam-detection-jev) the way 
 
 # Verify scam-detection-jev
 
-This skill proves operator-facing behavior of the local WhatsApp scam-DM bot. **Live inbound DMs:** only curated URL or email-domain matches in `data/malicious-hosts.json` can archive without masked AI review, subject to the warning-only exception. Lookalike and soliciting short-link hits go through **mask (`POST /v1/mask`) → OpenAI-compatible LLM** and get an archive recommendation only when AI confirms scam. Saved contacts get a self-chat review card for any recommendation instead of an automatic archive or block. **Auto-block** applies only to unsaved contacts with a curated URL match, never to email-domain matches or model verdicts. jevlike `/v1/score` is lab-only.
+This skill proves operator-facing behavior of the local WhatsApp scam-DM bot. **Live inbound DMs:** only curated URL or email-domain matches in `data/malicious-hosts.json` can archive without masked AI review, subject to the warning-only exception. Lookalike hits and short links go through **mask (`POST /v1/mask`) → OpenAI-compatible LLM** and get an archive recommendation only when AI confirms scam. Saved contacts get a self-chat review card for any recommendation instead of an automatic archive or block. **Auto-block** applies only to unsaved contacts with a curated URL match, never to email-domain matches or model verdicts. jevlike `/v1/score` is lab-only.
 
 Smoke verification does not open Chrome or WhatsApp. It starts `stub-jevlike.js` (same as `npm run stub`) on `127.0.0.1:18766` and runs `node --test` cases that call `processIncomingMessage`. Live WhatsApp (`npm start`) needs a human QR scan and `.wwebjs_auth/`. Do not start it for smoke proof.
 
