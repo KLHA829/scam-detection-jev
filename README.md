@@ -180,7 +180,7 @@ These are user-facing setup options for `scripts/download_pii_mask_ckpt.sh`.
 |---|---|---|
 | `JEVLIKE_RELEASE_REPO` | `KLHA829/scam-detection-jev` | GitHub release repository. |
 | `JEVLIKE_DOWNLOAD_URL` | `https://github.com/{repo}/releases/download/jevlike-pii-mask-hn2/jevlike_hf_pii_mask_hn2.pt` | Direct download URL override. |
-| `JEVLIKE_MASK_CKPT` | Repo `models/jevlike_hf_pii_mask.pt` | Helper destination (relative paths resolve from repo root). Unless forced or mismatched SHA-256, an existing destination exits without re-downloading. |
+| `JEVLIKE_MASK_CKPT` | Repo `models/jevlike_hf_pii_mask.pt` | Helper destination (relative paths resolve from repo root). Unless forced, an existing destination passing size/HTML checks exits without re-downloading; its SHA-256 is still verified, and a mismatch requires manual recovery. |
 | `JEVLIKE_CKPT_MIN_BYTES` | `1000000` | Minimum size accepted as a checkpoint. |
 | `JEVLIKE_CKPT_FORCE` | `0` | Exactly `1` bypasses the existing-destination shortcut and downloads again. |
 | `GH_TOKEN`, `GITHUB_TOKEN` | Unset | Optional GitHub auth; first nonempty token wins in this order. Never commit tokens. |
