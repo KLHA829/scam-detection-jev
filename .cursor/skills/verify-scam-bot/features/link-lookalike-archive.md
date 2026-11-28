@@ -64,7 +64,7 @@ node --test --test-reporter tap \
   lib/link-rules.test.js
 ```
 
-Exit code `0`. `請提供驗證碼 https://bit.ly/fee` is id `short_link_solicit`. `請轉帳 https://bit.ly/x` does not hit.
+Exit code `0`. `請提供驗證碼 https://bit.ly/fee` and `請轉帳 https://bit.ly/x` are id `short_link_solicit` — any solicitation keyword plus a shortener routes to review; a bare shortener does not.
 
 - **Unsaved archive (no block).** Run:
 
