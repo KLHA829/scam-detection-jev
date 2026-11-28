@@ -18,9 +18,9 @@ If the mask head is missing, the response is invalid, or the call fails, the bot
 
 ## Why the LLM instead of jevlike score on inbound
 
-HK and TW DMs reuse payment, OTP, courier, and impersonation patterns, but phrase rules alone false-positive on normal elderly chat. Only a curated URL or email-domain match on the **current** message bypasses AI, subject to the warning-only exception.
+HK and TW DMs reuse payment, OTP, courier, and impersonation patterns, but phrase rules alone false-positive on normal elderly chat. Curated URL and email-domain matches on the **current** message do not bypass AI; they bypass only the per-chat cooldown and add a device-checked prompt note so the model can distinguish lures from anti-scam warnings.
 
-Everything else goes through mask and an OpenAI-compatible review (`LLM_REVIEW_ENABLED` default **on**). Archive from the LLM needs `confidence >= LLM_REVIEW_MIN_CONFIDENCE` (default **0.7**). Lower or missing confidence means ignore. Errors and `unknown` mean ignore.
+All inbound DMs go through mask and an OpenAI-compatible review (`LLM_REVIEW_ENABLED` default **on**). Archive from the LLM needs `confidence >= LLM_REVIEW_MIN_CONFIDENCE` (default **0.7**). Lower or missing confidence means ignore. Errors and `unknown` mean ignore.
 
 **`CONTEXT_LLM_ENABLED` defaults to on.** The bot sends a masked transcript of the latest inbound bodies (`CONTEXT_LLM_MESSAGES`, default 10). Set `CONTEXT_LLM_ENABLED=0` or `false` to use single-message primary LLM only. A model answer of `block` is treated as archive only.
 
@@ -35,7 +35,7 @@ The frozen scam head and **`POST /v1/score`** remain for lab scoring (`lab/score
 | **Graded block** — `contact.block()` only for unsaved contacts on malicious-host match | Operator-maintained list is the only automatic block signal. Block reason becomes contact name and `blocks.jsonl` entry. |
 | **Review every** non-ignored 1:1 body (mask then LLM), including saved contacts | Saved contacts are not safe. Account takeover and investment scams arrive from hijacked numbers. |
 | **LID** — resolve `@lid` for logs and LLM context; never treat LID digits as a phone | LID is not a country code. Unresolved `@lid` still runs mask and LLM. |
-| **Link rules + malicious-host list** | Only a curated URL or email-domain match outside the warning-only exception directly archives. Other rule hits go to masked AI review. Bare host counts. Allowlisted brands (`sf-express.com`, `whatsapp.com`, `hsbc.com`, …) and hosts like `github.io` are not lookalikes. |
+| **Link rules + malicious-host list** | Curated URL and email-domain matches are structural evidence for masked AI review, not direct archive reasons. Other rule hits also go to masked AI review. Bare host counts. Allowlisted brands (`sf-express.com`, `whatsapp.com`, `hsbc.com`, …) and hosts like `github.io` are not lookalikes. |
 | Filters: `fromMe`, groups, notification types, official WhatsApp names, `isMe` | Avoids loops on your own chats and system accounts. |
 | Session in **`.wwebjs_auth`** via `LocalAuth` | Standard `whatsapp-web.js` operator workflow. |
 | Optional **Docker** for Chromium only | jevlike runs as a sibling Python process. |
@@ -51,10 +51,10 @@ The frozen scam head and **`POST /v1/score`** remain for lab scoring (`lab/score
 | **`scoring-rubric.json`** and env thresholds | Tune lab eval without code changes. Not live archive gates after mask and LLM. |
 | TTL cache and per-chat single-flight | Dedupes retries and overlapping handlers. |
 | **Paced WhatsApp writes** | Block, rename, mute, and archive run serially with `WA_ACTION_GAP_MS` (default 3s). Failed block does not save the contact. |
-| **Operator mode** — automatic or guided self-chat poll | Guided mode masks before Cantonese explanation. Explanation cannot archive or block. Link rules run before mask and LLM so a slow model does not delay archive or malicious-host block. Receipts attach name and phone locally. |
+| **Operator mode** — automatic or guided self-chat poll | Guided mode masks before Cantonese explanation. Explanation cannot archive or block. Link rules run before mask and LLM so structural host facts and official-domain unmasking are available to the prompt. Receipts attach name and phone locally. |
 | ~~Thread window scoring~~ **Removed from live path** | `CONTEXT_TURNS` and `thread-context.js` support review copy and context LLM only. |
 | **`stub-jevlike.js`** | `npm test` never downloads the encoder. |
-| **Primary OpenAI-compatible LLM review** | See [Why the LLM instead of jevlike score on inbound](#why-the-llm-instead-of-jevlike-score-on-inbound). Hard link archives skip LLM. |
+| **Primary OpenAI-compatible LLM review** | See [Why the LLM instead of jevlike score on inbound](#why-the-llm-instead-of-jevlike-score-on-inbound). Curated link hits also require masked LLM confirmation. |
 
 ## Deferred
 

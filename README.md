@@ -1,7 +1,7 @@
 # scam-detection-jev
 
 Personal **WhatsApp Web** bot: it masks PII on your machine, sends redacted text to an **OpenAI-compatible** chat API, archives suspicious 1:1 DMs, and blocks **unsaved** contacts only when a URL matches [`data/malicious-hosts.json`](data/malicious-hosts.json).
-Keyword and link-rule hits require AI confirmation before archive. A curated URL or email-domain match can still recommend archive without AI, subject to the warning-only exception; an email match never auto-blocks. Saved contacts get a review card instead of an automatic archive or block.
+Link-rule hits require AI confirmation before archive. Curated URL and email-domain matches also go through mask → LLM; only a curated URL match can auto-block an unsaved contact after AI confirms scam, and an email match never auto-blocks. Saved contacts get a review card instead of an automatic archive or block.
 
 Local [jevlike](https://github.com/vinnylarouge/jevlike) serves **`POST /v1/mask`**. Judgment uses **`LLM_REVIEW_*`**. The frozen scam head (`jevlike_hf_chinese_roberta_r1.pt`) is for **lab eval** only. There is no LightJev or `SCORER=model_v2` path.
 
@@ -118,7 +118,7 @@ Live inbound order (after filters): link heuristics on the current message, then
 
 On a first message from an unsaved number with no earlier turn, a model archive recommendation acts only on strong evidence (`strong: true`), otherwise holding until the next message; unsolicited investment/trading/health pitches (`pitch: true`) only label an unsaved sender `（可疑推銷）` (and clear the bot-written label on a later confident `no_action` with `pitch: false`). Chats you restore from the archive (`USER_RESTORED_CHATS_PATH`) are routed to your self-chat review card on model verdicts like saved contacts.
 
-If `POST /v1/mask` fails, the bot skips the LLM and does not archive (fail closed). Curated blocklist matches can still archive without the LLM.
+If `POST /v1/mask` fails, the bot skips the LLM and does not archive or block (fail closed). This includes curated blocklist matches.
 
 Full flag list: [`.env.example`](.env.example) and [AGENTS.md](AGENTS.md). Behaviour matrix: [DESIGN_DECISIONS.md — Action matrix](DESIGN_DECISIONS.md#action-matrix-implemented). Lab-only jevlike thresholds: [SCORING_RUBRIC.md](SCORING_RUBRIC.md).
 
@@ -141,7 +141,7 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `JEVLIKE_ENCODER`, `JEVLIKE_HF_MODEL` | Checkpoint `hf_model`, then `hfl/chinese-roberta-wwm-ext` | Encoder overrides, in that precedence order. |
 | `JEVLIKE_OPTIONS` | `not_scam,scam` | Scorer labels (lab); requires at least two. |
 | `JEVLIKE_MASK_CKPT` | `models/jevlike_hf_pii_mask.pt` if present | PII head. A missing configured file logs a warning and the worker still starts without the head; `/v1/mask` returns 503 until a head is loaded. |
-| `HEURISTIC_ENABLED` | `true` | Enables link rules and the curated blocklist fast path. |
+| `HEURISTIC_ENABLED` | `true` | Enables structural link rules and curated blocklist matching; matches still require mask → LLM confirmation. |
 | `BLOCK_ENABLED` | `true` | Enables malicious-host auto-block of unsaved contacts, not model-based blocking. |
 | `MALICIOUS_HOSTS_PATH` | `data/malicious-hosts.json` in the repo | Maintained host list override. |
 | `MALICIOUS_FEED_HOSTS_PATH` | `data/threat-feed-hosts.json` in the repo | Offline PhishTank verified-online snapshot. A feed host match **never archives or blocks**; it only adds a line to the review LLM prompt as strong scam evidence. Refresh with `node scripts/update-threat-feeds.js` — manual/cron only; the bot itself never downloads. |
@@ -155,7 +155,7 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `CONTEXT_TURNS` | `4` | In-memory thread window capacity including current text; not a live scoring window. |
 | `CONTEXT_LLM_ENABLED` | On | Use masked recent-message review; `0` or `false` selects single-message review. |
 | `CONTEXT_LLM_MESSAGES` | `10` | Recent 1:1 message limit (inbound plus your own messages) including current message; capped at 10. Invalid values or values below 1 use the default. |
-| `LLM_REVIEW_ENABLED` | `true` | Enable LLM judgment; disabling it leaves only heuristic archives. |
+| `LLM_REVIEW_ENABLED` | `true` | Enable LLM judgment; disabling it fails closed with no archive or block. |
 | `LLM_REVIEW_ALL` | `false` | Legacy compatibility flag; no longer affects review enablement or trigger selection. `LLM_REVIEW_ENABLED=false` disables both review paths. |
 | `LLM_REVIEW_API_URL`, `OPENAI_BASE_URL`, `OPENAI_API_BASE` | Empty | First nonempty URL wins, in this order. No implicit OpenAI endpoint; without a URL, review fails closed. Whitespace and one trailing slash are removed. A URL ending in `/chat/completions` is kept; one ending in `/v1` gets `/chat/completions` appended; all others get `/v1/chat/completions` appended (suffix checks are case-insensitive). For other API paths, supply the full URL ending in `/chat/completions`. |
 | `LLM_REVIEW_API_KEY`, `OPENAI_API_KEY` | Empty | First nonempty key wins; empty omits the authorization header. |
