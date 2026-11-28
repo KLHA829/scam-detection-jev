@@ -11,8 +11,6 @@ const { isLidId, phoneLookupId, phoneFromLidMapping, resolveRealNumber } = requi
 const { shouldIgnoreMessage, isOfficialWhatsAppId } = require('./lib/filters');
 const { matchObviousScam } = require('./lib/link-rules');
 const { applyBlockPolicy } = require('./lib/block-policy');
-const { loadRubric, labelFromScore } = require('./lib/score-message');
-const { scoreMessage } = require('./lab/score-message');
 const { JevlikeClient, resolveMaskUrl } = require('./lib/jevlike-client');
 const { processIncomingMessage } = require('./lib/handle-incoming');
 const { handleWaMessage } = require('./whatsapp-bot');
@@ -21,23 +19,7 @@ const { createRecentContext } = require('./lib/context-llm');
 const { createOperatorState } = require('./lib/operator-mode');
 const { createReviewQueue } = require('./lib/review-queue');
 const { llmChatResponse } = require('./lib/test-llm');
-const {
-  createStubJevlikeClient,
-  createStubJevlikeFetch,
-  PRESETS,
-} = require('./stub-jevlike');
-
-const rubric = loadRubric();
-
-function scoreResult(overrides = {}) {
-  return {
-    score: 0,
-    label: 'not_scam',
-    ok: true,
-    thresholds: rubric.thresholds,
-    ...overrides,
-  };
-}
+const { createStubJevlikeClient } = require('./stub-jevlike');
 
 describe('phone digits', () => {
   it('strips plus, spaces, and 00 prefix', () => {
@@ -150,20 +132,6 @@ describe('filters', () => {
   });
 });
 
-describe('loadRubric env', () => {
-  it('keeps the rubric lines when a threshold is not a number', () => {
-    const tuned = loadRubric(undefined, {
-      ARCHIVE_THRESHOLD: 'nope',
-      SAFE_THRESHOLD: 'nope',
-      BLOCK_THRESHOLD: 'nope',
-    });
-    assert.equal(tuned.thresholds.archive, 42);
-    assert.equal(tuned.thresholds.safe, 18);
-    assert.equal(tuned.thresholds.block, 80);
-    assert.equal(labelFromScore(96, tuned.thresholds), 'scam');
-  });
-});
-
 describe('heuristics', () => {
   it('hard-hits only link rules, not phrase tropes', () => {
     assert.equal(matchObviousScam('您的驗證碼即將過期，請立即回覆').hit, false);
@@ -224,11 +192,9 @@ describe('heuristics', () => {
 
 describe('applyBlockPolicy upgrades', () => {
   it('only malicious_host upgrades an AI-confirmed archive to auto-block for unsaved contacts', () => {
-    const high = scoreResult({ score: 99, label: 'scam' });
     const lookalike = { hit: true, id: 'lookalike_domain', archiveReason: null };
     const notBlocked = applyBlockPolicy({ action: 'archive', archiveReason: 'llm_review_scam' }, {
       savedContact: false,
-      scoreResult: high,
       heuristic: lookalike,
     });
     assert.equal(notBlocked.action, 'archive');
@@ -236,7 +202,6 @@ describe('applyBlockPolicy upgrades', () => {
     const malicious = { hit: true, id: 'malicious_host', archiveReason: null };
     const blocked = applyBlockPolicy({ action: 'archive', archiveReason: 'llm_review_scam' }, {
       savedContact: false,
-      scoreResult: high,
       heuristic: malicious,
     });
     assert.equal(blocked.action, 'block');
@@ -244,56 +209,10 @@ describe('applyBlockPolicy upgrades', () => {
   });
 });
 
-describe('scoring labels', () => {
-  it('labels using archive / safe thresholds', () => {
-    assert.equal(labelFromScore(42, rubric.thresholds), 'scam');
-    assert.equal(labelFromScore(18, rubric.thresholds), 'not_scam');
-    assert.equal(labelFromScore(25, rubric.thresholds), 'unknown');
-    assert.equal(labelFromScore(99, rubric.thresholds, { ok: false }), 'unknown');
-    assert.equal(labelFromScore(99, rubric.thresholds, { empty: true }), 'unknown');
-  });
-});
-
-describe('scoreMessage with stub jevlike', () => {
-  it('skips empty text as unknown without calling the client', async () => {
-    let called = 0;
-    const client = {
-      async scoreText() {
-        called += 1;
-        return { prob_scam: 0.9 };
-      },
-    };
-    const result = await scoreMessage('   ', { client, rubric });
-    assert.equal(called, 0);
-    assert.equal(result.label, 'unknown');
-    assert.equal(result.empty, true);
-    assert.equal(result.ok, true);
-    assert.equal(result.scorer, 'jevlike');
-  });
-
-  it('returns stub benign as not_scam', async () => {
-    const result = await scoreMessage('今晚飲茶？', {
-      client: createStubJevlikeClient('benign'),
-      rubric,
-    });
-    assert.equal(result.ok, true);
-    assert.equal(result.label, 'not_scam');
-    assert.equal(result.scorer, 'jevlike');
-  });
-
-  it('returns stub scam as scam', async () => {
-    const result = await scoreMessage('[stub:scam] 請立即轉帳', {
-      client: createStubJevlikeClient(),
-      rubric,
-    });
-    assert.equal(result.label, 'scam');
-    assert.equal(result.archiveReason, 'jevlike_score');
-    assert.ok(result.score >= rubric.thresholds.archive);
-  });
-
+describe('JevlikeClient mask config', () => {
   it('keeps a usable mask URL and timeout', () => {
     assert.equal(
-      resolveMaskUrl('http://127.0.0.1:8766/v1/score'),
+      resolveMaskUrl('http://127.0.0.1:8766/v1'),
       'http://127.0.0.1:8766/v1/mask',
     );
     assert.equal(
@@ -311,77 +230,24 @@ describe('scoreMessage with stub jevlike', () => {
     });
     assert.equal(fromEnv.timeoutMs, 30000);
   });
-
-  it('fails closed on timeout / 5xx / invalid JSON', async () => {
-    const timeoutClient = {
-      async scoreText() {
-        throw new Error('jevlike timeout');
-      },
-    };
-    const a = await scoreMessage('hello', { client: timeoutClient, rubric });
-    assert.equal(a.label, 'unknown');
-    assert.equal(a.ok, false);
-    assert.equal(a.reason, 'jevlike_error');
-
-    const fetch500 = async () =>
-      new Response('nope', { status: 500, headers: { 'content-type': 'text/plain' } });
-    const client500 = new JevlikeClient({
-      baseURL: 'http://127.0.0.1:9',
-      apiKey: 'test',
-      fetchImpl: fetch500,
-      timeoutMs: 500,
-    });
-    const b = await scoreMessage('hello', { client: client500, rubric });
-    assert.equal(b.label, 'unknown');
-    assert.equal(b.ok, false);
-
-    const badJson = async () =>
-      new Response('{', { status: 200, headers: { 'content-type': 'application/json' } });
-    const clientBad = new JevlikeClient({
-      baseURL: 'http://jevlike.test',
-      fetchImpl: badJson,
-    });
-    const c = await scoreMessage('hello', { client: clientBad, rubric });
-    assert.equal(c.label, 'unknown');
-    assert.equal(c.ok, false);
-  });
-
-  it('retries once on 429 then succeeds', async () => {
-    let n = 0;
-    const fetchImpl = async () => {
-      n += 1;
-      if (n === 1) {
-        return new Response('slow down', { status: 429 });
-      }
-      return createStubJevlikeFetch(PRESETS.scam)();
-    };
-    const client = new JevlikeClient({
-      baseURL: 'http://jevlike.test',
-      fetchImpl,
-      timeoutMs: 1000,
-    });
-    const out = await client.scoreText('x');
-    assert.equal(n, 2);
-    assert.ok(out.prob_scam > 0.9);
-  });
 });
 
 describe('processIncomingMessage', () => {
-  it('skips groups before scoring', async () => {
-    let scored = false;
+  it('skips groups before masking', async () => {
+    let masked = false;
     const out = await processIncomingMessage(
       { isGroup: true, body: 'hi', chatId: 'g' },
       {
         maskClient: {
-          async scoreText() {
-            scored = true;
-            return {};
+          async maskMessages() {
+            masked = true;
+            return { messages: [{ spans: [] }] };
           },
         },
       },
     );
     assert.equal(out.ignored, true);
-    assert.equal(scored, false);
+    assert.equal(masked, false);
   });
 
   it('archives via callback when LLM says scam', async () => {

@@ -2,22 +2,21 @@
 
 Maintained recipes for operator-facing behavior. Read this index, then the feature file.
 
-Live inbound: structural link check → **mask → LLM** → block policy. jevlike **`POST /v1/score`** is **lab/eval only** — not live archive proof.
+Live inbound: structural link check → **mask → LLM** → block policy.
 
 ## Baseline preconditions
 
 - Repo root for `node --test`.
-- `bin/launch-stub` before recipes that need stub HTTP (`mask-before-llm`, `lab-jevlike-score`).
+- `bin/launch-stub` before recipes that need stub HTTP (`mask-before-llm`).
 - Default stub base `http://127.0.0.1:18766` (`VERIFY_PORT` to override).
 - `bin/doctor` → `worth_driving: yes` before stub HTTP drives.
-- Unset threshold/toggle env vars before `node --test` unless a drive script does it for you.
+- Unset toggle env vars before `node --test` unless a drive script does it for you.
 - Do not run `npm start` for these recipes. Do not run `npm audit fix`.
 
 ## Driving conventions
 
 - Literal commands from feature files.
-- Stub score tags (`[stub:scam]`, etc.) work on `stub-jevlike.js` only.
-- `createMaskClient` is the live HTTP client; `SCORER` env does not switch implementations.
+- `createMaskClient` is the live HTTP client.
 - Evidence: `.cursor/skills/verify-scam-bot/evidence/<UTC-stamp>-<feature-id>/`.
 - `bin/cleanup` removes `run/` only.
 
@@ -40,9 +39,6 @@ Each feature file: H1 + paragraph, then `Sub-features`, `How to get to it (user 
 - [Malicious-host block](./malicious-host-block.md) — unsaved auto-block only for URLs on `data/malicious-hosts.json`.
 - [LLM review cooldown](./llm-review-cooldown.md) — per-chat skip of mask+LLM after a successful review (link rules still fire).
 - Malformed LLM confidence — malformed confidence is rejected and does not archive; [primary review tests](../../../../lib/llm-review-confidence.test.js) and [context review tests](../../../../lib/context-llm-confidence.test.js) cover invalid types and ranges, missing confidence, and valid confidence boundaries.
-- [Lab jevlike score](./lab-jevlike-score.md) — **lab-only** stub `/v1/score` and `lab/score-message` tests (not live inbound).
 - [Action receipt](./action-receipt.md) — operator self-chat receipt after archive/block.
 - [Guided poll](./operator-guided-poll.md) — guided mode waits for 封鎖並封存 / 只封存 / 留低.
 - [WhatsApp transport (whatsmeow / Docker)](./wa-transport.md) — Chromium-free `WaTransport` adapter (`WA_TRANSPORT=whatsmeow`, runtime & Docker default; legacy `WA_TRANSPORT=wwebjs` remains optional) and pure-Go `wa-bridge/` sidecar (`/data` state paths in `Dockerfile`); offline tests (`lib/wa-transport/*.test.js`, `wa-bridge/bridge_test.go`) and best-effort `npm run test:e2e:boot:whatsmeow`.
-
-Legacy filename [score-archive.md](./score-archive.md) redirects to mask-primary + lab score docs.

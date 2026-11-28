@@ -3,7 +3,7 @@
 Local WhatsApp Web bot. **Masks PII locally**, sends masked text to a **required OpenAI-compatible LLM** for
 archive/ignore on every 1:1 DM (including curated malicious-host hits, with a device-checked prompt note and no raw host leak),
 and **blocks unsaved contacts only** on the maintained malicious-host list after AI confirms scam. Human docs: [README.md](README.md), [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md),
-[SCORING_RUBRIC.md](SCORING_RUBRIC.md) (decision rubric; jevlike score is lab-only).
+[SCORING_RUBRIC.md](SCORING_RUBRIC.md) (decision rubric).
 
 ## Pull requests
 
@@ -17,10 +17,8 @@ and **blocks unsaved contacts only** on the maintained malicious-host list after
 | `lib/wa-transport/` | `WaTransport` boundary (`whatsmeow` Go sidecar HTTP/SSE default adapter, `wwebjs` legacy adapter) |
 | `wa-bridge/` | pure-Go `whatsmeow` + `modernc.org/sqlite` local loopback HTTP/SSE sidecar (no Chromium/CGO) |
 | `lib/handle-incoming.js` | inbound orchestration: structural link check → mask → LLM → block policy |
-| `lib/jevlike-client.js` | HTTP client (`createMaskClient`; `/v1/mask` live; `/v1/score` lab-only) |
-| `lib/score-message.js` | rubric load + threshold helpers (lab eval; not inbound archive) |
-| `lab/score-message.js` | lab-only `scoreMessage` via `/v1/score` |
-| `jevlike_serve.py` | persistent worker: **`POST /v1/mask`** required; `/v1/score` optional for eval |
+| `lib/jevlike-client.js` | HTTP client (`createMaskClient`; `POST /v1/mask`) |
+| `jevlike_serve.py` | persistent PII mask worker (**`POST /v1/mask`** required) |
 | `lib/filters.js`, `lib/lid.js` | which messages count, `@lid` resolution |
 | `lib/link-rules.js` | pure structural URL extraction, allowlist, curated malicious-host and lookalike checks (no natural-language intent/warning regexes) |
 | `lib/malicious-hosts.js`, `data/malicious-hosts.json` | maintained known-malicious hosts; only path that auto-blocks unsaved contacts. `data/threat-feed-hosts.json` (PhishTank verified-online snapshot, refreshed manually with `node scripts/update-threat-feeds.js`) is **not** part of the blocklist — a feed match only annotates the review-LLM prompt and never archives or blocks |
@@ -50,7 +48,7 @@ and **blocks unsaved contacts only** on the maintained malicious-host list after
 - No link rule archives or blocks directly without masked LLM confirmation; anti-scam warnings quoting a blocklisted URL or lookalike are judged by the LLM rather than linguistic regexes.
   Guided mode may still ask the chat API for a Cantonese explanation after the same mask, and that reply cannot archive, block, or hide the card.
 - No network lookup of phone numbers or URLs at runtime (no Scameter, no third-party registry). The offline `scripts/update-threat-feeds.js` refresh is manual/cron-only and writes a local snapshot; matching stays local.
-- Thresholds and toggles change through `scoring-rubric.json` / env, never by editing constants in code.
+- Thresholds and toggles change through environment variables, never by editing constants in code.
 
 ## Commands
 
@@ -65,7 +63,7 @@ and **blocks unsaved contacts only** on the maintained malicious-host list after
 - `npm run test:e2e:boot` — best-effort boot through Chromium launch and QR emission; never scan the QR.
 - `npm run test:e2e:boot:whatsmeow` — Chromium-free best-effort boot compiling `wa-bridge` to a temp dir and waiting for QR emission; never scan the QR.
 - `python jevlike_serve.py` (or `npm run jevlike`) in terminal 1 — **PII mask head required**; then `npm start` in terminal 2 with `LLM_REVIEW_*` set.
-- `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — stub worker for offline tests (mask + optional fixed scores).
+- `npm run stub` with `JEVLIKE_BASE_URL=http://127.0.0.1:8766` — stub `/v1/mask` worker for offline tests.
 
 ## Current state — 2026-11-26
 
@@ -90,17 +88,16 @@ and **blocks unsaved contacts only** on the maintained malicious-host list after
 
 **Gardener:** When you fix a behavior bug or doc drift, encode the correction in tests, CI, or `.cursor/skills/verify-scam-bot/` (feature map + `bin/drive-*`) — not only in this file. Follow the Maintenance checklist in that skill.
 
-**Full Autopilot (無人盯內環):** Agents follow [`.cursor/skills/full-autopilot/SKILL.md`](.cursor/skills/full-autopilot/SKILL.md) (goal → verifiable units → self-prove → open PR, never merge unless asked). Self-proof uses [verify-scam-bot](.cursor/skills/verify-scam-bot/SKILL.md) (`bin/doctor`, `bin/drive-*`, then `npm test`). PR #51 locks in `lib/agent-trust.test.js`: mask-before-LLM on inbound, `createMaskClient` / no live `lab/score-message`, verify smoke mask-primary (`drive-mask-before-llm`), `verify-scam-detection-jev` redirect only. Do not reopen settled product decisions in the invariants section above.
+**Full Autopilot (無人盯內環):** Agents follow [`.cursor/skills/full-autopilot/SKILL.md`](.cursor/skills/full-autopilot/SKILL.md) (goal → verifiable units → self-prove → open PR, never merge unless asked). Self-proof uses [verify-scam-bot](.cursor/skills/verify-scam-bot/SKILL.md) (`bin/doctor`, `bin/drive-*`, then `npm test`). PR #51 locks in `lib/agent-trust.test.js`: mask-before-LLM on inbound, `createMaskClient` / no live `/v1/score`, verify smoke mask-primary (`drive-mask-before-llm`), `verify-scam-detection-jev` redirect only. Do not reopen settled product decisions in the invariants section above.
 
 ## Invariant enforcement (tests / CI)
 
 | Invariant | Enforced by |
 |---|---|
-| Mask before primary LLM on inbound | `lib/agent-trust.test.js` (maskMessages before `reviewRedactedMessage`; no `lab/score-message` on live path) |
+| Mask before primary LLM on inbound | `lib/agent-trust.test.js` (maskMessages before `reviewRedactedMessage`; no `/v1/score` on live path) |
 | Verify skill smoke is mask-primary | `lib/agent-trust.test.js` (`verify-scam-bot` + `verify-scam-detection-jev` redirect/shims) |
-| No live jevlike score on inbound | `lib/agent-trust.test.js` (no `scoreMessage` in `handle-incoming`); `lab/score-message.js` quarantine |
+| Legacy `/v1/score` & scorer scaffolding stay deleted | `lib/agent-trust.test.js`, `scripts/ci-static-gates.js` |
 | Live path uses `maskClient` / `createMaskClient` | `lib/agent-trust.test.js` (no `scoreClient` in `handle-incoming`, `whatsapp-bot.js`) |
-| Live bot boots and handles DMs without `scoring-rubric.json` | `lib/agent-trust.test.js` (no `loadRubric` / `RUBRIC_PATH` in `handle-incoming`, `whatsapp-bot.js`) |
 | No model / lookalike / score auto-block | `lib/agents-invariants.test.js`, `lib/block-policy.test.js` |
 | Malicious-host match not starved by lookalike order | `lib/link-rules.js` order; `lib/link-rules.test.js` dual-hit case |
 | Mask fail-closed (no archive on mask fail) | `lib/agents-invariants.test.js` |
@@ -113,7 +110,7 @@ and **blocks unsaved contacts only** on the maintained malicious-host list after
 
 ## Cursor Cloud specific instructions
 
-- Node 22 and Python 3.12 are on the default image. `python3-venv` is not, so a venv needs that package first. Scorer dependencies live in `.venv` (gitignored). Start the worker with `.venv/bin/python jevlike_serve.py`. `npm test` uses system `python3` and does not import torch.
-- The r1 and PII-mask heads are not in git. `scripts/download_jevlike_ckpt.sh` writes `models/jevlike_hf_chinese_roberta_r1.pt`; `scripts/download_pii_mask_ckpt.sh` writes and hash-verifies `models/jevlike_hf_pii_mask.pt`. The public release URLs can 404 on this private repo; the scripts fall back to `gh`. The frozen encoder `hfl/chinese-roberta-wwm-ext` caches under `~/.cache/huggingface`.
+- Node 22 and Python 3.12 are on the default image. `python3-venv` is not, so a venv needs that package first. Worker dependencies live in `.venv` (gitignored). Start the worker with `.venv/bin/python jevlike_serve.py`. `npm test` uses system `python3` and does not import torch.
+- The PII-mask head is not in git. `scripts/download_pii_mask_ckpt.sh` writes and hash-verifies `models/jevlike_hf_pii_mask.pt`. The public release URL can 404 on this private repo; the script falls back to `gh`. The frozen encoder `hfl/chinese-roberta-wwm-ext` caches under `~/.cache/huggingface`.
 - `npm test` is the offline check (no WhatsApp, no encoder download). CI also runs `node scripts/review-eval.js --llm dry --mode all` on `fixtures/review-eval-smoke.json`. Live mask: `POST /v1/mask` with `{"messages":["..."]}`. The worker does not read `.env`.
 - Do not launch `npm start` for routine verification. WhatsApp Web needs an interactive QR login and can log the session out. Chrome (`npx puppeteer browsers install chrome`, not part of `npm ci`) is only needed for legacy `WA_TRANSPORT=wwebjs`.

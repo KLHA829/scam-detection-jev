@@ -1,8 +1,6 @@
 # Decision rubric (reference)
 
-Facts about live decisions and lab-only jevlike thresholds. Setup and env wiring: [README.md](README.md). Rationale: [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md). Machine-readable lab numbers: [scoring-rubric.json](scoring-rubric.json).
-
-**Live product:** inbound 1:1 DMs use link heuristics, then **`POST /v1/mask`**, then an OpenAI-compatible LLM (`lib/llm-review.js` or `lib/context-llm.js`). **`POST /v1/score`** does not run on the inbound path.
+Live 1:1 DMs use link heuristics, **`POST /v1/mask`**, and an OpenAI-compatible LLM (`lib/llm-review.js` or `lib/context-llm.js`). Setup and env wiring: [README.md](README.md). Rationale: [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md).
 
 ## Live path summary
 
@@ -44,21 +42,9 @@ List file: [`data/malicious-hosts.json`](data/malicious-hosts.json). Optional pa
 
 Implemented in `lib/link-rules.js`. Phrase tropes (驗證碼, 轉數快, 封號, USDT, 順豐清關 wording) are **not** standalone actions.
 
-## Lab-only jevlike score
+## Eval harness
 
-The frozen-encoder head (`jevlike_hf_chinese_roberta_r1.pt`) and worker route **`POST /v1/score`** support offline evaluation and training. Helpers: `lab/score-message.js`, `lib/score-message.js`.
-
-| Field | Value |
-|-------|--------|
-| Score scale | `P(scam) × 100` (0–100) |
-| `ARCHIVE_THRESHOLD` | `42` (from [scoring-rubric.json](scoring-rubric.json) unless overridden) |
-| `SAFE_THRESHOLD` | `18` |
-| `BLOCK_THRESHOLD` | `80` (lab archives at this level; lab never auto-blocks unsaved contacts from score alone) |
-| `jevlikeMaxChars` | `2000` |
-
-These thresholds do **not** drive live archive or block after the mask and LLM product path (2026-10-16).
-
-Historical 366-row HK jevlike archive metrics describe the old scorer bar, not LLM precision. The eval defaults to `--mode off` (no LLM calls). To send requests, use `node scripts/review-eval.js --mode all --llm live` only with data safe to share: it uses the offline stub mask.
+`node scripts/review-eval.js --mode all --llm dry` validates request formatting using the offline stub mask; `--llm live` posts masked text to your configured LLM API and should only be used with data safe to share.
 
 ## Mask contract (live)
 
@@ -67,4 +53,4 @@ Historical 366-row HK jevlike archive metrics describe the old scorer bar, not L
 | `POST /v1/mask` success (including empty spans) | Yes, when LLM enabled | Per LLM rules above |
 | Mask failure, truncated spans, invalid span | No | No (fail closed) |
 
-Worker must load the PII mask head (`JEVLIKE_MASK_CKPT` / `models/jevlike_hf_pii_mask.pt`). Route returns 503 when the head is missing.
+Worker must load the PII mask head (`JEVLIKE_MASK_CKPT` / `models/jevlike_hf_pii_mask.pt`) at startup.

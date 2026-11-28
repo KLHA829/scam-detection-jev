@@ -58,7 +58,7 @@ When this skill applies to this repo, read [AGENTS.md](../../../AGENTS.md) first
 - No rule-only direct archive; curated malicious host/email hits also go through mask → LLM (with a device-checked prompt note, no raw host leak). Auto-block is **unsaved + malicious-host list + AI confirmation only**. Primary path: mask → LLM; no live jevlike score.
 - Mask or LLM failure → **no archive** (fail closed).
 - **Every** outbound LLM call goes through live `POST /v1/mask` first; mask failure skips the LLM, not the operator receipt where applicable.
-- Saved contacts are never auto-blocked. Thresholds change via `scoring-rubric.json` / env, not new magic numbers in code.
+- Saved contacts are never auto-blocked. Toggles and thresholds stay configurable via env, not hard-coded workarounds in code.
 - Offline proof stays `npm test` and [verify-scam-bot](../verify-scam-bot/SKILL.md); do not add a parallel harness.
 
 Upstream: [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) (MIT). Sync the ladder section from `skills/ponytail/SKILL.md` there when updating this copy.

@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Train a jevlike AttentionHead to mark characters that should become XXX.
+"""Train a PII AttentionHead to mark characters that should become placeholders.
 
-The frozen encoder is hfl/chinese-roberta-wwm-ext, the same one the scam
-scorer uses. If models/jevlike_hf_chinese_roberta_r1.pt is present, the head
-is initialised from those weights and then trained on token-level PII labels.
-The scam checkpoint is never overwritten.
+The frozen encoder is hfl/chinese-roberta-wwm-ext. Optionally pass --init
+pointing to an existing pii_mask checkpoint to warm-start the head weights.
 
     python scripts/train_pii_mask.py --output models/jevlike_hf_pii_mask.pt
 """
@@ -21,9 +19,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import torch
+from jevlike.model import AttentionHead
 from torch.nn import functional as F
-
-from jevlike.model import make_system
+from transformers import AutoModel, AutoTokenizer
 
 from pii_mask_data import char_set, generate_split, gold_spans
 from pii_mask_head import (
@@ -36,7 +34,6 @@ from pii_mask_head import (
 )
 
 DEFAULT_ENCODER = "hfl/chinese-roberta-wwm-ext"
-R1_PATH = ROOT / "models" / "jevlike_hf_chinese_roberta_r1.pt"
 
 
 def encode_options(tokenizer, encoder, device):
@@ -126,7 +123,7 @@ def loss_on(logits, labels, special, attention, pos_weight):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=ROOT / "models" / "jevlike_hf_pii_mask.pt")
-    parser.add_argument("--init", type=Path, default=R1_PATH)
+    parser.add_argument("--init", type=Path, default=None)
     parser.add_argument("--encoder", default=DEFAULT_ENCODER)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--epochs", type=int, default=8)
@@ -137,8 +134,6 @@ def main() -> None:
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--seed", type=int, default=17)
     args = parser.parse_args()
-    if args.output.resolve() == R1_PATH.resolve():
-        raise SystemExit("refusing to overwrite the r1 scam checkpoint")
 
     random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -146,11 +141,10 @@ def main() -> None:
     train_rows = generate_split("train", args.train_size, args.seed)
     val_rows = generate_split("validation", args.val_size, args.seed)
 
-    # Build the encoder through jevlike so the checkpoint config matches the worker.
     init_payload = None
     rank = 32
     encoder_name = args.encoder
-    if args.init.is_file():
+    if args.init is not None and args.init.is_file():
         init_payload = torch.load(args.init, map_location="cpu", weights_only=True)
         rank = int((init_payload.get("config") or {}).get("rank") or 32)
         encoder_name = (init_payload.get("config") or {}).get("hf_model") or args.encoder
@@ -169,18 +163,17 @@ def main() -> None:
         "mask_option": MASK_OPTION,
         "keep_option": KEEP_OPTION,
     }
-    model, collator = make_system(config, device)
-    if init_payload is not None:
-        model.head.load_state_dict(
-            head_state_from_checkpoint(init_payload["state_dict"]),
-            strict=True,
-        )
-    encoder = model.encoder
+    tokenizer = AutoTokenizer.from_pretrained(encoder_name, use_fast=True)
+    encoder = AutoModel.from_pretrained(encoder_name).to(device)
     encoder.eval()
     for parameter in encoder.parameters():
         parameter.requires_grad_(False)
-    tokenizer = collator.tokenizer
-    head = model.head
+    head = AttentionHead(int(encoder.config.hidden_size), rank).to(device)
+    if init_payload is not None:
+        head.load_state_dict(
+            head_state_from_checkpoint(init_payload["state_dict"]),
+            strict=True,
+        )
     head.train()
 
     print("[INFO] caching encoder states", flush=True)

@@ -38,15 +38,11 @@ const TEST_NAMES = [
 const TEST_FILES = ['lib/llm-review-cooldown.test.js', 'lib/wa-handlers.test.js', 'lib/wa-transport/whatsmeow.test.js'];
 
 const UNSET_ENV = [
-  'ARCHIVE_THRESHOLD',
-  'SAFE_THRESHOLD',
-  'BLOCK_THRESHOLD',
   'BLOCK_ENABLED',
   'HEURISTIC_ENABLED',
   'OPERATOR_MODE',
   'CONTEXT_LLM_ENABLED',
   'LLM_REVIEW_ENABLED',
-  'SCORER',
   'MALICIOUS_HOSTS_PATH',
   'LLM_REVIEW_COOLDOWN_PATH',
 ];

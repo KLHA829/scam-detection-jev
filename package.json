@@ -5,7 +5,7 @@
   "description": "Local WhatsApp Web scam-risk bot: PII mask (jevlike worker) + OpenAI-compatible LLM judgment; malicious-host auto-block only.",
   "main": "whatsapp-bot.js",
   "scripts": {
-    "lint": "eslint whatsapp-bot.js lib lab scripts test stub-jevlike.js .cursor/skills/verify-scam-bot/bin/*.js",
+    "lint": "eslint whatsapp-bot.js lib scripts test stub-jevlike.js .cursor/skills/verify-scam-bot/bin/*.js",
     "start": "node whatsapp-bot.js",
     "mini-wa": "node scripts/mini-whatsapp.js",
     "wa-bridge:build": "node scripts/build-wa-bridge.js",

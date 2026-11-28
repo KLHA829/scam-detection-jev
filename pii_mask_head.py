@@ -1,12 +1,7 @@
-"""Token-level PII head on top of a frozen jevlike encoder.
+"""Token-level PII head on top of a frozen HF encoder.
 
-The stock jevlike loss picks one option for a whole message. Desensitisation
-needs a yes/no on each token. This module trains and runs the same
-AttentionHead, but the supervision is the mask option's score on every
-context token, not a single scam/not-scam label.
-
-The r1 scam checkpoint is only an initialisation. Training writes a separate
-file and does not replace the scorer.
+Desensitisation needs a yes/no on each token. This module trains and runs the
+AttentionHead with token-level mask/keep supervision over the encoder states.
 """
 from __future__ import annotations
 

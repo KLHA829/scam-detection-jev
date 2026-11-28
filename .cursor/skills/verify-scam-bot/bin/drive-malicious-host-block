@@ -25,9 +25,9 @@ const TEST_NAMES = [
   'startMaliciousHostsWatcher reloads repeated atomic saves and a subsequent in-place write',
   'startMaliciousHostsWatcher reloads atomic saves through a symlink in another directory',
   'archives via link rules and blocks only unsaved contacts through block policy',
-  'blocks an unsaved contact on a listed host after masked LLM confirmation without waiting for jevlike score',
+  'blocks an unsaved contact on a listed host after masked LLM confirmation',
   'distinguishes blocklisted email addresses from links in the inbound handler',
-  'blocks a malicious host after masked LLM confirmation without waiting for the scorer',
+  'blocks a malicious host after masked LLM confirmation',
   'holds auto-block while the setup choice is unanswered (malicious host only)',
   'routes both warnings and lures with a blocklisted URL through masked LLM review',
   'alerts on suspicious saved contacts without acting until the operator votes',
@@ -38,15 +38,11 @@ const TEST_NAMES = [
 const TEST_FILES = ['lib/malicious-hosts.test.js', 'lib/block-policy.test.js', 'lib/wa-handlers.test.js', 'lib/audit-block.test.js'];
 
 const UNSET_ENV = [
-  'ARCHIVE_THRESHOLD',
-  'SAFE_THRESHOLD',
-  'BLOCK_THRESHOLD',
   'BLOCK_ENABLED',
   'HEURISTIC_ENABLED',
   'OPERATOR_MODE',
   'CONTEXT_LLM_ENABLED',
   'LLM_REVIEW_ENABLED',
-  'SCORER',
   'MALICIOUS_HOSTS_PATH',
 ];
 

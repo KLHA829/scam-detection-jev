@@ -1,9 +1,0 @@
-{
-  "version": 2,
-  "jevlikeMaxChars": 2000,
-  "thresholds": {
-    "archive": 42,
-    "safe": 18,
-    "block": 80
-  }
-}

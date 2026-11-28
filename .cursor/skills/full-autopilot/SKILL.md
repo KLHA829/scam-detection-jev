@@ -1,6 +1,6 @@
 ---
 name: full-autopilot
-description: "Full Autopilot (poteto 無人盯內環): goal → split → self-prove with verify-scam-bot → open PR. Use for autonomous agent loops on this repo. Does not reopen settled product decisions (mask→LLM live path, lab-only jevlike score, malicious-host-only auto-block)."
+description: "Full Autopilot (poteto 無人盯內環): goal → split → self-prove with verify-scam-bot → open PR. Use for autonomous agent loops on this repo. Does not reopen settled product decisions (mask→LLM live path, malicious-host-only auto-block)."
 ---
 
 # Full Autopilot (無人盯內環)
@@ -13,7 +13,7 @@ Short loop for cloud or local agents working on **scam-detection-jev**. Verifica
 2. **Split into verifiable units** — Each unit must have a prove command: `npm test`, a named `bin/drive-*`, or a feature-file `node --test` recipe.
 3. **Self-prove before claiming done** — Use [verify-scam-bot](../verify-scam-bot/SKILL.md):
    - `bin/doctor` when stub HTTP is involved (`worth_driving: yes`).
-   - Relevant `bin/drive-*` for the area (live-path work: **`drive-mask-before-llm`** as primary smoke; invariants: `drive-agents-invariants`; block policy: `drive-malicious-host-block`; cooldown: `drive-llm-review-cooldown`; lab score only: `drive-score-archive`).
+   - Relevant `bin/drive-*` for the area (live-path work: **`drive-mask-before-llm`** as primary smoke; invariants: `drive-agents-invariants`; block policy: `drive-malicious-host-block`; cooldown: `drive-llm-review-cooldown`).
    - `npm test` (and CI-equivalent `node scripts/review-eval.js --llm dry --mode all` when touching LLM fixtures).
 4. **Open a PR** — Never merge unless a human explicitly asked to merge.
 5. **Swarm when units are independent** — Parallel agents or subtasks are fine; **each** unit still self-proves before the batch is “done.”
@@ -21,7 +21,7 @@ Short loop for cloud or local agents working on **scam-detection-jev**. Verifica
 
 ## Settled product (do not reopen)
 
-- Live inbound: link heuristics → **mask (`POST /v1/mask`) → primary LLM**; no live jevlike `/v1/score` on inbound.
+- Live inbound: link heuristics → **mask (`POST /v1/mask`) → primary LLM**.
 - **Auto-block** only unsaved contacts on **`data/malicious-hosts.json`** after masked AI confirmation; lookalike hits and short links go to masked AI review (archive only, never auto-block), and saved contacts are never auto-blocked.
 - No model_v2 / LightJev / foreign-number hard-archive paths; phrase tropes alone do not archive or block.
 
@@ -33,9 +33,9 @@ Encode fixes via tests and verify drivers — see the Gardener checklist in veri
 
 | Lock | Meaning |
 |---|---|
-| Mask before primary LLM | `maskMessages` runs before `reviewRedactedMessage` / context LLM chat API; no `lab/score-message` on live inbound. |
+| Mask before primary LLM | `maskMessages` runs before `reviewRedactedMessage` / context LLM chat API; no legacy score path on inbound. |
 | `createMaskClient` / `maskClient` | Live path uses mask client naming; no `scoreClient` in `handle-incoming` or `whatsapp-bot.js`. |
-| Verify smoke is mask-primary | Canonical skill primary drive is **`drive-mask-before-llm`**; `drive-score-archive` is **lab-only**. |
+| Verify smoke is mask-primary | Canonical skill primary drive is **`drive-mask-before-llm`**. |
 | Dual-skill alias | `.cursor/skills/verify-scam-detection-jev/` is redirect + `bin/` shims only — **no** second feature map or score-primary smoke docs. |
 
 ## Where to drive

@@ -73,8 +73,8 @@ def tiny_mask_runtime(torch):
         key = staticmethod(lambda value: value)
 
     return {
-        "_MODEL": SimpleNamespace(encoder=Encoder()),
-        "_COLLATOR": SimpleNamespace(tokenizer=Tokenizer()),
+        "_ENCODER": Encoder(),
+        "_TOKENIZER": Tokenizer(),
         "_DEVICE": torch.device("cpu"),
         "_MASK_HEAD": Head(),
         "_MASK_CFG": {"context_tokens": 96},
@@ -106,14 +106,14 @@ class MaskOptionCacheTests(unittest.TestCase):
         ):
             uncached_batch = serve.mask_payload(rows)
             chunks_per_batch = len(logits)
-            self.assertEqual(runtime["_MODEL"].encoder.calls, 1 + chunks_per_batch)
-            self.assertEqual(runtime["_MODEL"].encoder.option_calls, 1)
-            self.assertEqual(runtime["_COLLATOR"].tokenizer.option_calls, 1)
+            self.assertEqual(runtime["_ENCODER"].calls, 1 + chunks_per_batch)
+            self.assertEqual(runtime["_ENCODER"].option_calls, 1)
+            self.assertEqual(runtime["_TOKENIZER"].option_calls, 1)
             self.assertTrue(any(row["spans"] for row in uncached_batch["messages"]))
             cached_batch = serve.mask_payload(rows)
-            self.assertEqual(runtime["_MODEL"].encoder.calls, 1 + 2 * chunks_per_batch)
-            self.assertEqual(runtime["_MODEL"].encoder.option_calls, 1)
-            self.assertEqual(runtime["_COLLATOR"].tokenizer.option_calls, 1)
+            self.assertEqual(runtime["_ENCODER"].calls, 1 + 2 * chunks_per_batch)
+            self.assertEqual(runtime["_ENCODER"].option_calls, 1)
+            self.assertEqual(runtime["_TOKENIZER"].option_calls, 1)
             self.assertEqual(cached_batch, uncached_batch)
             self.assertEqual(len(logits), 2 * chunks_per_batch)
             for before, after in zip(logits[:chunks_per_batch], logits[chunks_per_batch:]):
@@ -124,14 +124,14 @@ class MaskOptionCacheTests(unittest.TestCase):
                 uncached.append({"spans": serve.model_mask_spans(row)})
             self.assertEqual(cached_batch["messages"], uncached)
             self.assertEqual(serve.mask_payload([])["messages"], [])
-            serve._MODEL = tiny_mask_runtime(torch)["_MODEL"]
+            serve._ENCODER = tiny_mask_runtime(torch)["_ENCODER"]
             serve.model_mask_spans("new model")
-            self.assertEqual(serve._MODEL.encoder.option_calls, 1)
+            self.assertEqual(serve._ENCODER.option_calls, 1)
             serve.model_mask_spans("next request")
-            self.assertEqual(serve._MODEL.encoder.option_calls, 1)
+            self.assertEqual(serve._ENCODER.option_calls, 1)
             serve._MASK_CFG = {"mask_option": "custom mask"}
             serve.model_mask_spans("custom options")
-            self.assertEqual(serve._MODEL.encoder.option_calls, 2)
+            self.assertEqual(serve._ENCODER.option_calls, 2)
             with patch.object(serve, "_MASK_HEAD", None):
                 with self.assertRaises(RuntimeError):
                     serve.mask_payload(["private"])
@@ -155,17 +155,17 @@ class LongMessageMaskTests(unittest.TestCase):
         offset = len(phone) + len(filler)
         shifted = [{**span, "start": span["start"] + offset, "end": span["end"] + offset} for span in expected]
         self.assertEqual(spans, expected + shifted)
-        self.assertEqual(self.runtime["_MODEL"].encoder.calls, 3)
+        self.assertEqual(self.runtime["_ENCODER"].calls, 3)
 
     def test_trailing_characters_without_tokens_are_not_truncation(self):
-        tokenizer = self.runtime["_COLLATOR"].tokenizer
+        tokenizer = self.runtime["_TOKENIZER"]
         self.assertFalse(serve.mask_coverage_truncated("甲 \n", [(0, 1)], tokenizer))
         self.assertTrue(serve.mask_coverage_truncated("甲 9", [(0, 1)], tokenizer))
         with patch.multiple(serve, **self.runtime):
             self.assertEqual(serve.model_mask_spans("電話91234567  "), serve.model_mask_spans("電話91234567"))
 
     def test_tokenizer_that_drops_the_tail_still_fails_closed(self):
-        tokenizer = self.runtime["_COLLATOR"].tokenizer
+        tokenizer = self.runtime["_TOKENIZER"]
 
         class Truncating(type(tokenizer)):
             def __call__(self, text, max_length=512, **kwargs):
@@ -173,7 +173,7 @@ class LongMessageMaskTests(unittest.TestCase):
                 return super().__call__(text, max_length, **kwargs)
 
         with patch.multiple(serve, **self.runtime), patch.object(
-            serve._COLLATOR, "tokenizer", Truncating()
+            serve, "_TOKENIZER", Truncating()
         ):
             with self.assertRaises(serve.MaskTruncated):
                 serve.model_mask_spans("x" * 100)
@@ -210,8 +210,8 @@ class BatchedMaskTests(unittest.TestCase):
         rows = ["你" * 500, "電話91234567", "你" * 500]
         with patch.multiple(serve, **self.runtime):
             batched = serve.mask_payload(rows)["messages"]
-            batch_calls = self.runtime["_MODEL"].encoder.calls
-            shapes = list(self.runtime["_MODEL"].encoder.shapes)
+            batch_calls = self.runtime["_ENCODER"].calls
+            shapes = list(self.runtime["_ENCODER"].shapes)
             individual = [{"spans": serve.model_mask_spans(row)} for row in rows]
         self.assertEqual(batched, individual)
         self.assertEqual(batch_calls, 3)
@@ -221,7 +221,7 @@ class BatchedMaskTests(unittest.TestCase):
 
     def test_mixed_length_batch_bounds_padding_work_and_prevents_padding_leakage(self):
         torch = self.torch
-        tokenizer = self.runtime["_COLLATOR"].tokenizer
+        tokenizer = self.runtime["_TOKENIZER"]
         tokenizer.pad_token_id = 200
 
         class AttentionAwareEncoder:
@@ -241,7 +241,7 @@ class BatchedMaskTests(unittest.TestCase):
                 return SimpleNamespace(last_hidden_state=base + 0.1 * row_mean)
 
         encoder = AttentionAwareEncoder()
-        self.runtime["_MODEL"] = SimpleNamespace(encoder=encoder)
+        self.runtime["_ENCODER"] = encoder
 
         rows = ["電話91234567"] * 9 + ["你" * 94]
         with patch.multiple(serve, **self.runtime):
@@ -263,7 +263,7 @@ class BatchedMaskTests(unittest.TestCase):
         rows = ["ab", "電話91234567", "abc@example.com"]
         with patch.multiple(serve, **self.runtime):
             batched = serve.mask_payload(rows)["messages"]
-            context_inputs = list(self.runtime["_MODEL"].encoder.seen_inputs[1:])
+            context_inputs = list(self.runtime["_ENCODER"].seen_inputs[1:])
             individual = [{"spans": serve.model_mask_spans(row)} for row in rows]
         self.assertEqual(batched, individual)
         for batch_ids, batch_mask in context_inputs:
@@ -274,10 +274,10 @@ class BatchedMaskTests(unittest.TestCase):
         with patch.multiple(serve, **self.runtime), patch.object(serve, "_MAX_MASK_WINDOWS", 1):
             with self.assertRaisesRegex(ValueError, "message too long"):
                 serve.mask_payload(["ok", "你" * 100])
-        self.assertEqual(self.runtime["_MODEL"].encoder.calls, 0)
+        self.assertEqual(self.runtime["_ENCODER"].calls, 0)
 
     def test_truncated_batch_fails_before_any_encoder_call(self):
-        tokenizer = self.runtime["_COLLATOR"].tokenizer
+        tokenizer = self.runtime["_TOKENIZER"]
 
         class Truncating(type(tokenizer)):
             def __call__(self, text, max_length=512, **kwargs):
@@ -285,48 +285,24 @@ class BatchedMaskTests(unittest.TestCase):
                 return super().__call__(text, max_length, **kwargs)
 
         with patch.multiple(serve, **self.runtime), patch.object(
-            serve._COLLATOR, "tokenizer", Truncating()
+            serve, "_TOKENIZER", Truncating()
         ):
             with self.assertRaises(serve.MaskTruncated):
                 serve.mask_payload(["ok", "x" * 100])
-        self.assertEqual(self.runtime["_MODEL"].encoder.calls, 0)
+        self.assertEqual(self.runtime["_ENCODER"].calls, 0)
 
     def test_empty_batch_runs_no_encoder_and_still_requires_the_head(self):
         with patch.multiple(serve, **self.runtime):
             self.assertEqual(serve.mask_payload([])["messages"], [])
-            self.assertEqual(self.runtime["_MODEL"].encoder.calls, 0)
-            self.assertEqual(self.runtime["_COLLATOR"].tokenizer.option_calls, 0)
+            self.assertEqual(self.runtime["_ENCODER"].calls, 0)
+            self.assertEqual(self.runtime["_TOKENIZER"].option_calls, 0)
             with patch.object(serve, "_MASK_HEAD", None):
                 with self.assertRaises(RuntimeError):
                     serve.mask_payload([])
-        self.assertEqual(self.runtime["_MODEL"].encoder.calls, 0)
+        self.assertEqual(self.runtime["_ENCODER"].calls, 0)
 
 
-class ScamProbabilityTests(unittest.TestCase):
-    def test_named_scam_option(self):
-        self.assertAlmostEqual(
-            serve.scam_probability(["not_scam", "scam"], [0.2, 0.8]),
-            0.8,
-        )
-        self.assertAlmostEqual(
-            serve.scam_probability(["scam", "not_scam"], [0.9, 0.1]),
-            0.9,
-        )
-
-    def test_case_insensitive(self):
-        self.assertAlmostEqual(
-            serve.scam_probability(["Not_Scam", "SCAM"], [0.3, 0.7]),
-            0.7,
-        )
-
-    def test_option_index_and_unlabeled_fallback(self):
-        self.assertEqual(serve.option_index(["not_scam", "scam"], "SCAM"), 1)
-        self.assertIsNone(serve.option_index(["safe", "risk"], "scam"))
-        self.assertAlmostEqual(
-            serve.scam_probability(["safe", "risk"], [0.4, 0.6]),
-            0.6,
-        )
-
+class PiiMaskDataSplitTests(unittest.TestCase):
     def test_generate_split_spans_stay_inside_the_text(self):
         import pii_mask_data as data
 
@@ -339,31 +315,11 @@ class ScamProbabilityTests(unittest.TestCase):
                 self.assertGreater(span["end"], span["start"])
                 self.assertLessEqual(span["end"], len(row["text"]))
 
-    def test_falls_back_to_last_when_unlabeled(self):
-        self.assertAlmostEqual(
-            serve.scam_probability(["safe", "risk"], [0.4, 0.6]),
-            0.6,
-        )
 
-    def test_parse_options_default(self):
-        self.assertEqual(serve.parse_options(None), ("not_scam", "scam"))
-        self.assertEqual(serve.parse_options(" not_scam, scam "), ("not_scam", "scam"))
-
-    def test_published_release_download_url(self):
-        self.assertEqual(serve.RELEASE_TAG, "jevlike-hf-r1")
-        self.assertEqual(serve.RELEASE_ASSET, "jevlike_hf_chinese_roberta_r1.pt")
-        self.assertEqual(
-            serve.RELEASE_DOWNLOAD_URL,
-            "https://github.com/KLHA829/scam-detection-jev/releases/download/"
-            "jevlike-hf-r1/jevlike_hf_chinese_roberta_r1.pt",
-        )
-
-
-class ResolveCheckpointTests(unittest.TestCase):
+class ResolveMaskCheckpointTests(unittest.TestCase):
     def setUp(self):
         self._saved_env = {
-            "JEVLIKE_CKPT": os.environ.pop("JEVLIKE_CKPT", None),
-            "JEVLIKE_CHECKPOINT": os.environ.pop("JEVLIKE_CHECKPOINT", None),
+            "JEVLIKE_MASK_CKPT": os.environ.pop("JEVLIKE_MASK_CKPT", None),
         }
 
     def tearDown(self):
@@ -377,60 +333,33 @@ class ResolveCheckpointTests(unittest.TestCase):
         with tempfile.NamedTemporaryFile(delete=False) as handle:
             path = Path(handle.name)
         try:
-            os.environ["JEVLIKE_CKPT"] = str(path)
-            self.assertEqual(serve.resolve_checkpoint(), path)
+            os.environ["JEVLIKE_MASK_CKPT"] = str(path)
+            self.assertEqual(serve.resolve_mask_checkpoint(), path)
         finally:
             path.unlink(missing_ok=True)
 
     def test_explicit_env_missing_fails(self):
-        os.environ["JEVLIKE_CKPT"] = "/tmp/jevlike-missing-test.ckpt"
+        os.environ["JEVLIKE_MASK_CKPT"] = "/tmp/jevlike-mask-missing-test.pt"
         with self.assertRaises(FileNotFoundError) as ctx:
-            serve.resolve_checkpoint()
-        self.assertIn("JEVLIKE_CKPT not found", str(ctx.exception))
+            serve.resolve_mask_checkpoint()
+        self.assertIn("JEVLIKE_MASK_CKPT not found", str(ctx.exception))
 
-    def test_default_r1_only_no_legacy_fallback(self):
-        """Missing r1 must error even when legacy heads exist under ROOT/models/."""
+    def test_default_missing_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            models_dir = root / "models"
-            models_dir.mkdir()
-            r1 = models_dir / "jevlike_hf_chinese_roberta_r1.pt"
-            legacy_plain = models_dir / "jevlike_hf_chinese_roberta.pt"
-            legacy_hn800 = models_dir / "hf_chinese_roberta_hn800.pt"
-            legacy_plain.write_bytes(b"legacy-plain-stub")
-            legacy_hn800.write_bytes(b"legacy-hn800-stub")
-
-            self.assertFalse(r1.is_file())
-            self.assertTrue(legacy_plain.is_file())
-            self.assertTrue(legacy_hn800.is_file())
-            # Pre-fix candidate walk (ROOT/models/*) would return the plain legacy head.
-            self.assertEqual(
-                next(
-                    (
-                        p
-                        for p in (r1, legacy_plain, legacy_hn800)
-                        if p.is_file()
-                    ),
-                    None,
-                ),
-                legacy_plain,
-            )
-
-            with patch.object(serve, "ROOT", root), patch.object(
-                serve, "DEFAULT_CKPT", r1
-            ):
+            missing = Path(tmp) / "jevlike_hf_pii_mask.pt"
+            with patch.object(serve, "DEFAULT_MASK_CKPT", missing):
                 with self.assertRaises(FileNotFoundError) as ctx:
-                    serve.resolve_checkpoint()
+                    serve.resolve_mask_checkpoint()
                 msg = str(ctx.exception)
-                self.assertIn("r1 checkpoint not found", msg)
-                self.assertIn(str(r1), msg)
+                self.assertIn("PII mask checkpoint not found", msg)
+                self.assertIn(str(missing), msg)
 
-    def test_default_loads_r1_when_present(self):
+    def test_default_loads_when_present(self):
         with tempfile.TemporaryDirectory() as tmp:
-            r1 = Path(tmp) / "jevlike_hf_chinese_roberta_r1.pt"
-            r1.write_bytes(b"stub")
-            with patch.object(serve, "DEFAULT_CKPT", r1):
-                self.assertEqual(serve.resolve_checkpoint(), r1)
+            mask_ckpt = Path(tmp) / "jevlike_hf_pii_mask.pt"
+            mask_ckpt.write_bytes(b"stub")
+            with patch.object(serve, "DEFAULT_MASK_CKPT", mask_ckpt):
+                self.assertEqual(serve.resolve_mask_checkpoint(), mask_ckpt)
 
 
 class EnvDefaultTests(unittest.TestCase):
@@ -738,7 +667,6 @@ class ThresholdTests(unittest.TestCase):
 class UnloadedWorkerTests(unittest.TestCase):
     def test_mask_helpers_do_nothing_until_a_head_is_loaded(self):
         self.assertEqual(serve.model_mask_spans("電話91234567"), [])
-        self.assertIsNone(serve.maybe_load_mask_head())
         with tempfile.TemporaryDirectory() as tmp:
             missing = Path(tmp) / "missing.pt"
             with patch.dict(os.environ, {"JEVLIKE_MASK_CKPT": str(missing)}):
@@ -776,7 +704,7 @@ class UnloadedWorkerTests(unittest.TestCase):
             self.assertEqual(ctx.exception.code, 503)
 
             bad = Request(
-                f"http://127.0.0.1:{port}/v1/score",
+                f"http://127.0.0.1:{port}/v1/mask",
                 data=b"not-json",
                 method="POST",
             )
@@ -784,21 +712,22 @@ class UnloadedWorkerTests(unittest.TestCase):
                 urlopen(bad)
             self.assertEqual(ctx.exception.code, 422)
 
-            missing = Request(
-                f"http://127.0.0.1:{port}/nope",
-                data=b"{}",
-                method="POST",
-            )
-            with self.assertRaises(HTTPError) as ctx:
-                urlopen(missing)
-            self.assertEqual(ctx.exception.code, 404)
+            for retired_path in ("/v1/score", "/score", "/predict", "/nope"):
+                missing = Request(
+                    f"http://127.0.0.1:{port}{retired_path}",
+                    data=b"{}",
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as ctx:
+                    urlopen(missing)
+                self.assertEqual(ctx.exception.code, 404, retired_path)
 
             healthz = urlopen(f"http://127.0.0.1:{port}/healthz")
             self.assertEqual(healthz.status, 200)
             healthz.close()
 
             not_object = Request(
-                f"http://127.0.0.1:{port}/v1/score",
+                f"http://127.0.0.1:{port}/v1/mask",
                 data=b"[]",
                 method="POST",
             )
@@ -815,15 +744,6 @@ class UnloadedWorkerTests(unittest.TestCase):
                 urlopen(text_mask)
             self.assertEqual(ctx.exception.code, 503)
 
-            unloaded_score = Request(
-                f"http://127.0.0.1:{port}/v1/score",
-                data=json.dumps({"text": "你好"}).encode(),
-                method="POST",
-            )
-            with self.assertRaises(HTTPError) as ctx:
-                urlopen(unloaded_score)
-            self.assertEqual(ctx.exception.code, 500)
-
             with patch.object(serve, "API_KEY", "secret"):
                 denied = Request(
                     f"http://127.0.0.1:{port}/health",
@@ -839,7 +759,7 @@ class UnloadedWorkerTests(unittest.TestCase):
             conn = http.client.HTTPConnection("127.0.0.1", port)
             conn.request(
                 "POST",
-                "/v1/score",
+                "/v1/mask",
                 body=None,
                 headers={"content-length": str(serve.MAX_BODY + 1)},
             )
@@ -848,7 +768,7 @@ class UnloadedWorkerTests(unittest.TestCase):
             too_big.read()
             conn.request(
                 "POST",
-                "/v1/score",
+                "/v1/mask",
                 body=b"not-a-json",
                 headers={"content-length": "-1"},
             )
@@ -860,56 +780,24 @@ class UnloadedWorkerTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
-    def test_maybe_load_does_nothing_without_a_checkpoint(self):
-        saved = serve._MODEL
-        serve._MODEL = object()
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                missing = Path(tmp) / "missing.pt"
-                with (
-                    patch.object(serve, "DEFAULT_MASK_CKPT", missing),
-                    patch.dict(os.environ, {"JEVLIKE_MASK_CKPT": ""}, clear=False),
-                ):
-                    self.assertIsNone(serve.maybe_load_mask_head())
-        finally:
-            serve._MODEL = saved
-
 
 def _install_jevlike_stub():
     import sys
     import types
 
-    if "jevlike" in sys.modules and hasattr(sys.modules["jevlike"], "data"):
+    if "jevlike" in sys.modules and hasattr(sys.modules["jevlike"], "model"):
         return
     jevlike = types.ModuleType("jevlike")
     model = types.ModuleType("jevlike.model")
-    data = types.ModuleType("jevlike.data")
-    train = types.ModuleType("jevlike.train")
 
     class AttentionHead:
         def __init__(self, *args, **kwargs):
             pass
 
-    class ChoiceExample:
-        def __init__(self, text, labels, label_index=0):
-            self.text = text
-            self.labels = labels
-            self.label_index = label_index
-
-    def move(batch, device):
-        return batch
-
     model.AttentionHead = AttentionHead
-    model.make_system = lambda config, device: (None, None)
-    data.ChoiceExample = ChoiceExample
-    train.move = move
     jevlike.model = model
-    jevlike.data = data
-    jevlike.train = train
     sys.modules["jevlike"] = jevlike
     sys.modules["jevlike.model"] = model
-    sys.modules["jevlike.data"] = data
-    sys.modules["jevlike.train"] = train
 
 
 class TorchHelperTests(unittest.TestCase):
@@ -1007,170 +895,111 @@ class TorchHelperTests(unittest.TestCase):
         options = train.encode_options(Tokenizer(), Encoder(), torch.device("cpu"))
         self.assertEqual(tuple(options.shape), (2, 4))
 
-        with self.assertRaises(SystemExit):
-            old = sys.argv
-            sys.argv = [
-                "train_pii_mask.py",
-                "--output",
-                str(train.R1_PATH),
-            ]
-            try:
-                train.main()
-            finally:
-                sys.argv = old
-
-    def test_score_text_and_truncated_mask_with_fakes(self):
+    def test_truncated_mask_with_fakes(self):
         torch = self.torch
         saved = {
-            "model": serve._MODEL,
-            "collator": serve._COLLATOR,
+            "encoder": serve._ENCODER,
+            "tokenizer": serve._TOKENIZER,
             "device": serve._DEVICE,
-            "options": serve._OPTIONS,
-            "encoder": serve._ENCODER_ID,
-            "ckpt": serve._CHECKPOINT_PATH,
+            "encoder_id": serve._ENCODER_ID,
             "head": serve._MASK_HEAD,
             "cfg": serve._MASK_CFG,
-            "config": serve._CONFIG,
             "mask_option_cache": serve._MASK_OPTION_CACHE,
         }
 
-        class Collator:
-            def __call__(self, examples):
-                return {"examples": examples}
+        class Tok:
+            def __call__(self, text, **kwargs):
+                count = len(text) if isinstance(text, list) else 1
+                length = 0 if isinstance(text, list) else len(text)
+                out = {
+                    "input_ids": torch.ones(count, 2, dtype=torch.long),
+                    "attention_mask": torch.ones(count, 2, dtype=torch.long),
+                }
+                if kwargs.get("return_offsets_mapping"):
+                    out["offset_mapping"] = torch.tensor([[[0, 0], [0, length]]])
+                return out
 
-            tokenizer = None
+        class Enc:
+            def __call__(self, input_ids, attention_mask):
+                batch, length = input_ids.shape[0], input_ids.shape[1]
+                return type(
+                    "Out",
+                    (),
+                    {"last_hidden_state": torch.ones(batch, length, 4)},
+                )()
 
-        class Model:
-            def __call__(self, batch):
-                return torch.tensor([[0.1, 2.0]])
+        class Head:
+            rank = 4
+
+            def context_norm(self, value):
+                return value
+
+            def option_norm(self, value):
+                return value
+
+            def query(self, value):
+                return value[..., : self.rank]
+
+            def key(self, value):
+                return value[..., : self.rank]
 
         try:
-            serve._MODEL = Model()
-            serve._COLLATOR = Collator()
-            serve._DEVICE = torch.device("cpu")
-            serve._OPTIONS = ("not_scam", "scam")
-            serve._ENCODER_ID = "stub"
-            serve._CHECKPOINT_PATH = None
-            scored = serve.score_text("你好")
-            self.assertEqual(scored["label"], "scam")
-            self.assertGreater(scored["prob_scam"], 0.5)
-            import threading
-            from urllib.request import Request, urlopen
-
-            server = serve.ThreadingHTTPServer(("127.0.0.1", 0), serve.Handler)
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
-            thread.start()
-            try:
-                port = server.server_address[1]
-                req = Request(
-                    f"http://127.0.0.1:{port}/v1/score",
-                    data=json.dumps({"text": "你好", "options": ["not_scam", "scam"]}).encode(),
-                    method="POST",
-                )
-                with urlopen(req) as res:
-                    body = json.loads(res.read().decode())
-                self.assertEqual(res.status, 200)
-                self.assertEqual(body["label"], "scam")
-            finally:
-                server.shutdown()
-                server.server_close()
-            with self.assertRaises(ValueError):
-                serve.score_text("   ")
-            with self.assertRaises(ValueError):
-                serve.score_text("你好", ("only-one",))
-
-            class Tok:
-                def __call__(self, text, **kwargs):
-                    length = len(text)
-                    return {
-                        "input_ids": torch.ones(1, 2, dtype=torch.long),
-                        "attention_mask": torch.ones(1, 2, dtype=torch.long),
-                        "offset_mapping": torch.tensor([[[0, 0], [0, length]]]),
-                    }
-
-            class Enc:
-                def __call__(self, input_ids, attention_mask):
-                    batch, length = input_ids.shape[0], input_ids.shape[1]
-                    return type(
-                        "Out",
-                        (),
-                        {"last_hidden_state": torch.ones(batch, length, 4)},
-                    )()
-
-                encoder = property(lambda self: self)
-
-            class Head:
-                rank = 4
-
-                def context_norm(self, value):
-                    return value
-
-                def option_norm(self, value):
-                    return value
-
-                def query(self, value):
-                    return value[..., : self.rank]
-
-                def key(self, value):
-                    return value[..., : self.rank]
-
             serve._MASK_HEAD = Head()
-            serve._MODEL = Enc()
-            serve._COLLATOR = type("C", (), {"tokenizer": Tok()})()
+            serve._ENCODER = Enc()
+            serve._TOKENIZER = Tok()
+            serve._DEVICE = torch.device("cpu")
             serve._MASK_CFG = {"context_tokens": 8, "mask_threshold": 0.5}
+            serve._MASK_OPTION_CACHE = None
             spans = serve.model_mask_spans("ab")
             self.assertIsInstance(spans, list)
 
             class ShortTok(Tok):
                 def __call__(self, text, **kwargs):
-                    return {
-                        "input_ids": torch.ones(1, 2, dtype=torch.long),
-                        "attention_mask": torch.ones(1, 2, dtype=torch.long),
-                        "offset_mapping": torch.tensor([[[0, 0], [0, 1]]]),
-                    }
+                    out = super().__call__(text, **kwargs)
+                    if kwargs.get("return_offsets_mapping"):
+                        out["offset_mapping"] = torch.tensor([[[0, 0], [0, 1]]])
+                    return out
 
-            serve._COLLATOR = type("C", (), {"tokenizer": ShortTok()})()
+            serve._TOKENIZER = ShortTok()
             with self.assertRaises(serve.MaskTruncated):
                 serve.model_mask_spans("abcd")
         finally:
-            serve._MODEL = saved["model"]
-            serve._COLLATOR = saved["collator"]
+            serve._ENCODER = saved["encoder"]
+            serve._TOKENIZER = saved["tokenizer"]
             serve._DEVICE = saved["device"]
-            serve._OPTIONS = saved["options"]
-            serve._ENCODER_ID = saved["encoder"]
-            serve._CHECKPOINT_PATH = saved["ckpt"]
+            serve._ENCODER_ID = saved["encoder_id"]
             serve._MASK_HEAD = saved["head"]
             serve._MASK_CFG = saved["cfg"]
-            serve._CONFIG = saved["config"]
             serve._MASK_OPTION_CACHE = saved["mask_option_cache"]
 
     def test_load_runtime_rejects_a_checkpoint_that_is_not_a_head(self):
         torch = self.torch
         saved = {
-            "options": serve._OPTIONS,
-            "ckpt": serve._CHECKPOINT_PATH,
-            "config": serve._CONFIG,
-            "encoder": serve._ENCODER_ID,
+            "encoder_id": serve._ENCODER_ID,
             "device": serve._DEVICE,
-            "model": serve._MODEL,
-            "collator": serve._COLLATOR,
+            "encoder": serve._ENCODER,
+            "tokenizer": serve._TOKENIZER,
+            "head": serve._MASK_HEAD,
+            "cfg": serve._MASK_CFG,
+            "path": serve._MASK_PATH,
+            "threshold": serve._MASK_THRESHOLD,
+            "cache": serve._MASK_OPTION_CACHE,
         }
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "not-a-head.pt"
             torch.save({"nope": 1}, path)
-            with patch.dict(os.environ, {"JEVLIKE_CKPT": str(path)}):
+            with patch.dict(os.environ, {"JEVLIKE_MASK_CKPT": str(path)}):
                 with self.assertRaises(ValueError):
                     serve.load_runtime()
-        serve._OPTIONS = saved["options"]
-        serve._CHECKPOINT_PATH = saved["ckpt"]
-        serve._CONFIG = saved["config"]
-        serve._ENCODER_ID = saved["encoder"]
+        serve._ENCODER_ID = saved["encoder_id"]
         serve._DEVICE = saved["device"]
-        serve._MODEL = saved["model"]
-        serve._COLLATOR = saved["collator"]
-        serve._MASK_HEAD = None
-        serve._MASK_CFG = None
-        serve._MASK_PATH = None
+        serve._ENCODER = saved["encoder"]
+        serve._TOKENIZER = saved["tokenizer"]
+        serve._MASK_HEAD = saved["head"]
+        serve._MASK_CFG = saved["cfg"]
+        serve._MASK_PATH = saved["path"]
+        serve._MASK_THRESHOLD = saved["threshold"]
+        serve._MASK_OPTION_CACHE = saved["cache"]
 
 
 class SyntheticLabelTests(unittest.TestCase):
@@ -1217,15 +1046,21 @@ class MaskHeadLoadTests(unittest.TestCase):
         self.torch = torch
         _install_jevlike_stub()
 
-    def test_rejects_the_wrong_task_and_loads_a_pii_head(self):
+    def test_rejects_the_wrong_task_before_encoder_and_loads_a_pii_head(self):
+        import types
+
         torch = self.torch
         saved = {
-            "model": serve._MODEL,
+            "encoder_id": serve._ENCODER_ID,
             "device": serve._DEVICE,
+            "encoder": serve._ENCODER,
+            "tokenizer": serve._TOKENIZER,
             "head": serve._MASK_HEAD,
             "cfg": serve._MASK_CFG,
             "path": serve._MASK_PATH,
             "threshold": serve._MASK_THRESHOLD,
+            "cache": serve._MASK_OPTION_CACHE,
+            "transformers": sys.modules.get("transformers"),
         }
 
         class Head:
@@ -1244,20 +1079,44 @@ class MaskHeadLoadTests(unittest.TestCase):
             def eval(self):
                 return self
 
+        calls = []
+
+        class StubEncoder:
+            config = type("Cfg", (), {"hidden_size": 8})()
+
+            def to(self, _device):
+                return self
+
+            def eval(self):
+                return self
+
+        class StubAutoModel:
+            @staticmethod
+            def from_pretrained(name):
+                calls.append(("model", name))
+                return StubEncoder()
+
+        class StubAutoTokenizer:
+            @staticmethod
+            def from_pretrained(name, use_fast=True):
+                calls.append(("tokenizer", name))
+                return object()
+
+        transformers_stub = types.ModuleType("transformers")
+        transformers_stub.AutoModel = StubAutoModel
+        transformers_stub.AutoTokenizer = StubAutoTokenizer
+
         sys.modules["jevlike.model"].AttentionHead = Head
-        serve._MODEL = type(
-            "Model",
-            (),
-            {"encoder": type("Enc", (), {"config": type("Cfg", (), {"hidden_size": 8})()})()},
-        )()
-        serve._DEVICE = torch.device("cpu")
+        sys.modules["transformers"] = transformers_stub
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 wrong = Path(tmp) / "wrong.pt"
                 torch.save({"config": {"task": "scam"}, "state_dict": {}}, wrong)
                 with patch.dict(os.environ, {"JEVLIKE_MASK_CKPT": str(wrong)}):
                     with self.assertRaises(ValueError):
-                        serve.maybe_load_mask_head()
+                        serve.load_runtime()
+                self.assertEqual(calls, [])
+
                 good = Path(tmp) / "pii.pt"
                 torch.save(
                     {
@@ -1272,43 +1131,56 @@ class MaskHeadLoadTests(unittest.TestCase):
                     good,
                 )
                 with patch.dict(os.environ, {"JEVLIKE_MASK_CKPT": str(good)}):
-                    serve.maybe_load_mask_head()
+                    serve.load_runtime()
                 self.assertEqual(serve._MASK_THRESHOLD, 0.42)
                 self.assertEqual(serve._MASK_HEAD.state, {"query.weight": 1})
+                self.assertEqual(serve._MASK_CFG["context_tokens"], 12)
+                self.assertEqual(len(calls), 2)
                 with self.assertRaises(ValueError):
                     serve.mask_payload(["ok", 1])
         finally:
-            serve._MODEL = saved["model"]
+            if saved["transformers"] is None:
+                sys.modules.pop("transformers", None)
+            else:
+                sys.modules["transformers"] = saved["transformers"]
+            serve._ENCODER_ID = saved["encoder_id"]
             serve._DEVICE = saved["device"]
+            serve._ENCODER = saved["encoder"]
+            serve._TOKENIZER = saved["tokenizer"]
             serve._MASK_HEAD = saved["head"]
             serve._MASK_CFG = saved["cfg"]
             serve._MASK_PATH = saved["path"]
             serve._MASK_THRESHOLD = saved["threshold"]
+            serve._MASK_OPTION_CACHE = saved["cache"]
 
     def test_main_stops_before_listen_when_the_checkpoint_is_not_a_head(self):
         torch = self.torch
         saved = {
-            "options": serve._OPTIONS,
-            "ckpt": serve._CHECKPOINT_PATH,
-            "config": serve._CONFIG,
-            "encoder": serve._ENCODER_ID,
+            "encoder_id": serve._ENCODER_ID,
             "device": serve._DEVICE,
-            "model": serve._MODEL,
-            "collator": serve._COLLATOR,
+            "encoder": serve._ENCODER,
+            "tokenizer": serve._TOKENIZER,
+            "head": serve._MASK_HEAD,
+            "cfg": serve._MASK_CFG,
+            "path": serve._MASK_PATH,
+            "threshold": serve._MASK_THRESHOLD,
+            "cache": serve._MASK_OPTION_CACHE,
         }
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "not-a-head.pt"
             torch.save({"nope": 1}, path)
-            with patch.dict(os.environ, {"JEVLIKE_CKPT": str(path)}):
+            with patch.dict(os.environ, {"JEVLIKE_MASK_CKPT": str(path)}):
                 with self.assertRaises(ValueError):
                     serve.main()
-        serve._OPTIONS = saved["options"]
-        serve._CHECKPOINT_PATH = saved["ckpt"]
-        serve._CONFIG = saved["config"]
-        serve._ENCODER_ID = saved["encoder"]
+        serve._ENCODER_ID = saved["encoder_id"]
         serve._DEVICE = saved["device"]
-        serve._MODEL = saved["model"]
-        serve._COLLATOR = saved["collator"]
+        serve._ENCODER = saved["encoder"]
+        serve._TOKENIZER = saved["tokenizer"]
+        serve._MASK_HEAD = saved["head"]
+        serve._MASK_CFG = saved["cfg"]
+        serve._MASK_PATH = saved["path"]
+        serve._MASK_THRESHOLD = saved["threshold"]
+        serve._MASK_OPTION_CACHE = saved["cache"]
 
 
 class RegressionFixTests(unittest.TestCase):

@@ -3,9 +3,9 @@
 Personal **WhatsApp Web** bot: it masks PII on your machine, sends redacted text to an **OpenAI-compatible** chat API, archives suspicious 1:1 DMs, and blocks **unsaved** contacts only when a URL matches [`data/malicious-hosts.json`](data/malicious-hosts.json).
 Keyword and link-rule hits require AI confirmation before archive. A curated URL or email-domain match can still recommend archive without AI, subject to the warning-only exception; an email match never auto-blocks. Saved contacts get a review card instead of an automatic archive or block.
 
-Local [jevlike](https://github.com/vinnylarouge/jevlike) serves **`POST /v1/mask`**. Judgment uses **`LLM_REVIEW_*`**. The frozen scam head (`jevlike_hf_chinese_roberta_r1.pt`) is for **lab eval** only. There is no LightJev or `SCORER=model_v2` path.
+Local [jevlike](https://github.com/vinnylarouge/jevlike) `AttentionHead` worker serves **`POST /v1/mask`**. Judgment uses **`LLM_REVIEW_*`**.
 
-For why the live path works this way, see [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md). For thresholds and decision labels, see [SCORING_RUBRIC.md](SCORING_RUBRIC.md).
+For why the live path works this way, see [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md). For decision rules and toggles, see [SCORING_RUBRIC.md](SCORING_RUBRIC.md).
 
 ## Before you start
 
@@ -32,7 +32,6 @@ python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 python -m pip install -r requirements.txt
 npm install
 npm run wa-bridge:build     # build default whatsmeow sidecar (Go 1.26+)
-scripts/download_jevlike_ckpt.sh
 scripts/download_pii_mask_ckpt.sh
 
 # Terminal 1 — activate the venv; first start downloads the encoder once (~400 MB)
@@ -50,7 +49,7 @@ Scan the QR code. By default (`WA_TRANSPORT=whatsmeow`), session keys stay in `w
 
 Set `JEVLIKE_DEVICE=cuda` only when you have a compatible NVIDIA GPU. CPU is the default on a Pi.
 
-The r1 download alone cannot serve `/v1/mask`: `scripts/download_pii_mask_ckpt.sh` downloads the separate published PII head and verifies its SHA-256 (see [models/README.md](models/README.md)). Alternatively, export `JEVLIKE_MASK_CKPT=/path/to/jevlike_hf_pii_mask.pt` for an existing trained head in the worker shell. `jevlike_serve.py` does not read `.env`; export optional lab `JEVLIKE_CKPT` there too. Restart the worker after downloading, training, or changing the head. Without it, `/v1/mask` returns 503 and the bot skips the LLM.
+`scripts/download_pii_mask_ckpt.sh` downloads the published PII mask head (`models/jevlike_hf_pii_mask.pt`) and verifies its SHA-256 (see [models/README.md](models/README.md)). Alternatively, export `JEVLIKE_MASK_CKPT=/path/to/jevlike_hf_pii_mask.pt` for an existing trained head in the worker shell (`jevlike_serve.py` does not read `.env`). Restart the worker after downloading, training, or changing the head. Without it, `jevlike_serve.py` fails to start and the bot skips the LLM.
 
 ### Raspberry Pi (正體中文)
 
@@ -69,7 +68,6 @@ python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 python -m pip install -r requirements.txt
 npm install
 npm run wa-bridge:build
-scripts/download_jevlike_ckpt.sh
 scripts/download_pii_mask_ckpt.sh
 
 python jevlike_serve.py   # terminal 1
@@ -82,15 +80,15 @@ curl -s -X POST localhost:8766/v1/mask -H 'content-type: application/json' -d '{
 npm start                 # terminal 2
 ```
 
-掃 QR。預設（`WA_TRANSPORT=whatsmeow`）Session 存在 `wa-bridge.db`（若設為 `WA_TRANSPORT=wwebjs` 則在 `.wwebjs_auth/`）。權重見 Release [jevlike-hf-r1](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-hf-r1) 同 [jevlike-pii-mask-hn2](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-pii-mask-hn2)。不要把 `.pt`、`.db` 或 encoder 推進 git。詳見 [models/README.md](models/README.md)。
+掃 QR。預設（`WA_TRANSPORT=whatsmeow`）Session 存在 `wa-bridge.db`（若設為 `WA_TRANSPORT=wwebjs` 則在 `.wwebjs_auth/`）。脫敏權重見 Release [jevlike-pii-mask-hn2](https://github.com/KLHA829/scam-detection-jev/releases/tag/jevlike-pii-mask-hn2)。不要把 `.pt`、`.db` 或 encoder 推進 git。詳見 [models/README.md](models/README.md)。
 
 Pi 建議 4 GB RAM 以上。`JEVLIKE_DEVICE=cpu` 為預設。
 
-只下載 r1 並不會產生脫敏頭；`scripts/download_pii_mask_ckpt.sh` 會下載已發佈嘅 `models/jevlike_hf_pii_mask.pt` 並核對 SHA-256，唔會覆蓋 r1。首次 worker start 會下載約 400 MB 編碼器。亦可在其他機器訓練後複製頭檔，並在啟動 worker 的 shell 執行 `export JEVLIKE_MASK_CKPT=/path/to/jevlike_hf_pii_mask.pt`。Worker 不會讀取 `.env`；下載、訓練或換頭後須重新啟動，再檢查上述兩個端點。缺少脫敏頭時 `/v1/mask` 會回 503，bot 會跳過 LLM。
+`scripts/download_pii_mask_ckpt.sh` 會下載已發佈嘅 `models/jevlike_hf_pii_mask.pt` 並核對 SHA-256。首次啟動 worker 會下載約 400 MB 編碼器。亦可在其他機器訓練後複製頭檔，並在啟動 worker 的 shell 執行 `export JEVLIKE_MASK_CKPT=/path/to/jevlike_hf_pii_mask.pt`（Worker 不會讀取 `.env`）。下載、訓練或換頭後須重新啟動，再檢查上述兩個端點。未載入脫敏頭時 worker 不會啟動，bot 亦會跳過 LLM。
 
 ### Windows notes
 
-- `scripts/download_jevlike_ckpt.sh` under git-bash uses a relative `--dir` so native `gh.exe` does not write to `C:\c\Users\...`.
+- `scripts/download_pii_mask_ckpt.sh` under git-bash uses a relative `--dir` so native `gh.exe` does not write to `C:\c\Users\...`.
 - Do not run `npm audit fix`. See [Known security advisories](#known-security-advisories).
 
 ### WhatsApp transport (`whatsmeow` default / Linux)
@@ -137,10 +135,8 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `JEVLIKE_HOST`, `JEVLIKE_PORT` | `127.0.0.1`, `8766` | Worker bind address and port (stub also reads the port). Avoid an open bind without auth. |
 | `JEVLIKE_MAX_BODY` | `65536` | Maximum worker HTTP body bytes; larger requests return 413. |
 | `JEVLIKE_DEVICE` | `cpu` | Worker device. Only exactly `cuda` checks CUDA availability and falls back to CPU when unavailable; `cuda:0` and other device strings bypass that check. |
-| `JEVLIKE_CKPT`, `JEVLIKE_CHECKPOINT` | `models/jevlike_hf_chinese_roberta_r1.pt` | Scorer/encoder checkpoint; first nonempty setting wins, then the default file. Missing file is an error. Scoring is lab-only. |
 | `JEVLIKE_ENCODER`, `JEVLIKE_HF_MODEL` | Checkpoint `hf_model`, then `hfl/chinese-roberta-wwm-ext` | Encoder overrides, in that precedence order. |
-| `JEVLIKE_OPTIONS` | `not_scam,scam` | Scorer labels (lab); requires at least two. |
-| `JEVLIKE_MASK_CKPT` | `models/jevlike_hf_pii_mask.pt` if present | PII head. A missing configured file logs a warning and the worker still starts without the head; `/v1/mask` returns 503 until a head is loaded. |
+| `JEVLIKE_MASK_CKPT` | `models/jevlike_hf_pii_mask.pt` | Required PII mask head; a missing or invalid checkpoint stops `jevlike_serve.py` startup before listening. |
 | `HEURISTIC_ENABLED` | `true` | Enables link rules and the curated blocklist fast path. |
 | `BLOCK_ENABLED` | `true` | Enables malicious-host auto-block of unsaved contacts, not model-based blocking. |
 | `MALICIOUS_HOSTS_PATH` | `data/malicious-hosts.json` in the repo | Maintained host list override. |
@@ -176,19 +172,17 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `WA_BRIDGE_TIMEOUT_MS` | `15000` | HTTP/startup timeout in ms for `wa-bridge` calls. |
 | `WA_BRIDGE_HOST`, `WA_BRIDGE_PORT`, `WA_BRIDGE_LOG_LEVEL` | `127.0.0.1`, `8767`, `WARN` | Standalone `wa-bridge` loopback bind host/port and log level (`ERROR` \| `WARN` \| `INFO` \| `DEBUG`). |
 
-### Checkpoint download helper settings
+### PII mask checkpoint download helper settings
 
-These are user-facing setup options for `scripts/download_jevlike_ckpt.sh`.
+These are user-facing setup options for `scripts/download_pii_mask_ckpt.sh`.
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `JEVLIKE_RELEASE_REPO` | `KLHA829/scam-detection-jev` | GitHub release repository. |
-| `JEVLIKE_RELEASE_TAG` | `jevlike-hf-r1` | Release tag. |
-| `JEVLIKE_RELEASE_ASSET` | `jevlike_hf_chinese_roberta_r1.pt` | Asset filename. |
-| `JEVLIKE_DOWNLOAD_URL` | `https://github.com/{repo}/releases/download/{tag}/{asset}` | Direct download URL built from the settings above. |
-| `JEVLIKE_CKPT` | Repo `models/jevlike_hf_chinese_roberta.pt` | Helper destination (different from the worker's r1 default). Unless forced, an existing destination passing size and non-HTML checks causes a successful early exit without checking for the named release asset; the worker's default r1 file may still be missing. After a download, the named asset is also kept beside the destination. |
+| `JEVLIKE_DOWNLOAD_URL` | `https://github.com/{repo}/releases/download/jevlike-pii-mask-hn2/jevlike_hf_pii_mask_hn2.pt` | Direct download URL override. |
+| `JEVLIKE_MASK_CKPT` | Repo `models/jevlike_hf_pii_mask.pt` | Helper destination (relative paths resolve from repo root). Unless forced, an existing destination passing size/HTML checks exits without re-downloading; its SHA-256 is still verified, and a mismatch requires manual recovery. |
 | `JEVLIKE_CKPT_MIN_BYTES` | `1000000` | Minimum size accepted as a checkpoint. |
-| `JEVLIKE_CKPT_FORCE` | `0` | Exactly `1` bypasses the existing-destination shortcut and downloads again. Otherwise a valid-looking destination is enough to exit successfully, even if the named release asset (including the worker's default r1 file) is absent. |
+| `JEVLIKE_CKPT_FORCE` | `0` | Exactly `1` bypasses the existing-destination shortcut and downloads again. |
 | `GH_TOKEN`, `GITHUB_TOKEN` | Unset | Optional GitHub auth; first nonempty token wins in this order. Never commit tokens. |
 
 ### Offline worker stub
@@ -200,7 +194,7 @@ npm run stub
 # JEVLIKE_BASE_URL=http://127.0.0.1:8766 npm start
 ```
 
-`[stub:scam]` in a message body forces the stub high-risk preset on **`/v1/score`** (eval only).
+The offline stub implements `/health` and regex-based `/v1/mask` without loading the encoder.
 
 ## Choose operator mode
 
@@ -297,7 +291,7 @@ BLOCK_LOG_PATH="$STATE_DIR/blocks.jsonl" npm start
 .cursor/skills/verify-scam-bot/bin/drive-agents-invariants
 ```
 
-`bin/drive-score-archive` is lab-only (`POST /v1/score`). Live proof is mask then LLM.
+Live proof is mask then LLM.
 
 ## Layout
 
@@ -312,9 +306,8 @@ BLOCK_LOG_PATH="$STATE_DIR/blocks.jsonl" npm start
 | `lib/llm-review.js` | Primary LLM after mask |
 | `lib/context-llm.js` | Context LLM when `CONTEXT_LLM_ENABLED` is on |
 | `lib/malicious-hosts.js`, `data/malicious-hosts.json` | Hosts that may auto-block unsaved contacts. `data/threat-feed-hosts.json` is a PhishTank verified-online snapshot from `scripts/update-threat-feeds.js`; it is a review-LLM signal only and never archives or blocks |
-| `jevlike_serve.py` | Worker: `/v1/mask` required; `/v1/score` optional for lab |
-| `lab/score-message.js` | Lab-only `/v1/score` helper |
-| `scripts/download_jevlike_ckpt.sh` | Pulls r1 head from GitHub Release |
+| `jevlike_serve.py` | PII mask worker (`/v1/mask` required) |
+| `scripts/download_pii_mask_ckpt.sh` | Pulls and SHA-256 verifies PII mask head from GitHub Release |
 
 ## Known security advisories
 
