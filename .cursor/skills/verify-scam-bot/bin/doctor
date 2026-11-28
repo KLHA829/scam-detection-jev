@@ -26,11 +26,6 @@ if [[ -d "$ROOT/node_modules/whatsapp-web.js" ]]; then
 else
   echo "node_modules: absent"
 fi
-if [[ -f "$ROOT/models/jevlike_hf_chinese_roberta_r1.pt" ]]; then
-  echo "checkpoint: present"
-else
-  echo "checkpoint: absent"
-fi
 if [[ -f "$ROOT/models/jevlike_hf_pii_mask.pt" ]]; then
   echo "pii_mask: present"
 else

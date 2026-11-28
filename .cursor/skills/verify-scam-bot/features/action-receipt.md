@@ -1,6 +1,6 @@
 # Action receipt
 
-After every completed archive or block, the bot messages the operator's own chat. The message names the chat-list contact, the phone, the local reason (link 句式, archive reason, LLM 覆核信心 when present). It has no score line: live inbound uses mask→LLM, not jevlike `/v1/score`, so neither the receipt nor the guided card shows `分數` or `封存線`. Choosing 留低 does not send that receipt.
+After every completed archive or block, the bot messages the operator's own chat. The message names the chat-list contact, the phone, the local reason (link 句式, archive reason, LLM 覆核信心 when present). It has no score line: live inbound uses mask→LLM, so neither the receipt nor the guided card shows `分數` or `封存線`. Choosing 留低 does not send that receipt.
 
 ## Sub-features
 

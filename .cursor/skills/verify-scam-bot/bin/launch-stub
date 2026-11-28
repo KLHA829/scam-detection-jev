@@ -86,5 +86,5 @@ if [[ "$ready" != 1 ]]; then
   exit 1
 fi
 
-echo "stub listening at $base/v1/score (pid $(cat "$RUN_DIR/stub.pid"))"
+echo "stub listening at $base/v1/mask (pid $(cat "$RUN_DIR/stub.pid"))"
 echo "ready when GET $base/health returns {\"ok\":true,\"model\":\"stub-jevlike\"}"

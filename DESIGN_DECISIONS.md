@@ -1,8 +1,8 @@
 # Design decisions
 
-This document explains **why** the live bot behaves as it does. For setup steps, see [README.md](README.md). For threshold numbers and archive reason labels, see [SCORING_RUBRIC.md](SCORING_RUBRIC.md). Agent invariants: [AGENTS.md](AGENTS.md).
+This document explains **why** the live bot behaves as it does. For setup steps, see [README.md](README.md). For decision rules, see [SCORING_RUBRIC.md](SCORING_RUBRIC.md). Agent invariants: [AGENTS.md](AGENTS.md).
 
-Live judgment (since 2026-10-16) is **mask, then OpenAI-compatible LLM**. Local jevlike serves **`POST /v1/mask`**. **`POST /v1/score`** is lab-only. LightJev and `SCORER=model_v2` are removed. There is no foreign-number hard archive.
+Live judgment (since 2026-10-16) is **mask, then OpenAI-compatible LLM**. Local jevlike serves **`POST /v1/mask`**. Legacy `/v1/score`, LightJev, and `SCORER=model_v2` are removed. There is no foreign-number hard archive.
 
 ## Why false blocks matter most
 
@@ -26,7 +26,7 @@ Everything else goes through mask and an OpenAI-compatible review (`LLM_REVIEW_E
 
 After a successful primary or context review recommends archive, the same `chatId` skips further mask and LLM for `LLM_REVIEW_COOLDOWN_MS` (default 10 minutes). Automatic mode starts this window after the archive succeeds; guided mode starts it before the operator acts.
 
-The frozen scam head and **`POST /v1/score`** remain for lab scoring (`lab/score-message.js`). They do **not** gate live archive or block.
+The local jevlike model serves **`POST /v1/mask`** only. Legacy `/v1/score` scam scoring and `lab/score-message.js` have been removed.
 
 ## Kept
 
@@ -46,9 +46,9 @@ The frozen scam head and **`POST /v1/score`** remain for lab scoring (`lab/score
 
 | Decision | Why |
 |----------|-----|
-| **HF-encoder scam head (lab only)** | Frozen `hfl/chinese-roberta-wwm-ext` plus r1 head for `/v1/score` and training. Live inbound uses mask head and LLM. |
+| **HF-encoder PII mask head** | Frozen `hfl/chinese-roberta-wwm-ext` plus `jevlike_hf_pii_mask.pt` for `POST /v1/mask` redaction before LLM review. |
 | Persistent **`jevlike_serve.py`** | Avoid reloading HF weights on every DM. |
-| **`scoring-rubric.json`** and env thresholds | Tune lab eval without code changes. Not live archive gates after mask and LLM. |
+| Environment configuration | Tune review, cooldown, and transport settings via `.env` without code changes. |
 | TTL cache and per-chat single-flight | Dedupes retries and overlapping handlers. |
 | **Paced WhatsApp writes** | Block, rename, mute, and archive run serially with `WA_ACTION_GAP_MS` (default 3s). Failed block does not save the contact. |
 | **Operator mode** — automatic or guided self-chat poll | Guided mode masks before Cantonese explanation. Explanation cannot archive or block. Receipts attach name and phone locally. |
@@ -71,7 +71,7 @@ The frozen scam head and **`POST /v1/score`** remain for lab scoring (`lab/score
 | Hosted TypeSafe Jev / OpenJEV `POST /v1/systemone` as default | Replaced by local mask head and OpenAI-compatible LLM. |
 | LightJev 0.6B / `SCORER=model_v2` | Removed. Not Pi-portable (~2.4 GB). |
 | **Foreign-number hard archive** | Removed. Clean DMs from any country code are ignored unless link rules or mask and LLM apply. |
-| llama-cpp / GGUF chat as primary classifier | Live path uses Chat Completions after mask. Scam head is lab scorer only. |
+| llama-cpp / GGUF chat as primary classifier | Live path uses Chat Completions after mask; `/v1/score` has been removed. |
 | Block saved contacts, block from score alone, block on lookalike or short link | Heuristic or model false positives must not lock someone out. |
 | **Warning-word table**, `isWarningOnly`, and phrase-trope regexes as gates | Natural-language regexes break on adversarial/conversational phrasing; structural link rules plus mask and LLM judge intent and warnings. |
 | CAPTCHA solving or scraping third-party sites | Out of scope unless explicitly requested. |

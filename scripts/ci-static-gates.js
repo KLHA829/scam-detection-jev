@@ -51,10 +51,7 @@ function gateScorePrimaryDocs() {
   const files = [
     `${VERIFY_SKILL}/SKILL.md`,
     ...listMdUnder(`${VERIFY_SKILL}/features`),
-  ].filter((rel) => {
-    const base = path.basename(rel);
-    return base !== 'lab-jevlike-score.md' && base !== 'score-archive.md';
-  });
+  ];
 
   for (const rel of files) {
     const text = readRepo(rel);
@@ -66,13 +63,7 @@ function gateScorePrimaryDocs() {
   }
   const labDriver = `${VERIFY_SKILL}/bin/drive-score-archive`;
   if (fs.existsSync(path.join(ROOT, labDriver))) {
-    const drv = readRepo(labDriver);
-    if (/createScoreClient/.test(drv)) {
-      fail(`${labDriver} must not reference createScoreClient`);
-    }
-    if (!/lab-only|Lab-only/i.test(drv)) {
-      fail(`${labDriver} must document lab-only usage`);
-    }
+    fail(`${labDriver} must stay removed`);
   }
   pass('verify-scam-bot docs/drivers do not teach score-primary live smoke');
 }

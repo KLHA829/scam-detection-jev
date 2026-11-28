@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
-"""Persistent HF-encoder jevlike scoring worker (Pi / CPU friendly).
+"""Persistent HF-encoder PII mask worker (Pi / CPU friendly).
 
-Loads a small jevlike head checkpoint (~2 MB) once and the frozen Hugging Face
+Loads the fine-tuned PII AttentionHead (~2 MB) and the frozen Hugging Face
 encoder (`hfl/chinese-roberta-wwm-ext` by default) from the Hub on first run.
 The encoder is NOT shipped in git.
 
-POST /v1/score  {"text":"..."} -> {prob_scam, prob_not_scam, label, score}
-POST /predict   same body (or {"context","options"})
 POST /v1/mask   {"messages":["..."]} -> {messages:[{spans:[{start,end,label}]}]}
 GET  /health
 
-/v1/mask does not use the scam choice head. Spans come only from the
-separate PII AttentionHead. Without that checkpoint the route returns 503
-and the bot does not send the text. find_mask_spans remains the training
-label helper; it is not applied to this response. The caller replaces the
-spans; this response never echoes the source text.
+Spans come only from the PII AttentionHead. Without that checkpoint startup
+refuses so unmasked text is never sent upstream. find_mask_spans remains the
+training label helper; it is not applied to this response. The caller replaces
+the spans; this response never echoes the source text.
 """
 from __future__ import annotations
 
@@ -29,7 +26,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_ENCODER = "hfl/chinese-roberta-wwm-ext"
-DEFAULT_OPTIONS = ("not_scam", "scam")
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8766
 
@@ -49,21 +45,11 @@ def env_int(name: str, default: int) -> int:
     return int(str(raw).strip())
 
 
-RELEASE_TAG = "jevlike-hf-r1"
-RELEASE_ASSET = "jevlike_hf_chinese_roberta_r1.pt"
-RELEASE_DOWNLOAD_URL = (
-    "https://github.com/KLHA829/scam-detection-jev/releases/download/"
-    f"{RELEASE_TAG}/{RELEASE_ASSET}"
-)
 ENCODER_DOWNLOAD_NOTE = (
     "[WARN] First run downloads the frozen HF encoder "
     f"{DEFAULT_ENCODER} (~400 MB) into the Hugging Face cache. "
     "On a Raspberry Pi this can take several minutes and needs disk + RAM."
 )
-
-# Precision-first head published on jevlike-hf-r1. Without JEVLIKE_CKPT we load
-# only this file — never older heads such as hf_chinese_roberta_hn800.pt.
-DEFAULT_CKPT = ROOT / "models" / "jevlike_hf_chinese_roberta_r1.pt"
 
 DEVICE = os.environ.get("JEVLIKE_DEVICE", "cpu")
 HOST = env_str("JEVLIKE_HOST", DEFAULT_HOST)
@@ -71,14 +57,11 @@ PORT = env_int("JEVLIKE_PORT", DEFAULT_PORT)
 API_KEY = os.environ.get("JEVLIKE_API_KEY", "")
 MAX_BODY = env_int("JEVLIKE_MAX_BODY", 65536)
 
-_MODEL = None
-_COLLATOR = None
-_CONFIG: dict | None = None
-_CHECKPOINT_PATH = None
+_ENCODER = None
+_TOKENIZER = None
 _ENCODER_ID = None
-_OPTIONS: tuple[str, ...] = DEFAULT_OPTIONS
 _DEVICE = None
-_SCORE_LOCK = threading.Lock()
+_MASK_LOCK = threading.Lock()
 _MASK_HEAD = None
 _MASK_THRESHOLD = 0.5
 _MASK_CFG: dict | None = None
@@ -87,68 +70,45 @@ _MASK_OPTION_CACHE = None
 DEFAULT_MASK_CKPT = ROOT / "models" / "jevlike_hf_pii_mask.pt"
 
 
-def parse_options(raw: str | None) -> tuple[str, ...]:
-    if raw is None or str(raw).strip() == "":
-        return DEFAULT_OPTIONS
-    parts = tuple(p.strip() for p in str(raw).split(",") if p.strip())
-    if len(parts) < 2:
-        raise ValueError("JEVLIKE_OPTIONS needs at least two labels")
-    return parts
-
-
-def option_index(options: list[str] | tuple[str, ...], name: str) -> int | None:
-    want = name.strip().lower()
-    for i, option in enumerate(options):
-        if str(option).strip().lower() == want:
-            return i
-    return None
-
-
-def scam_probability(options: list[str] | tuple[str, ...], probabilities: list[float]) -> float:
-    """P(scam) from a jevlike softmax over choice labels."""
-    if not probabilities:
-        raise ValueError("probabilities must not be empty")
-    idx = option_index(options, "scam")
-    if idx is None:
-        idx = len(probabilities) - 1
-    if idx >= len(probabilities):
-        raise ValueError("scam option index out of range")
-    return float(probabilities[idx])
-
-
-def resolve_checkpoint() -> Path:
-    spec = os.environ.get("JEVLIKE_CKPT") or os.environ.get("JEVLIKE_CHECKPOINT") or ""
-    if spec.strip():
+def resolve_mask_checkpoint() -> Path:
+    spec = os.environ.get("JEVLIKE_MASK_CKPT", "").strip()
+    if spec:
         path = Path(spec).expanduser()
         if not path.is_file():
             raise FileNotFoundError(
-                f"JEVLIKE_CKPT not found: {path}. "
-                f"Download {RELEASE_DOWNLOAD_URL} (see models/README.md)."
+                f"JEVLIKE_MASK_CKPT not found: {path}. "
+                "Run scripts/download_pii_mask_ckpt.sh (see models/README.md)."
             )
         return path
-    if DEFAULT_CKPT.is_file():
-        return DEFAULT_CKPT
+    if DEFAULT_MASK_CKPT.is_file():
+        return DEFAULT_MASK_CKPT
     raise FileNotFoundError(
-        f"jevlike r1 checkpoint not found: {DEFAULT_CKPT}. Download "
-        f"{RELEASE_DOWNLOAD_URL} into models/ "
-        "or set JEVLIKE_CKPT. See models/README.md "
-        "and scripts/download_jevlike_ckpt.sh."
+        f"PII mask checkpoint not found: {DEFAULT_MASK_CKPT}. "
+        "Run scripts/download_pii_mask_ckpt.sh or set JEVLIKE_MASK_CKPT (see models/README.md)."
     )
 
 
 def load_runtime() -> None:
-    global _MODEL, _COLLATOR, _CONFIG, _CHECKPOINT_PATH, _ENCODER_ID, _OPTIONS, _DEVICE
+    global _ENCODER, _TOKENIZER, _ENCODER_ID, _DEVICE
+    global _MASK_HEAD, _MASK_THRESHOLD, _MASK_CFG, _MASK_PATH, _MASK_OPTION_CACHE
     import torch
-    from jevlike.model import make_system
+    from jevlike.model import AttentionHead
 
-    _OPTIONS = parse_options(os.environ.get("JEVLIKE_OPTIONS"))
-    _CHECKPOINT_PATH = resolve_checkpoint()
-    print(ENCODER_DOWNLOAD_NOTE, file=sys.stderr, flush=True)
+    from pii_mask_head import head_state_from_checkpoint
 
-    payload = torch.load(_CHECKPOINT_PATH, map_location="cpu", weights_only=True)
-    if not isinstance(payload, dict) or "config" not in payload or "state_dict" not in payload:
-        raise ValueError("checkpoint is not a jevlike {'config','state_dict'} payload")
-    config = dict(payload["config"])
+    path = resolve_mask_checkpoint()
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    if (
+        not isinstance(payload, dict)
+        or "config" not in payload
+        or "state_dict" not in payload
+    ):
+        raise ValueError(f"{path} is not a valid pii_mask checkpoint")
+    config = dict(payload.get("config") or {})
+    if config.get("task") != "pii_mask":
+        raise ValueError(f"{path} is not a pii_mask checkpoint")
+    head_state = head_state_from_checkpoint(payload["state_dict"])
+
     encoder = (
         os.environ.get("JEVLIKE_ENCODER")
         or os.environ.get("JEVLIKE_HF_MODEL")
@@ -161,76 +121,40 @@ def load_runtime() -> None:
             file=sys.stderr,
             flush=True,
         )
-    config["hf_model"] = encoder
-    config["encoder"] = "hf"
-    _CONFIG = config
-    _ENCODER_ID = encoder
 
     device_name = DEVICE or "cpu"
-    if device_name == "cuda":
-        if not torch.cuda.is_available():
-            print("[WARN] CUDA requested but unavailable; using cpu", file=sys.stderr)
-            device_name = "cpu"
-    _DEVICE = torch.device(device_name)
-    _MODEL, _COLLATOR = make_system(config, _DEVICE)
-    missing, unexpected = _MODEL.load_state_dict(payload["state_dict"], strict=False)
-    if unexpected or any(not name.startswith("encoder.") for name in missing):
-        raise ValueError(
-            f"checkpoint mismatch: missing={missing}, unexpected={unexpected}"
-        )
-    _MODEL.eval()
+    if device_name == "cuda" and not torch.cuda.is_available():
+        print("[WARN] CUDA requested but unavailable; using cpu", file=sys.stderr)
+        device_name = "cpu"
+    device = torch.device(device_name)
+
+    from transformers import AutoModel, AutoTokenizer
+
+    print(ENCODER_DOWNLOAD_NOTE, file=sys.stderr, flush=True)
+    tokenizer = AutoTokenizer.from_pretrained(encoder, use_fast=True)
+    encoder_model = AutoModel.from_pretrained(encoder).to(device).eval()
+
+    hidden = int(encoder_model.config.hidden_size)
+    rank = int(config.get("rank") or 32)
+    head = AttentionHead(hidden, rank)
+    head.load_state_dict(head_state, strict=True)
+    head.to(device).eval()
+
+    _ENCODER = encoder_model
+    _TOKENIZER = tokenizer
+    _ENCODER_ID = encoder
+    _DEVICE = device
+    _MASK_HEAD = head
+    _MASK_THRESHOLD = float(config.get("mask_threshold", 0.5))
+    _MASK_CFG = config
+    _MASK_PATH = path
+    _MASK_OPTION_CACHE = None
     print(
-        f"[OK] jevlike loaded checkpoint={_CHECKPOINT_PATH} encoder={encoder} "
-        f"device={_DEVICE} options={list(_OPTIONS)} "
-        f"context_tokens={config.get('context_tokens')} "
-        f"rank={config.get('rank')}",
+        f"[OK] pii mask worker loaded checkpoint={path} encoder={encoder} "
+        f"device={_DEVICE} context_tokens={config.get('context_tokens')} "
+        f"threshold={_MASK_THRESHOLD} rank={rank}",
         flush=True,
     )
-    try:
-        maybe_load_mask_head()
-    except Exception as exc:  # noqa: BLE001
-        print(f"[WARN] pii mask head not loaded: {exc}", file=sys.stderr, flush=True)
-
-
-def score_text(text: str, options: tuple[str, ...] | None = None) -> dict:
-    import torch
-    from jevlike.data import ChoiceExample
-    from jevlike.train import move
-
-    if _MODEL is None or _COLLATOR is None:
-        raise RuntimeError("checkpoint not loaded")
-    body = (text or "").strip()
-    if not body:
-        raise ValueError("text is required")
-    labels = options or _OPTIONS
-    if len(labels) < 2:
-        raise ValueError("need at least two options")
-
-    batch = move(_COLLATOR([ChoiceExample(body, tuple(labels), 0)]), _DEVICE)
-    with _SCORE_LOCK:
-        with torch.no_grad():
-            logits = _MODEL(batch)
-            probabilities = logits.softmax(-1)[0, : len(labels)].float().cpu().tolist()
-    p_scam = scam_probability(labels, probabilities)
-    p_not = max(0.0, min(1.0, 1.0 - p_scam))
-    idx_not = option_index(labels, "not_scam")
-    if idx_not is not None and idx_not < len(probabilities):
-        p_not = float(probabilities[idx_not])
-    pred = "scam" if p_scam >= p_not else "not_scam"
-    score = round(p_scam * 100.0, 4)
-    return {
-        "ok": True,
-        "model": "jevlike",
-        "encoder": _ENCODER_ID,
-        "checkpoint": None if _CHECKPOINT_PATH is None else str(_CHECKPOINT_PATH),
-        "label": pred,
-        "prob_scam": round(p_scam, 6),
-        "prob_not_scam": round(p_not, 6),
-        "score": score,
-        "options": list(labels),
-        "probabilities": [round(float(p), 6) for p in probabilities],
-        "device": None if _DEVICE is None else str(_DEVICE),
-    }
 
 
 _SURNAME = (
@@ -470,51 +394,6 @@ def find_mask_spans(text: str) -> list[dict]:
     return merge_mask_spans(_drop_order_reference_spans(body, spans))
 
 
-def resolve_mask_checkpoint() -> Path | None:
-    spec = os.environ.get("JEVLIKE_MASK_CKPT", "").strip()
-    if spec:
-        path = Path(spec).expanduser()
-        if not path.is_file():
-            raise FileNotFoundError(f"JEVLIKE_MASK_CKPT not found: {path}")
-        return path
-    if DEFAULT_MASK_CKPT.is_file():
-        return DEFAULT_MASK_CKPT
-    return None
-
-
-def maybe_load_mask_head() -> None:
-    """Load the PII AttentionHead onto the scorer's frozen encoder. Optional."""
-    global _MASK_HEAD, _MASK_THRESHOLD, _MASK_CFG, _MASK_PATH
-    if _MODEL is None:
-        return
-    path = resolve_mask_checkpoint()
-    if path is None:
-        print("[INFO] no pii mask head; /v1/mask refuses until one is loaded", flush=True)
-        return
-    import torch
-    from jevlike.model import AttentionHead
-
-    from pii_mask_head import head_state_from_checkpoint
-
-    payload = torch.load(path, map_location="cpu", weights_only=True)
-    config = payload.get("config") or {}
-    if config.get("task") != "pii_mask":
-        raise ValueError(f"{path} is not a pii_mask checkpoint")
-    hidden = int(_MODEL.encoder.config.hidden_size)
-    rank = int(config.get("rank") or 32)
-    head = AttentionHead(hidden, rank)
-    head.load_state_dict(head_state_from_checkpoint(payload["state_dict"]), strict=True)
-    head.to(_DEVICE).eval()
-    _MASK_HEAD = head
-    _MASK_THRESHOLD = float(config.get("mask_threshold", 0.5))
-    _MASK_CFG = config
-    _MASK_PATH = path
-    print(
-        f"[OK] pii mask head loaded checkpoint={path} threshold={_MASK_THRESHOLD} rank={rank}",
-        flush=True,
-    )
-
-
 def _sanitize_surrogates(text: str) -> str:
     if not text:
         return ""
@@ -633,7 +512,7 @@ def _plan_mask_window_chunks(
 def model_mask_spans_batch(texts: list[str]) -> list[list[dict]]:
     """Character spans for a batch of messages from the fine-tuned mask head."""
     global _MASK_OPTION_CACHE
-    if _MASK_HEAD is None or _MODEL is None or _COLLATOR is None or _DEVICE is None:
+    if _MASK_HEAD is None or _ENCODER is None or _TOKENIZER is None or _DEVICE is None:
         return [[] for _ in texts]
     if not texts:
         return []
@@ -648,7 +527,7 @@ def model_mask_spans_batch(texts: list[str]) -> list[list[dict]]:
         spans_from_flags,
     )
 
-    tokenizer = _COLLATOR.tokenizer
+    tokenizer = _TOKENIZER
     limit = 96
     if _MASK_CFG and _MASK_CFG.get("context_tokens"):
         limit = max(8, int(_MASK_CFG["context_tokens"]))
@@ -709,9 +588,9 @@ def model_mask_spans_batch(texts: list[str]) -> list[list[dict]]:
             }
         )
 
-    option_key = (_MODEL.encoder, tokenizer, _DEVICE, mask_option, keep_option)
+    option_key = (_ENCODER, tokenizer, _DEVICE, mask_option, keep_option)
     flat_probs: list[list[float]] = [[] for _ in windows]
-    with _SCORE_LOCK:
+    with _MASK_LOCK:
         with torch.no_grad():
             if _MASK_OPTION_CACHE is None or _MASK_OPTION_CACHE[0] != option_key:
                 options = tokenizer(
@@ -723,7 +602,7 @@ def model_mask_spans_batch(texts: list[str]) -> list[list[dict]]:
                     padding=True,
                 )
                 options = {key: value.to(_DEVICE) for key, value in options.items()}
-                option_hidden = _MODEL.encoder(
+                option_hidden = _ENCODER(
                     input_ids=options["input_ids"],
                     attention_mask=options["attention_mask"],
                 ).last_hidden_state
@@ -750,7 +629,7 @@ def model_mask_spans_batch(texts: list[str]) -> list[list[dict]]:
                     else:
                         batch_ids[row, : item["width"]] = item["input_ids"]
                         batch_mask[row, : item["width"]] = item["attention_mask"]
-                context_hidden = _MODEL.encoder(
+                context_hidden = _ENCODER(
                     input_ids=batch_ids.to(_DEVICE),
                     attention_mask=batch_mask.to(_DEVICE),
                 ).last_hidden_state
@@ -826,17 +705,17 @@ class Handler(BaseHTTPRequestHandler):
         if path not in ("/health", "/healthz"):
             self._send(404, {"error": "not found"})
             return
+        ready = _ENCODER is not None and _MASK_HEAD is not None
         self._send(
             200,
             {
-                "ok": _MODEL is not None,
+                "ok": ready,
                 "model": "jevlike",
-                "checkpoint": None if _CHECKPOINT_PATH is None else str(_CHECKPOINT_PATH),
                 "encoder": _ENCODER_ID,
                 "device": None if _DEVICE is None else str(_DEVICE),
-                "options": list(_OPTIONS),
-                "context_tokens": None if _CONFIG is None else _CONFIG.get("context_tokens"),
+                "context_tokens": None if _MASK_CFG is None else _MASK_CFG.get("context_tokens"),
                 "pii_mask": _MASK_HEAD is not None,
+                "pii_mask_checkpoint": None if _MASK_PATH is None else str(_MASK_PATH),
                 "pii_mask_threshold": _MASK_THRESHOLD if _MASK_HEAD is not None else None,
             },
         )
@@ -846,7 +725,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(401, {"error": "unauthorized"})
             return
         path = self.path.split("?", 1)[0]
-        if path not in ("/predict", "/v1/score", "/score", "/v1/mask"):
+        if path != "/v1/mask":
             self._send(404, {"error": "not found"})
             return
         if "chunked" in (self.headers.get("transfer-encoding") or "").lower():
@@ -872,38 +751,21 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             self._send(422, {"error": "body must be an object"})
             return
-        if path == "/v1/mask":
-            messages = payload.get("messages")
-            if messages is None and isinstance(payload.get("text"), str):
-                messages = [payload["text"]]
-            if not isinstance(messages, list):
-                self._send(422, {"error": "messages must be a list"})
-                return
-            try:
-                self._send(200, mask_payload(messages))
-            except ValueError as exc:
-                self._send(422, {"error": str(exc)})
-            except RuntimeError:
-                self._send(503, {"error": "pii mask head is not loaded"})
-            except Exception:
-                traceback.print_exc()
-                self._send(500, {"error": "mask failed"})
+        messages = payload.get("messages")
+        if messages is None and isinstance(payload.get("text"), str):
+            messages = [payload["text"]]
+        if not isinstance(messages, list):
+            self._send(422, {"error": "messages must be a list"})
             return
-        text = payload.get("text") or payload.get("message") or payload.get("context") or ""
-        options = payload.get("options")
-        labels = None
-        if isinstance(options, list) and len(options) >= 2:
-            labels = tuple(str(x) for x in options)
         try:
-            result = score_text(str(text), labels)
+            self._send(200, mask_payload(messages))
         except ValueError as exc:
             self._send(422, {"error": str(exc)})
-            return
-        except Exception as exc:  # noqa: BLE001
+        except RuntimeError:
+            self._send(503, {"error": "pii mask head is not loaded"})
+        except Exception:
             traceback.print_exc()
-            self._send(500, {"error": str(exc)})
-            return
-        self._send(200, result)
+            self._send(500, {"error": "mask failed"})
 
 
 def warn_if_open_bind(host: str) -> None:
@@ -913,7 +775,7 @@ def warn_if_open_bind(host: str) -> None:
         return
     print(
         f"[WARN] jevlike is listening on {host} without JEVLIKE_API_KEY. "
-        "Message text posted to /v1/score and /v1/mask is unauthenticated.",
+        "Message text posted to /v1/mask is unauthenticated.",
         file=sys.stderr,
         flush=True,
     )
@@ -924,7 +786,7 @@ def main() -> None:
     warn_if_open_bind(HOST)
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(
-        f"[INFO] jevlike worker listening on http://{HOST}:{PORT}/v1/score",
+        f"[INFO] pii mask worker listening on http://{HOST}:{PORT}/v1/mask",
         flush=True,
     )
     server.serve_forever()

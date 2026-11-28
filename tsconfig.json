@@ -14,7 +14,6 @@
   "include": [
     "whatsapp-bot.js",
     "lib/**/*.js",
-    "lab/**/*.js",
     "scripts/**/*.js",
     "stub-jevlike.js"
   ],

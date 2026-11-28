@@ -1,11 +1,11 @@
 ---
 name: verify-scam-bot
-description: "Drive the local WhatsApp scam-DM bot (scam-detection-jev) the way an operator would. Smoke proof uses the stub jevlike HTTP worker (GET /health, POST /v1/mask; POST /v1/score is lab-only) and offline node:test subsets. Use when proving mask-before-LLM, AGENTS.md block/archive invariants, masked review of link-rule hits, malicious-host auto-block, action receipts, LLM cooldown, or the guided self-chat poll. Live WhatsApp Web QR is a separate session and is not required."
+description: "Drive the local WhatsApp scam-DM bot (scam-detection-jev) the way an operator would. Smoke proof uses the stub jevlike HTTP worker (GET /health, POST /v1/mask) and offline node:test subsets. Use when proving mask-before-LLM, AGENTS.md block/archive invariants, masked review of link-rule hits, malicious-host auto-block, action receipts, LLM cooldown, or the guided self-chat poll. Live WhatsApp Web QR is a separate session and is not required."
 ---
 
 # Verify scam-detection-jev
 
-This skill proves operator-facing behavior of the local WhatsApp scam-DM bot. **Live inbound DMs:** every DM — including curated URL or email-domain matches in `data/malicious-hosts.json`, lookalike hits, and short links — goes through **mask (`POST /v1/mask`) → OpenAI-compatible LLM** and gets an archive recommendation only when AI confirms scam. Curated malicious-host hits bypass per-chat cooldown and add a device-checked prompt note (without leaking the raw hostname) so the model distinguishes lures from anti-scam warnings. Saved contacts get a self-chat review card for any recommendation instead of an automatic archive or block. **Auto-block** applies only to unsaved contacts with a curated URL match confirmed by AI, never to email-domain matches or model verdicts alone. jevlike `/v1/score` is lab-only.
+This skill proves operator-facing behavior of the local WhatsApp scam-DM bot. **Live inbound DMs:** every DM — including curated URL or email-domain matches in `data/malicious-hosts.json`, lookalike hits, and short links — goes through **mask (`POST /v1/mask`) → OpenAI-compatible LLM** and gets an archive recommendation only when AI confirms scam. Curated malicious-host hits bypass per-chat cooldown and add a device-checked prompt note (without leaking the raw hostname) so the model distinguishes lures from anti-scam warnings. Saved contacts get a self-chat review card for any recommendation instead of an automatic archive or block. **Auto-block** applies only to unsaved contacts with a curated URL match confirmed by AI, never to email-domain matches or model verdicts alone.
 
 Smoke verification does not open Chrome or WhatsApp. It starts `stub-jevlike.js` (same as `npm run stub`) on `127.0.0.1:18766` and runs `node --test` cases that call `processIncomingMessage`. Live WhatsApp (`npm start`) needs a human QR scan and `.wwebjs_auth/`. Do not start it for smoke proof.
 
@@ -43,7 +43,7 @@ Run before every stub HTTP drive:
 
 `worth_driving: yes` means Node on PATH, `run/stub.pid` is `stub-jevlike.js`, and `GET …/health` is `{ok:true, model:stub-jevlike}`.
 
-Also prints (non-fatal): `python3`, `node_modules`, gitignored `checkpoint` / `pii_mask` presence.
+Also prints (non-fatal): `python3`, `node_modules`, gitignored `pii_mask` presence.
 
 `worth_driving: no` → launch stub or fix the printed reason.
 
@@ -67,14 +67,6 @@ Requires doctor. Exercises stub `POST /v1/mask` and a `node --test` subset for m
 .cursor/skills/verify-scam-bot/bin/drive-llm-review-cooldown
 ```
 
-**Lab-only** (stub `POST /v1/score` + `lab/score-message` tests — not live inbound proof):
-
-```bash
-.cursor/skills/verify-scam-bot/bin/drive-score-archive
-```
-
-See `features/lab-jevlike-score.md`. Historical `evidence/*-score-archive/` folders predate the mask-primary product.
-
 Other features use the `node --test` / `curl` commands in their feature files.
 
 Do not point smoke drives at live `jevlike_serve.py`. Doctor rejects health whose `model` is not `stub-jevlike`.
@@ -93,7 +85,7 @@ Use this only when proving a real PII-mask checkpoint end to end; it is not a re
 
 **CI:** `.github/workflows/test.yml` runs `node scripts/ci-static-gates.js`, then `scripts/ci-verify-smoke.sh` on Ubuntu and Windows (same drive sequence as above; uploads `evidence/` artifacts).
 
-Thresholds and toggles change through `scoring-rubric.json` and env — not hard-coded constants in code.
+Toggles and limits change through env — not hard-coded constants in code.
 
 ## Evidence
 
@@ -105,7 +97,7 @@ Mask-before-llm includes `doctor.txt`, `health.json`, `mask.json`, `node-test.tx
 
 For manual drives, save command, stdout/stderr, exit code, and feature id under the same tree.
 
-Proof standard: exercise the stub HTTP contract the bot uses for mask (and lab score when labelled lab-only), plus `processIncomingMessage` tests for archive/block decisions. Stub runs do not prove a real WhatsApp chat was archived.
+Proof standard: exercise the stub HTTP contract the bot uses for mask, plus `processIncomingMessage` tests for archive/block decisions. Stub runs do not prove a real WhatsApp chat was archived.
 
 ## Cleanup
 
@@ -125,7 +117,6 @@ SIGTERM to `run/stub.pid` when cmdline contains `stub-jevlike.js`, then removes 
 | AGENTS.md invariants | `.cursor/skills/verify-scam-bot/bin/drive-agents-invariants` |
 | Malicious-host block | `.cursor/skills/verify-scam-bot/bin/drive-malicious-host-block` |
 | LLM per-chat cooldown | `.cursor/skills/verify-scam-bot/bin/drive-llm-review-cooldown` |
-| Lab jevlike score only | `.cursor/skills/verify-scam-bot/bin/drive-score-archive` |
 | Stop stub | `.cursor/skills/verify-scam-bot/bin/cleanup` |
 
 ## Maintenance

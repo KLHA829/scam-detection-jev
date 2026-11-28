@@ -44,7 +44,7 @@ const TEST_NAMES = [
   'LLM_REVIEW_ALL keeps inbound review disabled with context default',
   'LLM_REVIEW_ALL keeps inbound review disabled with context 0',
   'full mask endpoint reaches review through the real inbound handler',
-  'endpoint resolution normalizes shared mask bases and preserves score aliases',
+  'endpoint resolution normalizes mask base URLs',
   'disabled review skips the chat API and fails closed on every message including curated hosts',
   'treats money received, own-account alerts and do-not-share codes as no_action',
   'sends the masked recent messages and archives when the model says archive',
@@ -68,20 +68,15 @@ const TEST_FILES = [
   'lib/llm-review-disabled.test.js',
   'lib/context-llm.test.js',
   'lib/audit-functions.test.js',
-  'lib/scorer.test.js',
   'whatsapp-bot.test.js',
 ];
 
 const UNSET_ENV = [
-  'ARCHIVE_THRESHOLD',
-  'SAFE_THRESHOLD',
-  'BLOCK_THRESHOLD',
   'BLOCK_ENABLED',
   'HEURISTIC_ENABLED',
   'OPERATOR_MODE',
   'CONTEXT_LLM_ENABLED',
   'LLM_REVIEW_ENABLED',
-  'SCORER',
 ];
 
 function die(message) {

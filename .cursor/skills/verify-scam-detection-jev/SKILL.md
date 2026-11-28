@@ -21,8 +21,6 @@ This directory name is kept so older agent prompts still resolve. **All** doctor
 .cursor/skills/verify-scam-bot/bin/cleanup
 ```
 
-Lab-only jevlike score: `drive-score-archive` (see `features/lab-jevlike-score.md` in verify-scam-bot).
-
 Feature map: [verify-scam-bot/features/README.md](../verify-scam-bot/features/README.md).
 
 ## Compatibility shims

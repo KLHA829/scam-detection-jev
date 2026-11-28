@@ -64,32 +64,28 @@ const TEST_NAMES = [
   'renames a bot-labelled sender to the block name on a guided block, so unblock can clean it up',
   'records an @lid sender under its contact id, so the next message still reads as unsaved',
   'invariant: saved contacts are never auto-blocked (blockEligibility stays null)',
-  'invariant: unsaved jevlike score at or above BLOCK_THRESHOLD alone does not block',
+  'invariant: blockEligibility stays null without a malicious_host match',
   'invariant: unsaved lookalike link rule does not auto-block (archive only)',
   'invariant: unsaved malicious_host on the current message may block',
   'invariant: applyBlockPolicy never upgrades a saved contact recommendation to block',
-  'invariant: applyBlockPolicy archives unsaved block-line score without link rule or context block',
-  'invariant: scorer unknown (ok:false) never promotes to block via applyBlockPolicy',
+  'invariant: applyBlockPolicy keeps archive without a malicious_host match',
+  'invariant: ignore decision never promotes to block via applyBlockPolicy',
   'invariant: mask failure alone never archives in the live decision path',
   'invariant: LLM scam archives unsaved contact and never calls blockContact',
   'invariant: saved contact LLM scam is deferred without archiving or blocking',
   'invariant: saved contact on malicious_host is deferred without archiving or blocking',
   'invariant: context-model block archives only and never auto-blocks',
-  'invariant: unsaved lookalike does not score, archive or block when AI is disabled',
+  'invariant: unsaved lookalike does not archive or block when AI is disabled',
 ];
 
 const TEST_FILES = ['lib/agents-invariants.test.js', 'lib/context-llm.test.js', 'lib/audit-review-queue.test.js', 'lib/guided-block-name.test.js', 'lib/wa-actions.test.js', 'lib/unblock-history.test.js', 'lib/sibling-unblock-polls.test.js', 'lib/wa-handlers.test.js', 'lib/operator-commands.test.js'];
 
 const UNSET_ENV = [
-  'ARCHIVE_THRESHOLD',
-  'SAFE_THRESHOLD',
-  'BLOCK_THRESHOLD',
   'BLOCK_ENABLED',
   'HEURISTIC_ENABLED',
   'OPERATOR_MODE',
   'CONTEXT_LLM_ENABLED',
   'LLM_REVIEW_ENABLED',
-  'SCORER',
   'MALICIOUS_HOSTS_PATH',
 ];
 
