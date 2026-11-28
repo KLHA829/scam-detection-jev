@@ -22,7 +22,7 @@ Short loop for cloud or local agents working on **scam-detection-jev**. Verifica
 ## Settled product (do not reopen)
 
 - Live inbound: link heuristics → **mask (`POST /v1/mask`) → primary LLM**; no live jevlike `/v1/score` on inbound.
-- **Auto-block** only unsaved contacts on **`data/malicious-hosts.json`**; lookalike and soliciting short links require masked AI confirmation to archive; saved contacts are never auto-blocked.
+- **Auto-block** only unsaved contacts on **`data/malicious-hosts.json`** after masked AI confirmation; lookalike hits and short links go to masked AI review (archive only, never auto-block), and saved contacts are never auto-blocked.
 - No model_v2 / LightJev / foreign-number hard-archive paths; phrase tropes alone do not archive or block.
 
 Encode fixes via tests and verify drivers — see the Gardener checklist in verify-scam-bot.

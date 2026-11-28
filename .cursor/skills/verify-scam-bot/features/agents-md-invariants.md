@@ -1,12 +1,12 @@
 # AGENTS.md invariants
 
-The bot must never auto-block a saved contact. An unsaved contact auto-blocks **only** on a current-message URL in `data/malicious-hosts.json`. Lookalike and soliciting short-link heuristics archive but do not block. Models do not auto-block. **Live** inbound is link heuristics then mask→LLM — no jevlike `/v1/score` archive. Offline **lab/block-policy** tests still assert that a jevlike score alone (including at `BLOCK_THRESHOLD`) only archives and never auto-blocks, and that `ok:false` scorer output does not archive by itself.
+The bot must never auto-block a saved contact. An unsaved contact auto-blocks **only** on a current-message URL in `data/malicious-hosts.json`. Lookalike heuristics require AI confirmation and do not auto-block; short links go directly to masked AI review. Models do not auto-block. **Live** inbound is link heuristics then mask→LLM — no jevlike `/v1/score` archive. Offline **lab/block-policy** tests still assert that a jevlike score alone (including at `BLOCK_THRESHOLD`) only archives and never auto-blocks, and that `ok:false` scorer output does not archive by itself.
 
 ## Sub-features
 
 - `saved-alert-only` requires manual review instead of auto-archive or auto-block for saved contacts.
 - `score-no-block` archives unsaved block-line jevlike scores and never calls block without a malicious-host match.
-- `lookalike-no-block` lookalike and short_link heuristics do not pass `blockEligibility`.
+- `lookalike-no-block` lookalike heuristics do not pass `blockEligibility`.
 - `malicious-host-block` blocks unsaved contacts when `heuristic.id === 'malicious_host'`.
 - `context-archive-only` context model `block` archives only; no `blockContact`.
 - `pitch-label-only` context model `pitch: true` without an archive renames an unsaved sender to `（可疑推銷）` without archive or block, keeps a saved contact's name, and only a name the bot recorded for that number counts as unsaved; a user-saved contact with the same text stays protected and an edit during pacing writes nothing (`keeps a contact the user saved under the label name protected from a listed-URL block`, `does not write the label when the pitch is edited during rename pacing`, `labels an unsaved pitch sender, and the label does not shield a later scam` in `lib/wa-handlers.test.js`, `keeps the name of a contact the user saved` in `lib/wa-actions.test.js`); `drive-agents-invariants` checks both TAP results.
