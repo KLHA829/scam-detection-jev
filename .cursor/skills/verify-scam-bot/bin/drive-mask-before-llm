@@ -27,12 +27,9 @@ const TEST_NAMES = [
     ['notice', 'transfer via link', 'pay at link', 'English payment', 'transfer to link', 'urgent transfer', 'send cash via link', 'inline URL', 'inline bare URL', 'inline URL without money ask', 'unrelated cash negation', 'unrelated same-clause negation', 'negated payment link', 'notice then transfer unchanged', 'negated link below', 'notice URL glued to comma', 'link glued to URL'].map((name) =>
       `family fee ${name}: context=${context} saved=${saved}`))),
   'ties short-link money requests to the payment destination',
-  'English OTP advice and solicitations',
   'reviews warning-only links across sender states and LLM paths',
   'keeps direct and repeated-link lures on the hard-link path',
   'fails closed when warning review masking fails',
-  'direct harvest credential binding',
-  'offer verbs bind OTP within one sentence',
   'drops the original when an edit is empty',
   'does not resend the original after an empty edit with 0 earlier messages',
   'does not resend the original after an empty edit with 1 earlier messages',
@@ -72,7 +69,7 @@ const TEST_NAMES = [
 const TEST_FILES = [
   'lib/agents-invariants.test.js',
   'lib/family-fee-link.test.js',
-  'lib/scam-intent.test.js',
+
   'lib/link-rules.test.js',
   'lib/llm-review.test.js',
   'lib/jevlike-base-url.test.js',

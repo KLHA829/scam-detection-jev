@@ -15,7 +15,7 @@ An unsaved contact who sends a lookalike host, or a short link that also asks fo
 - `hsbc-regional` sends official UK, China, Australia, and Singapore HSBC domains and their subdomains to mask → LLM without a lookalike rule hit. Lookalikes on unrelated hosts still hit. Covered by `bin/drive-mask-before-llm`.
 - `short-solicit` hits a short link only together with an OTP ask, an impersonation claim, or an urgent account-and-money ask. A bare `bit.ly` link does not hit.
 - `warning-only-review` in `lib/link-rules.test.js` covers narrative/quoted/English warnings, fake + genuine URLs, all hard-link types, both contact states and both review paths, mask failure, direct asks and repeated flagged links. Included in `bin/drive-mask-before-llm`.
-- `direct-harvest-credential` requires a direct forwarding verb and a nearby credential in the same clause. `send 相片畀我。今日改咗密碼。 https://bit.ly/photo` goes to mask → LLM; `send 你個密碼畀我`, `將驗證碼發給我`, `send me your OTP`, and `轉發驗證碼` with short links still hit the rule and require AI confirmation. The `direct harvest credential binding` suite in `lib/scam-intent.test.js` covers unit signals, real-handler routing, empty input, and mask failure; included in `bin/drive-mask-before-llm`.
+- Short-link solicitation uses coarse flat keywords only (`SOLICIT_HINT_RE` in `lib/link-rules.js`): any shortener host plus a money, credential, login or impersonation word routes the message to masked review. There is no negation stripping or distance binding — a hit never archives or blocks, so precision is the LLM's job, not the regex's.
 - `short-link-advice` sends authority mentions and anti-scam advice to mask → LLM, not a rule-only archive. Impersonation requires an affirmative self-identification or a WhatsApp official header, not the bare words 銀行職員 / WhatsApp 官方. Locked by `sends short-link advice and authority mentions to masked AI review` and `flags affirmative impersonation short-link scams for AI review` in `lib/link-rules.test.js`; included in `bin/drive-mask-before-llm`.
 - `saved-alert-only` sends a saved contact's lookalike or short-link hit to masked AI review and opens an operator review card only if AI confirms the scam.
 - `before-llm` acts on the link rule without waiting for mask/LLM (test names may still say `scorer`).
@@ -71,7 +71,7 @@ Exit code `0`. `請提供驗證碼 https://bit.ly/fee` is id `short_link_solicit
 ```bash
 node --test --test-reporter tap \
   --test-name-pattern 'archives an unsaved lookalike without auto-block when AI confirms|archives a lookalike without blocking' \
-  lib/link-rules.test.js lib/block-policy.test.js lib/scam-intent.test.js
+  lib/link-rules.test.js lib/block-policy.test.js
 ```
 
 Exit code `0`. Decision action is `archive`; `blockContact` is not called.
