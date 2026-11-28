@@ -24,7 +24,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 | `jevlike_serve.py` | persistent worker: **`POST /v1/mask`** required; `/v1/score` optional for eval |
 | `lib/filters.js`, `lib/lid.js` | which messages count, `@lid` resolution |
 | `lib/link-rules.js`, `lib/scam-intent.js` | link and solicitation signals for review; curated blocklist exception |
-| `lib/malicious-hosts.js`, `data/malicious-hosts.json` | maintained known-malicious hosts; only path that auto-blocks unsaved contacts |
+| `lib/malicious-hosts.js`, `data/malicious-hosts.json` | maintained known-malicious hosts; only path that auto-blocks unsaved contacts. `data/threat-feed-hosts.json` (PhishTank verified-online snapshot, refreshed manually with `node scripts/update-threat-feeds.js`) is **not** part of the blocklist — a feed match only annotates the review-LLM prompt and never archives or blocks |
 | `lib/thread-context.js` | current body plus last `CONTEXT_TURNS` inbound bodies; at most 1000 chats by default |
 | `test/support/mask-spans-stub.js` | offline regex stand-in for stub worker; live inbound must not require it |
 | `lib/pii-xxx.js` | apply mask spans to text (`XXX`); not a live mask fallback |
@@ -53,7 +53,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
   Warning-only scam reports go to masked LLM review regardless of saved status or forwarding metadata, before all hard-link rules. One hard-hit URL occurrence is allowed alongside genuine-site references; direct solicitations, repeated flagged URLs and additional flagged links still hard-hit.
   Guided mode may still ask the chat API for a Cantonese explanation after the same mask, and that reply cannot archive, block, or hide the card.
 - OTP, money, impersonation, and secrecy detectors do not archive or block. They are used only to recognise a soliciting short link.
-- No network lookup of phone numbers or URLs (no Scameter, no third-party registry).
+- No network lookup of phone numbers or URLs at runtime (no Scameter, no third-party registry). The offline `scripts/update-threat-feeds.js` refresh is manual/cron-only and writes a local snapshot; matching stays local.
 - Thresholds and toggles change through `scoring-rubric.json` / env, never by editing constants in code.
 
 ## Commands
