@@ -53,14 +53,15 @@ function userPrompt(body) {
     .join('\n');
 }
 
-function isContextRequest(body) {
+function systemPrompt(body) {
   return (Array.isArray(body.messages) ? body.messages : [])
     .filter((message) => message && message.role === 'system')
-    .some((message) =>
-      String(message.content || '').includes(
-        'You review the latest inbound WhatsApp messages',
-      ),
-    );
+    .map((message) => String(message.content || ''))
+    .join('\n');
+}
+
+function isContextRequest(body) {
+  return systemPrompt(body).includes('You review the latest inbound WhatsApp messages');
 }
 
 function createMockServer(requests, currentScenario) {
@@ -78,21 +79,32 @@ function createMockServer(requests, currentScenario) {
         body,
       });
 
-      const investment = /投資|investment/i.test(userPrompt(body));
-      const bankImpersonation = /銀行職員/.test(userPrompt(body));
+      const usr = userPrompt(body);
+      const sys = systemPrompt(body);
+      const curatedMalicious = /confirmed malicious-host list/i.test(sys);
+      const antiScamWarning = /防騙|假網站|切勿|唔好撳|do not visit/i.test(usr);
+      const listedLure = curatedMalicious && !antiScamWarning;
+      const investment = /投資|investment/i.test(usr);
+      const bankImpersonation = /銀行職員/.test(usr);
       const content = isContextRequest(body)
         ? JSON.stringify({
-            action: investment || bankImpersonation ? 'archive' : 'no_action',
-            strong: bankImpersonation,
+            action: listedLure || investment || bankImpersonation ? 'archive' : 'no_action',
+            strong: listedLure || bankImpersonation,
             confidence: 0.9,
-            reason: bankImpersonation ? 'mock_bank_impersonation' : investment ? 'mock_investment' : 'mock_benign',
+            reason: listedLure
+              ? 'mock_listed_lure'
+              : bankImpersonation
+                ? 'mock_bank_impersonation'
+                : investment
+                  ? 'mock_investment'
+                  : 'mock_benign',
           })
         : JSON.stringify({
-            label: investment ? 'scam' : 'not_scam',
+            label: listedLure || investment ? 'scam' : 'not_scam',
             confidence: 0.9,
-            signals: investment ? ['investment_scam'] : [],
-            should_archive: investment,
-            reason: investment ? 'mock_investment' : 'mock_benign',
+            signals: listedLure ? ['malicious_host'] : investment ? ['investment_scam'] : [],
+            should_archive: listedLure || investment,
+            reason: listedLure ? 'mock_listed_lure' : investment ? 'mock_investment' : 'mock_benign',
           });
 
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -395,11 +407,24 @@ async function main() {
         expected: {
           ignored: false,
           action: 'block',
-          archiveReason: 'obvious_scam',
+          archiveReason: 'context_llm',
           blockReason: 'malicious_host',
           archived: true,
           blocked: true,
-          llmCalls: 0,
+          llmCalls: 1,
+        },
+      }),
+    );
+    results.push(
+      await run({
+        id: 'warning-malicious-host',
+        body: `【防騙提示】以下係假網站 ${maliciousUrl} 千萬唔好撳入去！`,
+        expected: {
+          ignored: false,
+          action: 'ignore',
+          archived: false,
+          blocked: false,
+          llmCalls: 1,
         },
       }),
     );
@@ -411,11 +436,11 @@ async function main() {
         expected: {
           ignored: false,
           action: 'archive',
-          archiveReason: 'obvious_scam',
+          archiveReason: 'context_llm',
           archived: false,
           blocked: false,
           deferred: true,
-          llmCalls: 0,
+          llmCalls: 1,
         },
       }),
     );

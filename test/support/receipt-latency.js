@@ -22,13 +22,20 @@ async function measureReceiptLatency(delayMs, { maskFails = true, archiveFails =
       notices.push(text);
     },
   };
+  const maskSeen = new Map();
   const deps = {
     client,
     pacer: createActionPacer({ env: { WA_ACTION_GAP_MS: '0' } }),
     env: { CONTEXT_LLM_ENABLED: '0', LLM_REVIEW_COOLDOWN_MS: '0', BLOCK_ENABLED: 'false' },
     maskClient: {
       async maskMessages(messages) {
-        if (messages[0].includes('chat A')) {
+        const key = messages[0] || '';
+        const count = (maskSeen.get(key) || 0) + 1;
+        maskSeen.set(key, count);
+        if (count === 1) {
+          return { messages: messages.map(() => ({ spans: [] })) };
+        }
+        if (key.includes('chat A')) {
           maskPending = true;
           started();
           await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -40,9 +47,27 @@ async function measureReceiptLatency(delayMs, { maskFails = true, archiveFails =
       },
     },
     llmReview: {
+      enabled: true,
       apiUrl: 'http://llm.test/v1',
       async fetchImpl(_url, opts) {
-        prompts.push(JSON.parse(opts.body));
+        const parsed = JSON.parse(opts.body);
+        const sys = parsed.messages.find((m) => m.role === 'system').content;
+        if (/"label"\s*:/.test(sys)) {
+          return new Response(JSON.stringify({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  label: 'scam',
+                  confidence: 0.95,
+                  signals: ['malicious_host'],
+                  should_archive: true,
+                  reason: 'listed_host',
+                }),
+              },
+            }],
+          }), { status: 200 });
+        }
+        prompts.push(parsed);
         return new Response(JSON.stringify({
           choices: [{ message: { content: JSON.stringify({ guide: '唔好撳連結，請用官方電話核實。' }) } }],
         }), { status: 200 });
