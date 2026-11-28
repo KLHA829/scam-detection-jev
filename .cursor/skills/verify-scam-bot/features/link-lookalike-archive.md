@@ -17,7 +17,7 @@ An unsaved contact who sends a lookalike host goes to masked AI review and is ar
 
 - Live session: an unsaved number sends a 1:1 message that contains the URL. If AI confirms a scam, the chat is archived; the contact is not renamed with `封鎖·` unless the URL is also on the malicious-host list (see [malicious-host-block](./malicious-host-block.md)).
 - A saved address-book contact who sends the same URL also goes to AI review and gets a review card if AI confirms the scam. The operator decides whether to archive, block and archive, or leave the chat.
-- Smoke path: `node --test` on `lib/link-rules.test.js` and block-policy cases with `savedContact: false` and the in-process benign stub. The link rule fires even when that stub score is 4.
+- Smoke path: `node --test` on `lib/link-rules.test.js` and block-policy cases with `savedContact: false` and the in-process benign mask stub. Live scoring is not involved.
 
 ## Driving it with verify-scam-bot
 

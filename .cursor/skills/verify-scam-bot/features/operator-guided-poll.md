@@ -171,5 +171,5 @@ A failed queue write leaves the old poll unresolved in the queue but rejects sta
 - The first choice on a review poll is the one that runs. A second vote is ignored.
 - An edit voids the open poll for that message. Unblock polls are not touched.
 - Until the setup poll is answered, only unsaved chats may auto-archive, and none auto-block. Guided mode waits for a choice for every suspicious chat.
-- `自動封鎖同封存` is today's automatic path: malicious-host list may block unsaved contacts; lookalike/short-link rules require masked AI confirmation; scores do not drive live actions. The receipt feature then messages your own chat.
+- `自動封鎖同封存` is today's automatic path: malicious-host list may block unsaved contacts; lookalike hits require masked AI confirmation, short links go straight to ordinary masked AI review, and scores do not drive live actions. The receipt feature then messages your own chat.
 - Replying `今日食飯` does not select a choice.
