@@ -18,13 +18,17 @@ async function measureGuidedLatency(delayMs, { stage = 'mask', fails = false } =
   let archivedWhilePending;
   let bStarted;
   const start = performance.now();
+  let slowed = false;
   async function slow() {
+    if (slowed) return;
+    slowed = true;
     pending = true;
     started();
     await new Promise((resolve) => setTimeout(resolve, delayMs));
     pending = false;
     if (fails) throw new Error('explanation unavailable');
   }
+  let aMaskCalls = 0;
   const deps = {
     client: {
       info: { wid: { _serialized: 'self@c.us' } },
@@ -39,13 +43,31 @@ async function measureGuidedLatency(delayMs, { stage = 'mask', fails = false } =
     reviewQueue: createReviewQueue({ filePath: path.join(dir, 'queue.json') }),
     maskClient: {
       async maskMessages(messages) {
-        if (stage === 'mask') await slow();
+        aMaskCalls += 1;
+        if (stage === 'mask' && aMaskCalls >= 2) await slow();
         return { messages: messages.map(() => ({ spans: [] })) };
       },
     },
     llmReview: {
+      enabled: true,
       apiUrl: 'http://llm.test/v1',
-      async fetchImpl() {
+      async fetchImpl(_url, opts) {
+        const sys = JSON.parse(opts.body).messages.find((m) => m.role === 'system').content;
+        if (/"label"\s*:/.test(sys)) {
+          return new Response(JSON.stringify({
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  label: 'scam',
+                  confidence: 0.95,
+                  signals: ['malicious_host'],
+                  should_archive: true,
+                  reason: 'listed_host',
+                }),
+              },
+            }],
+          }), { status: 200 });
+        }
         if (stage === 'llm') await slow();
         return new Response(JSON.stringify({
           choices: [{ message: { content: JSON.stringify({ guide: '請用官方電話核實。' }) } }],
@@ -75,7 +97,13 @@ async function measureGuidedLatency(delayMs, { stage = 'mask', fails = false } =
     await ready;
     bStarted = performance.now();
     const b = handleWaMessage(message('B', '85290002222'), {
-      ...deps, operator: null, maskClient: null,
+      ...deps,
+      operator: null,
+      maskClient: {
+        async maskMessages(messages) {
+          return { messages: messages.map(() => ({ spans: [] })) };
+        },
+      },
     });
     await Promise.all([a, b]);
     const totalMs = performance.now() - start;

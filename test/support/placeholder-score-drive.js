@@ -10,15 +10,30 @@ async function drive(repo = path.resolve(__dirname, '../..'), options = {}) {
   const { applyReviewChoice } = require(path.join(repo, 'lib/apply-review-choice'));
   const { createReviewQueue } = require(path.join(repo, 'lib/review-queue'));
   const { readRecentBlockRecords } = require(path.join(repo, 'lib/block-log'));
+  const { createStubJevlikeClient } = require(path.join(repo, 'stub-jevlike'));
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'placeholder-score-'));
   const env = {
     BLOCK_LOG_PATH: path.join(dir, 'blocks.jsonl'),
     REVIEW_QUEUE_PATH: path.join(dir, 'queue.json'),
-    LLM_REVIEW_ENABLED: 'false',
+    LLM_REVIEW_ENABLED: 'true',
+    LLM_REVIEW_COOLDOWN_MS: '0',
+    LLM_REVIEW_MIN_CONFIDENCE: '0.7',
   };
   try {
     const deps = {
       env,
+      maskClient: createStubJevlikeClient('benign'),
+      llmReview: {
+        enabled: true,
+        apiUrl: 'http://llm.test/v1',
+        fetchImpl: async () => new Response(JSON.stringify({
+          choices: [{
+            message: {
+              content: JSON.stringify({ action: 'block', strong: true, confidence: 0.95, reason: 'listed_host' }),
+            },
+          }],
+        }), { status: 200 }),
+      },
       archiveChat: async () => { if (options.fail) throw new Error('archive down'); },
       blockContact: async () => { if (options.fail) throw new Error('block down'); return { blocked: true }; },
     };
