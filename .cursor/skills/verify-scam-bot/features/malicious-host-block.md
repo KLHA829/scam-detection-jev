@@ -1,6 +1,6 @@
 # Malicious-host auto-block
 
-Unsaved contacts are **auto-blocked only** when the current message URL matches a host in `data/malicious-hosts.json` (exact or suffix). The contact name becomes `封鎖·惡意域名`, the chat is archived, and `blocks.jsonl` gains a line. Saved contacts never auto-block. Lookalike heuristics, soliciting short links, jevlike lab scores, and LLM answers do not auto-block.
+Unsaved contacts are **auto-blocked only** when the current message URL matches a host in `data/malicious-hosts.json` (exact or suffix). The contact name becomes `封鎖·惡意域名`, the chat is archived, and `blocks.jsonl` gains a line. Saved contacts never auto-block. Lookalike heuristics, short links, jevlike lab scores, and LLM answers do not auto-block.
 
 ## Sub-features
 

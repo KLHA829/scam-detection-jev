@@ -23,7 +23,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 | `lab/score-message.js` | lab-only `scoreMessage` via `/v1/score` |
 | `jevlike_serve.py` | persistent worker: **`POST /v1/mask`** required; `/v1/score` optional for eval |
 | `lib/filters.js`, `lib/lid.js` | which messages count, `@lid` resolution |
-| `lib/link-rules.js`, `lib/scam-intent.js` | link and solicitation signals for review; curated blocklist exception |
+| `lib/link-rules.js` | URL extraction, allowlist, lookalike and warning-only checks; curated blocklist exception |
 | `lib/malicious-hosts.js`, `data/malicious-hosts.json` | maintained known-malicious hosts; only path that auto-blocks unsaved contacts |
 | `lib/thread-context.js` | current body plus last `CONTEXT_TURNS` inbound bodies; at most 1000 chats by default |
 | `test/support/mask-spans-stub.js` | offline regex stand-in for stub worker; live inbound must not require it |
@@ -42,7 +42,7 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - **Primary users are elderly; false block cost is extreme.** Saved contacts are **never** auto-archived or auto-blocked. Any suspicious result for a saved contact goes to the operator's self-chat review card, even in automatic mode or before setup. Archive reasons below are recommendations until this operator policy is applied.
   Unsaved contacts block **only** when the current message URL matches a host in `data/malicious-hosts.json`
   (exact or suffix). Blocklisted email addresses recommend archive without blocking. Lookalike hosts
-  and soliciting short links go to AI review and never archive or block by themselves.
+  and short links go to AI review and never archive or block by themselves.
   Models (context LLM, primary LLM) do not auto-block. **No jevlike score** drives live archive/block.
   Text such as 轉數快 or 驗證碼 does not archive or block by itself.
 - **Every** outbound LLM call is masked by jevlike `POST /v1/mask` first. The bot writes `XXX` over those spans and never sends the raw text or the span list. The one exception is a brand's own domain on the link-rule allowlist (`officialHosts`): it is not personal data, so it stays readable while the rest of its link stays masked, and the system prompt says it is official. Lookalike and unknown domains stay masked. If the PII head is missing or the mask call fails, the LLM call is skipped (**fail closed**: no archive). The offline regex stub (`test/support/mask-spans-stub.js`) feeds `stub-jevlike.js` only so `npm test` does not load the encoder. Guided-mode explanations use the same mask. Archive/block receipts attach the chat-list name and phone locally; those fields are not added to the prompt.
@@ -52,7 +52,6 @@ on the maintained malicious-host list. Human docs: [README.md](README.md), [DESI
 - Only a curated URL or email-domain match takes the direct archive path before block policy.
   Warning-only scam reports go to masked LLM review regardless of saved status or forwarding metadata, before all hard-link rules. One hard-hit URL occurrence is allowed alongside genuine-site references; direct solicitations, repeated flagged URLs and additional flagged links still hard-hit.
   Guided mode may still ask the chat API for a Cantonese explanation after the same mask, and that reply cannot archive, block, or hide the card.
-- OTP, money, impersonation, and secrecy detectors do not archive or block. They are used only to recognise a soliciting short link.
 - No network lookup of phone numbers or URLs (no Scameter, no third-party registry).
 - Thresholds and toggles change through `scoring-rubric.json` / env, never by editing constants in code.
 

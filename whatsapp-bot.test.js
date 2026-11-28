@@ -186,8 +186,8 @@ describe('heuristics', () => {
       'lookalike_domain',
     );
     assert.equal(
-      matchObviousScam('請提供驗證碼 https://bit.ly/fee').id,
-      'short_link_solicit',
+      matchObviousScam('請提供驗證碼 https://bit.ly/fee').hit,
+      false,
     );
     assert.equal(
       matchObviousScam('順豐包裹清關 https://www.sf-express.com/hk').hit,

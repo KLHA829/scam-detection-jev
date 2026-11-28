@@ -34,9 +34,9 @@ Each feature file: H1 + paragraph, then `Sub-features`, `How to get to it (user 
 ## Features
 
 - [Mask before LLM](./mask-before-llm.md) — **primary smoke**; `XXX` over PII spans before any chat API call; incomplete mask skips LLM (fail closed).
-- [AGENTS.md invariants](./agents-md-invariants.md) — saved never auto-block; lookalike/short-link never auto-block; malicious-host block; mask fail-closed; LLM path archives without score auto-block.
+- [AGENTS.md invariants](./agents-md-invariants.md) — saved never auto-block; lookalike never auto-blocks; malicious-host block; mask fail-closed; LLM path archives without score auto-block.
 - Unreadable sender contact — a DM whose sender contact cannot be read (whatsmeow bridge error, wwebjs throw) is still reviewed with unknown saved status and never auto-archived or blocked; [whatsmeow transport test](../../../../lib/wa-transport/whatsmeow.test.js) (`reviews a DM with unknown saved status when the bridge contact lookup fails`) and [handler tests](../../../../lib/wa-handlers.test.js) (`only alerts when saved status is unknown`).
-- [Keyword and lookalike AI review](./link-lookalike-archive.md) — lookalike or soliciting short link requires AI confirmation; no auto-block.
+- [Link lookalike AI review](./link-lookalike-archive.md) — lookalike requires AI confirmation; short links go directly to AI review; no auto-block.
 - [Malicious-host block](./malicious-host-block.md) — unsaved auto-block only for URLs on `data/malicious-hosts.json`.
 - [LLM review cooldown](./llm-review-cooldown.md) — per-chat skip of mask+LLM after a successful review (link rules still fire).
 - Malformed LLM confidence — malformed confidence is rejected and does not archive; [primary review tests](../../../../lib/llm-review-confidence.test.js) and [context review tests](../../../../lib/context-llm-confidence.test.js) cover invalid types and ranges, missing confidence, and valid confidence boundaries.

@@ -66,7 +66,6 @@ const TEST_NAMES = [
   'invariant: saved contacts are never auto-blocked (blockEligibility stays null)',
   'invariant: unsaved jevlike score at or above BLOCK_THRESHOLD alone does not block',
   'invariant: unsaved lookalike link rule does not auto-block (archive only)',
-  'invariant: unsaved short_link_solicit does not auto-block',
   'invariant: unsaved malicious_host on the current message may block',
   'invariant: applyBlockPolicy never upgrades a saved contact recommendation to block',
   'invariant: applyBlockPolicy archives unsaved block-line score without link rule or context block',
