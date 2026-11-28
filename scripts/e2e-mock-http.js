@@ -309,6 +309,14 @@ async function executeScenario({
   const requestText = scenarioRequests
     .map((record) => JSON.stringify(record.body))
     .join('\n');
+  // User-turn content only: the system prompt itself names example tokens
+  // like <PHONE_1>, so scanning the whole request would match vacuously.
+  const userTurnText = scenarioRequests
+    .map((record) => {
+      const messages = record.body && Array.isArray(record.body.messages) ? record.body.messages : [];
+      return messages.filter((m) => m && m.role === 'user').map((m) => String(m.content || '')).join('\n');
+    })
+    .join('\n');
   const actual = {
     ignored: Boolean(result && result.ignored),
     action: result && result.decision ? result.decision.action : null,
@@ -320,7 +328,7 @@ async function executeScenario({
     blocked: fake.events.includes('block'),
     deferred: Boolean(result && result.deferred),
     llmCalls: scenarioRequests.length,
-    redactedContainsMaskToken: /<[A-Z]+_\d+>/.test(requestText),
+    redactedContainsMaskToken: /<[A-Z]+_\d+>/.test(userTurnText),
     rawDigitsPresent: sensitiveDigits
       ? requestText.includes(sensitiveDigits)
       : null,
