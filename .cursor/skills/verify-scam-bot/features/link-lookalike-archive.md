@@ -9,16 +9,15 @@ An unsaved contact who sends a lookalike host goes to masked AI review and is ar
 - `allowlist` leaves `sf-express.com`, `hsbc.com.hk`, `wa.me`, `chat.whatsapp.com`, and `whatsapp.com` unflagged.
 - `hsbc-regional` sends official UK, China, Australia, and Singapore HSBC domains and their subdomains to mask → LLM without a lookalike rule hit. Lookalikes on unrelated hosts still hit. Covered by `bin/drive-mask-before-llm`.
 - `short-links-to-ai` routes short links (with or without OTP, money, impersonation, or advice text) directly to masked AI review without a link-rule hit (`routes short links (including OTP, money, and impersonation text) directly to masked AI review` and `sends short-link advice and authority mentions to masked AI review` in `lib/link-rules.test.js`, included in `bin/drive-mask-before-llm`).
-- `warning-only-review` in `lib/link-rules.test.js` covers narrative/quoted/English warnings, fake + genuine URLs, malicious-host and lookalike links, both contact states and both review paths, mask failure, direct asks and repeated flagged links. Included in `bin/drive-mask-before-llm`.
+- `warning-only-review` in `lib/link-rules.test.js` covers narrative/quoted/reported/conditional/English warnings, fake + genuine URLs, malicious-host and lookalike links, both contact states and both review paths, mask failure, direct asks and repeated flagged links. Included in `bin/drive-mask-before-llm`.
 - `saved-alert-only` sends a saved contact's lookalike hit or short-link lure to masked AI review and opens an operator review card only if AI confirms the scam.
-- `before-llm` acts on the link rule without waiting for mask/LLM (test names may still say `scorer`).
 - Advice remains fail-closed on mask errors (`fails closed when masking short-link advice fails`, also in `bin/drive-mask-before-llm`).
 
 ## How to get to it (user POV)
 
 - Live session: an unsaved number sends a 1:1 message that contains the URL. If AI confirms a scam, the chat is archived; the contact is not renamed with `封鎖·` unless the URL is also on the malicious-host list (see [malicious-host-block](./malicious-host-block.md)).
 - A saved address-book contact who sends the same URL also goes to AI review and gets a review card if AI confirms the scam. The operator decides whether to archive, block and archive, or leave the chat.
-- Smoke path: `node --test` on `lib/link-rules.test.js` and block-policy cases with `savedContact: false` and the in-process benign stub. The link rule fires even when that stub score is 4.
+- Smoke path: `node --test` on `lib/link-rules.test.js` and block-policy cases with `savedContact: false` and the in-process benign mask stub. Live scoring is not involved.
 
 ## Driving it with verify-scam-bot
 
