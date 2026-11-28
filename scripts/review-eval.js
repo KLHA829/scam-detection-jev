@@ -21,7 +21,6 @@
 const fs = require('fs');
 const path = require('path');
 
-const { decideIncomingAction } = require('../lib/decide-incoming');
 const { matchObviousScam } = require('../lib/link-rules');
 const { applyBlockPolicy } = require('../lib/block-policy');
 const { maskMessagesForLlm } = require('../lib/context-llm');
@@ -100,12 +99,10 @@ async function main() {
     if (label === 1) stats.scam += 1; else stats.innocent += 1;
 
     const heuristic = matchObviousScam(text, env);
-    const decision = decideIncomingAction(null, null, false, heuristic);
+    const decision = { action: 'ignore', archiveReason: null };
 
     // stage 2 — the repo's own trigger + redaction + merge
     const trig = shouldTriggerLlmReview({
-      heuristic,
-      decision,
       env,
       enabled: MODE === 'all',
     });

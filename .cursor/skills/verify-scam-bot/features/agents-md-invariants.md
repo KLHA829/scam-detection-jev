@@ -10,12 +10,12 @@ The bot must never auto-block a saved contact. An unsaved contact auto-blocks **
 - `malicious-host-block` blocks unsaved contacts when `heuristic.id === 'malicious_host'`.
 - `context-archive-only` context model `block` archives only; no `blockContact`.
 - `pitch-label-only` context model `pitch: true` without an archive renames an unsaved sender to `（可疑推銷）` without archive or block, keeps a saved contact's name, and only a name the bot recorded for that number counts as unsaved; a user-saved contact with the same text stays protected and an edit during pacing writes nothing (`keeps a contact the user saved under the label name protected from a listed-URL block`, `does not write the label when the pitch is edited during rename pacing`, `labels an unsaved pitch sender, and the label does not shield a later scam` in `lib/wa-handlers.test.js`, `keeps the name of a contact the user saved` in `lib/wa-actions.test.js`); `drive-agents-invariants` checks both TAP results.
-- `fail-closed-unknown` ignores `unknown` / `ok:false` scores in `decideIncomingAction` and in `processIncomingMessage`; no archive and no block.
+- `fail-closed-unknown` ignores `unknown` / `ok:false` scores in `applyBlockPolicy` and fails closed on LLM `unknown`/failure in `processIncomingMessage`; no archive and no block.
 
 ## How to get to it (user POV)
 
 - Live session: a suspicious message from a saved contact only opens a review card. An unsaved stranger with a **listed** URL is blocked and renamed in automatic mode. A lookalike without a list entry archives an unsaved chat only if masked AI confirms the scam. AI verdicts do not auto-block.
-- Smoke path: `node --test lib/agents-invariants.test.js` exercises `blockEligibility`, `applyBlockPolicy`, `decideIncomingAction`, and `processIncomingMessage` with the in-process stub client. No WhatsApp session and no HTTP stub worker are required.
+- Smoke path: `node --test lib/agents-invariants.test.js` exercises `blockEligibility`, `applyBlockPolicy`, and `processIncomingMessage` with the in-process stub client. No WhatsApp session and no HTTP stub worker are required.
 
 ## Driving it with verify-scam-bot
 

@@ -152,7 +152,6 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `OPERATOR_MODE` | Unset | `auto` or `guided` pins mode; otherwise use saved choice or ask on first run. |
 | `OPERATOR_MODE_PATH`, `REVIEW_QUEUE_PATH` | `./operator-mode.json`, `./review-queue.json` | Saved operator mode and guided review queue. |
 | `WA_ACTION_GAP_MS` | `3000` | Gap between queued WhatsApp writes in ms. |
-| `CONTEXT_TURNS` | `4` | In-memory thread window capacity including current text; not a live scoring window. |
 | `CONTEXT_LLM_ENABLED` | On | Use masked recent-message review; `0` or `false` selects single-message review. |
 | `CONTEXT_LLM_MESSAGES` | `10` | Recent 1:1 message limit (inbound plus your own messages) including current message; capped at 10. Invalid values or values below 1 use the default. |
 | `LLM_REVIEW_ENABLED` | `true` | Enable LLM judgment; disabling it leaves only heuristic archives. |

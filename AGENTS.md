@@ -16,7 +16,6 @@ and **blocks unsaved contacts only** on the maintained malicious-host list after
 | `whatsapp-bot.js` | WhatsApp Web client: QR, orchestration, archive + graded block (transport-agnostic) |
 | `lib/wa-transport/` | `WaTransport` boundary (`whatsmeow` Go sidecar HTTP/SSE default adapter, `wwebjs` legacy adapter) |
 | `wa-bridge/` | pure-Go `whatsmeow` + `modernc.org/sqlite` local loopback HTTP/SSE sidecar (no Chromium/CGO) |
-| `lib/decide-incoming.js` | baseline ignore decision before masked LLM review (no rule-only archive) |
 | `lib/handle-incoming.js` | inbound orchestration: structural link check → mask → LLM → block policy |
 | `lib/jevlike-client.js` | HTTP client (`createMaskClient`; `/v1/mask` live; `/v1/score` lab-only) |
 | `lib/score-message.js` | rubric load + threshold helpers (lab eval; not inbound archive) |
@@ -25,7 +24,6 @@ and **blocks unsaved contacts only** on the maintained malicious-host list after
 | `lib/filters.js`, `lib/lid.js` | which messages count, `@lid` resolution |
 | `lib/link-rules.js` | pure structural URL extraction, allowlist, curated malicious-host and lookalike checks (no natural-language intent/warning regexes) |
 | `lib/malicious-hosts.js`, `data/malicious-hosts.json` | maintained known-malicious hosts; only path that auto-blocks unsaved contacts. `data/threat-feed-hosts.json` (PhishTank verified-online snapshot, refreshed manually with `node scripts/update-threat-feeds.js`) is **not** part of the blocklist — a feed match only annotates the review-LLM prompt and never archives or blocks |
-| `lib/thread-context.js` | current body plus last `CONTEXT_TURNS` inbound bodies; at most 1000 chats by default |
 | `test/support/mask-spans-stub.js` | offline regex stand-in for stub worker; live inbound must not require it |
 | `lib/pii-xxx.js` | apply mask spans to text as typed placeholders (`<PHONE_1>`, `<NAME_1>`, `<PII_1>` …); not a live mask fallback |
 | `POST /v1/mask` | jevlike PII head spans; the bot replaces them with typed placeholders before any external LLM |

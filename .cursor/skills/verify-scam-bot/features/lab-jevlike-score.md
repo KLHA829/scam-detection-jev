@@ -6,7 +6,7 @@
 
 - `stub-score-http` — scam/benign preset bodies return expected labels on the stub worker.
 - `createMaskClient` — always `JevlikeClient`; `SCORER` env ignored.
-- `score-fail-closed` — timeout/5xx → `ok:false` → `decideIncomingAction` ignores (no score-only archive on inbound).
+- `score-fail-closed` — timeout/5xx → `ok:false` (`label: 'unknown'`; no score-only archive on inbound).
 
 ## How to get to it (user POV)
 

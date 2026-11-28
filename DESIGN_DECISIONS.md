@@ -51,10 +51,9 @@ The frozen scam head and **`POST /v1/score`** remain for lab scoring (`lab/score
 | **`scoring-rubric.json`** and env thresholds | Tune lab eval without code changes. Not live archive gates after mask and LLM. |
 | TTL cache and per-chat single-flight | Dedupes retries and overlapping handlers. |
 | **Paced WhatsApp writes** | Block, rename, mute, and archive run serially with `WA_ACTION_GAP_MS` (default 3s). Failed block does not save the contact. |
-| **Operator mode** — automatic or guided self-chat poll | Guided mode masks before Cantonese explanation. Explanation cannot archive or block. Link rules run before mask and LLM so a slow model does not delay archive or malicious-host block. Receipts attach name and phone locally. |
-| ~~Thread window scoring~~ **Removed from live path** | `CONTEXT_TURNS` and `thread-context.js` support review copy and context LLM only. |
+| **Operator mode** — automatic or guided self-chat poll | Guided mode masks before Cantonese explanation. Explanation cannot archive or block. Receipts attach name and phone locally. |
 | **`stub-jevlike.js`** | `npm test` never downloads the encoder. |
-| **Primary OpenAI-compatible LLM review** | See [Why the LLM instead of jevlike score on inbound](#why-the-llm-instead-of-jevlike-score-on-inbound). Hard link archives skip LLM. |
+| **Primary OpenAI-compatible LLM review** | See [Why the LLM instead of jevlike score on inbound](#why-the-llm-instead-of-jevlike-score-on-inbound). Curated malicious hosts still pass through mask + LLM review first. |
 
 ## Deferred
 

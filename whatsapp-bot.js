@@ -20,7 +20,6 @@ const {
   recordOutgoingMessage,
 } = require('./lib/handle-incoming');
 const { resolveRealNumber, phoneLookupId } = require('./lib/lid');
-const { decideIncomingAction } = require('./lib/decide-incoming');
 const { createLlmReviewConfig } = require('./lib/llm-review');
 const {
   contextLlmEnabled,
@@ -33,7 +32,6 @@ const { loadSenderContact } = require('./lib/sender-contact');
 const { createBotContactNames, defaultBotContactNamesPath } = require('./lib/bot-contact-names');
 const { createUserRestoredChats, defaultUserRestoredChatsPath } = require('./lib/user-restored-chats');
 const { createActionPacer } = require('./lib/action-pacer');
-const { createThreadContext, contextTurnsFromEnv } = require('./lib/thread-context');
 const { createOperatorState } = require('./lib/operator-mode');
 const { createReviewQueue } = require('./lib/review-queue');
 const { deliverGuidedReview, invalidatePendingGuidedReview } = require('./lib/deliver-review');
@@ -581,7 +579,6 @@ async function handleWaMessage(rawMsg, {
   client,
   transport: providedTransport,
   pacer,
-  threadContext,
   recentContext,
   maskClient,
   llmReview,
@@ -652,7 +649,6 @@ async function handleWaMessage(rawMsg, {
       maskClient,
       llmReview,
       contextLlm,
-      threadContext,
       recentContext,
       resolveNumber: () =>
         resolveRealNumber(transport, phoneLookupId(chatId, contactId), contact),
@@ -911,10 +907,7 @@ async function main() {
   const llmReview = createLlmReviewConfig();
   const contextOn = contextLlmEnabled();
   const pacer = createActionPacer();
-  const threadContext = createThreadContext({ turns: contextTurnsFromEnv() });
-  const recentContext = contextOn
-    ? createRecentContext({ limit: contextLlmMessageLimit() })
-    : null;
+  const recentContext = createRecentContext({ limit: contextLlmMessageLimit() });
   const operator = createOperatorState();
   const reviewQueue = createReviewQueue();
   const llmCooldownStore = createLlmReviewCooldownStore({
@@ -951,11 +944,10 @@ async function main() {
     waTransport: transport.name,
     maskWorker: maskClient.baseURL,
     waActionGapMs: pacer.gapMs,
-    contextTurns: threadContext.turns,
     llmReviewEnabled: Boolean(llmReview.enabled),
     llmReviewModel: llmReview.enabled ? llmReview.model : null,
     contextLlmEnabled: contextOn,
-    contextLlmMessages: recentContext ? recentContext.limit : 0,
+    contextLlmMessages: contextOn ? recentContext.limit : 0,
     operatorMode: operator.mode(),
     operatorSetup: operator.needsSetup(),
   });
@@ -964,7 +956,6 @@ async function main() {
     maskClient,
     llmReview,
     pacer,
-    threadContext,
     recentContext,
     operator,
     reviewQueue,
@@ -984,7 +975,6 @@ module.exports = {
   handleWaMessage,
   attachHandlers,
   main,
-  decideIncomingAction,
 };
 
 if (require.main === module) {

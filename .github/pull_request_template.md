@@ -7,7 +7,7 @@
 Mark `Yes` / `No` (or `[x]` where applicable):
 
 - [ ] **LLM prompts** changed (`lib/context-llm.js`, `lib/llm-review.js`)
-- [ ] **Block / archive / contact policy** changed (`lib/block-policy.js`, `lib/decide-incoming.js`, `lib/apply-review-choice.js`, `lib/bot-contact-names.js`)
+- [ ] **Block / archive / contact policy** changed (`lib/block-policy.js`, `lib/apply-review-choice.js`, `lib/bot-contact-names.js`)
 - [ ] **Legit FPR baseline** changed (`fixtures/legit-fpr-baseline.json`)
 - [ ] **Live WhatsApp Web handlers** changed (`whatsapp-bot.js`, `lib/wa-actions.js`) — *not covered by real WhatsApp login in CI*
 - [ ] **Malicious hosts** changed (`data/malicious-hosts.json`)

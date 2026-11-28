@@ -10,7 +10,6 @@ const { extractDigits } = require('./lib/lid');
 const { isLidId, phoneLookupId, phoneFromLidMapping, resolveRealNumber } = require('./lib/lid');
 const { shouldIgnoreMessage, isOfficialWhatsAppId } = require('./lib/filters');
 const { matchObviousScam } = require('./lib/link-rules');
-const { decideIncomingAction } = require('./lib/decide-incoming');
 const { applyBlockPolicy } = require('./lib/block-policy');
 const { loadRubric, labelFromScore } = require('./lib/score-message');
 const { scoreMessage } = require('./lab/score-message');
@@ -18,7 +17,6 @@ const { JevlikeClient, resolveMaskUrl } = require('./lib/jevlike-client');
 const { processIncomingMessage } = require('./lib/handle-incoming');
 const { handleWaMessage } = require('./whatsapp-bot');
 const { createActionPacer } = require('./lib/action-pacer');
-const { createThreadContext } = require('./lib/thread-context');
 const { createRecentContext } = require('./lib/context-llm');
 const { createOperatorState } = require('./lib/operator-mode');
 const { createReviewQueue } = require('./lib/review-queue');
@@ -224,73 +222,10 @@ describe('heuristics', () => {
   });
 });
 
-describe('decideIncomingAction matrix', () => {
-  it('ignores non-heuristic messages before LLM merge', () => {
-    const high = scoreResult({ score: 50, label: 'scam' });
-    assert.deepEqual(
-      decideIncomingAction(high, '85261234567', true, { hit: false }),
-      { action: 'ignore', archiveReason: null },
-    );
-    assert.deepEqual(
-      decideIncomingAction(high, '14155550123', false, { hit: true, id: 'lookalike_domain' }),
-      { action: 'ignore', archiveReason: null },
-    );
-  });
-
-  it('waits for masked LLM confirmation even on a curated malicious URL', () => {
-    const low = scoreResult({ score: 4, label: 'not_scam' });
-    assert.deepEqual(
-      decideIncomingAction(low, '85261234567', true, { hit: true, id: 'malicious_host' }),
-      { action: 'ignore', archiveReason: null },
-    );
-  });
-
-  it('does not archive unsaved non-local numbers from score-or-heuristic alone', () => {
-    const low = scoreResult({ score: 4, label: 'not_scam' });
-    assert.deepEqual(
-      decideIncomingAction(low, '14155550123', false, { hit: false }),
-      { action: 'ignore', archiveReason: null },
-    );
-  });
-
-  it('ignores low score for local unsaved and for saved foreign', () => {
-    const low = scoreResult({ score: 4, label: 'not_scam' });
-    assert.deepEqual(
-      decideIncomingAction(low, '85261234567', false, { hit: false }),
-      { action: 'ignore', archiveReason: null },
-    );
-    assert.deepEqual(
-      decideIncomingAction(low, '14155550123', true, { hit: false }),
-      { action: 'ignore', archiveReason: null },
-    );
-  });
-
-  it('ignores unknown for unsaved non-local and local unsaved', () => {
-    const unknown = scoreResult({ score: 25, label: 'unknown', ok: false });
-    assert.deepEqual(
-      decideIncomingAction(unknown, '447911123456', false, { hit: false }),
-      { action: 'ignore', archiveReason: null },
-    );
-    assert.deepEqual(
-      decideIncomingAction(unknown, '85261234567', false, { hit: false }),
-      { action: 'ignore', archiveReason: null },
-    );
-  });
-
-  it('ignores unknown when LID digits are missing', () => {
-    const unknown = scoreResult({ score: 0, label: 'unknown', ok: false });
-    assert.deepEqual(
-      decideIncomingAction(unknown, null, false, { hit: false }),
-      { action: 'ignore', archiveReason: null },
-    );
-  });
-
+describe('applyBlockPolicy upgrades', () => {
   it('only malicious_host upgrades an AI-confirmed archive to auto-block for unsaved contacts', () => {
     const high = scoreResult({ score: 99, label: 'scam' });
     const lookalike = { hit: true, id: 'lookalike_domain', archiveReason: null };
-    const d = decideIncomingAction(high, '14155550123', false, lookalike);
-    assert.equal(d.action, 'ignore');
-    assert.equal(d.archiveReason, null);
     const notBlocked = applyBlockPolicy({ action: 'archive', archiveReason: 'llm_review_scam' }, {
       savedContact: false,
       scoreResult: high,
@@ -307,7 +242,6 @@ describe('decideIncomingAction matrix', () => {
     assert.equal(blocked.action, 'block');
     assert.equal(blocked.contactName, '封鎖·惡意域名');
   });
-
 });
 
 describe('scoring labels', () => {
@@ -547,9 +481,7 @@ describe('mask cache reuse through WhatsApp orchestration', () => {
   }
 
   function harness(chatId, prior, current, prompts) {
-    const threadContext = createThreadContext({ turns: 4 });
     const recentContext = createRecentContext();
-    threadContext.push(chatId, prior, { messageId: 'prior-inbound' });
     recentContext.push(chatId, prior, { messageId: 'prior-inbound' });
     const batches = [];
     const stubMaskClient = createStubJevlikeClient();
@@ -594,7 +526,6 @@ describe('mask cache reuse through WhatsApp orchestration', () => {
     const deps = {
       client,
       pacer: createActionPacer({ env: { WA_ACTION_GAP_MS: '0' } }),
-      threadContext,
       recentContext,
       env: { LLM_REVIEW_COOLDOWN_MS: '0', LLM_REVIEW_MIN_CONFIDENCE: '0.7' },
       maskClient: {

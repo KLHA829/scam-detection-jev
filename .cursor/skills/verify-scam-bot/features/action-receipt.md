@@ -9,7 +9,7 @@ After every completed archive or block, the bot messages the operator's own chat
 - `receipt-archive-failed` starts with `封存未完成`, or `已封鎖，封存未完成` when the block finished and the archive did not. The receipt still goes out.
 - `receipt-phone-missing` writes `電話未解析到` when the number was not resolved, and still names the chat.
 - `receipt-guide` adds `模型講解：` only when a guide was requested. A failed mask or a missing model yields `解釋暫時出唔到` and the receipt still goes out.
-- `edit-context` removes an edited message's original body before building the receipt or guided explanation, without consuming another slot in the bounded thread buffer. Run `node --test lib/thread-context.test.js`.
+- `edit-context` removes an edited message's original body before building the receipt or guided explanation, without consuming another slot in the bounded recent-context buffer. Run `node --test lib/context-llm.test.js`.
 - Both raw-text context buffers default to 1000 chats (`maxChats` constructor option, minimum 1). Pushing refreshes recency; exceeding the cap drops the least-recently-pushed chat, never the current one. Reads do not refresh recency. Removing a thread's final body releases that chat.
 - `receipt-queue-isolation` prepares automatic explanations outside the WhatsApp write queue. Another chat's link-rule archive does not wait for that mask call; each receipt follows its archive attempt, and a block receipt and its unblock poll stay together in the write queue.
 - `ignore-skips-queue` keeps a message that ends in ignore out of the WhatsApp write queue, so it does not wait for another chat's paced block or archive.
