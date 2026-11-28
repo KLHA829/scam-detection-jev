@@ -55,7 +55,7 @@ Never cut: validation at trust boundaries, error handling that prevents data los
 
 When this skill applies to this repo, read [AGENTS.md](../../../AGENTS.md) first. Ponytail does not override its invariants. In particular:
 
-- Direct archive only from curated malicious host/email link rules. Auto-block is **malicious-host list only**. Primary path: mask → LLM; no live jevlike score.
+- No rule-only direct archive; curated malicious host/email hits also go through mask → LLM (with a device-checked prompt note, no raw host leak). Auto-block is **unsaved + malicious-host list + AI confirmation only**. Primary path: mask → LLM; no live jevlike score.
 - Mask or LLM failure → **no archive** (fail closed).
 - **Every** outbound LLM call goes through live `POST /v1/mask` first; mask failure skips the LLM, not the operator receipt where applicable.
 - Saved contacts are never auto-blocked. Thresholds change via `scoring-rubric.json` / env, not new magic numbers in code.
