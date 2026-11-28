@@ -10,7 +10,7 @@ A successful primary or context LLM review starts the per-chat **`LLM_REVIEW_COO
 - `prune-write-failure` — startup loads active cooldowns and drops expired ones in memory even when it cannot write the pruned file.
 - `persist-restart` — a saved cooldown is reloaded from disk on `npm start` and remains active until expiry.
 - `heuristic-inside-window` — known malicious URL bypasses cooldown for masked LLM review and archives/blocks if confirmed scam.
-- `user-restored` — after the user un-archives a chat the bot archived, whether seen live or reconciled from a whatsmeow full sync, a confident model verdict past the cooldown only sends the review card; a malicious-host URL still blocks.
+- `user-restored` — after the user un-archives a chat the bot archived, whether seen live or reconciled from a whatsmeow full sync, a confident model verdict past the cooldown only sends the review card; in automatic mode, a malicious-host URL can still block an unsaved sender after AI confirmation, while guided mode still asks first.
 
 ## How to get to it (user POV)
 

@@ -116,7 +116,7 @@ Set `LLM_REVIEW_API_URL`, `LLM_REVIEW_MODEL`, and `LLM_REVIEW_API_KEY` when your
 
 Live inbound order (after filters): link heuristics on the current message, then mask and LLM. **`CONTEXT_LLM_ENABLED` defaults to on** (masked transcript of recent 1:1 messages, including your own marked `user:`). Allowlisted official brand domains stay readable and are named in the prompt; lookalike/unknown domains and PII stay masked as typed placeholders (`<PHONE_1>`, `<PII_1>` …). Set `CONTEXT_LLM_ENABLED=0` or `false` for single-message primary LLM only.
 
-On a first message from an unsaved number with no earlier turn, a model archive recommendation acts only on strong evidence (`strong: true` or a current-message curated malicious-host match), otherwise holding until the next message; unsolicited investment/trading/health pitches (`pitch: true`) only label an unsaved sender `（可疑推銷）` (and clear the bot-written label on a later confident `no_action` with `pitch: false`). Chats you restore from the archive (`USER_RESTORED_CHATS_PATH`) are routed to your self-chat review card on ordinary model verdicts like saved contacts; for an unsaved sender, a current-message curated malicious-host match still acts after AI confirmation.
+On a first message from an unsaved number with no earlier turn, a model archive recommendation acts only on strong evidence (`strong: true` or a current-message curated malicious-host match), otherwise holding until the next message; unsolicited investment/trading/health pitches (`pitch: true`) only label an unsaved sender `（可疑推銷）` (and clear the bot-written label on a later confident `no_action` with `pitch: false`). Chats you restore from the archive (`USER_RESTORED_CHATS_PATH`) are routed to your self-chat review card on ordinary model verdicts like saved contacts; for an unsaved sender, a current-message curated malicious-host match removes that restored-chat deferral after AI confirmation, while guided mode still asks first.
 
 If `POST /v1/mask` fails, the bot skips the LLM and does not archive or block (fail closed). This includes curated blocklist matches.
 
@@ -148,7 +148,7 @@ relative to the working directory; worker checkpoint defaults are repo-relative.
 | `MALICIOUS_HOSTS_ALLOW_EMPTY` | Off | Set `1` or `true` to allow a reload with `hosts:[]` to clear the in-memory list. |
 | `BLOCK_LOG_PATH` | `./blocks.jsonl` | Local block history used by operator commands. |
 | `BOT_CONTACT_NAMES_PATH` | `./bot-contact-names.json` | Contacts whose name the bot wrote (block or `（可疑推銷）` label); only those names do not count as saved contacts. |
-| `USER_RESTORED_CHATS_PATH` | `./user-restored-chats.json` | Chats the user moved out of the archive. Ordinary model verdicts there only send the self-chat review card, as for a saved contact; for unsaved senders, malicious-host matches still act after AI confirmation. |
+| `USER_RESTORED_CHATS_PATH` | `./user-restored-chats.json` | Chats the user moved out of the archive. Ordinary model verdicts there only send the self-chat review card, as for a saved contact; for unsaved senders, malicious-host matches remove that restored-chat deferral after AI confirmation, while guided mode still asks first. |
 | `OPERATOR_MODE` | Unset | `auto` or `guided` pins mode; otherwise use saved choice or ask on first run. |
 | `OPERATOR_MODE_PATH`, `REVIEW_QUEUE_PATH` | `./operator-mode.json`, `./review-queue.json` | Saved operator mode and guided review queue. |
 | `WA_ACTION_GAP_MS` | `3000` | Gap between queued WhatsApp writes in ms. |
