@@ -16,7 +16,7 @@ English OTP advice with a directly negated disclosure verb (for example, “neve
 
 ## Why mask before any external LLM
 
-PII must not leave the machine in clear text. The jevlike **PII head** (`POST /v1/mask`) returns character spans. The bot replaces those spans with `XXX` and sends only redacted text to the chat API. Guided-mode Cantonese explanations use the same mask.
+PII must not leave the machine in clear text. The jevlike **PII head** (`POST /v1/mask`) returns character spans. The bot replaces those spans with typed placeholders (`<PHONE_1>`, `<NAME_1>`, `<PII_1>` … — type classified locally from the shape of the hidden text, never its value; identical hidden values share one token within a review batch) and sends only redacted text to the chat API. Guided-mode Cantonese explanations use the same mask.
 
 If the mask head is missing, the response is invalid, or the call fails, the bot **skips** the LLM and does not archive (fail closed). There is no regex stub on the live path.
 

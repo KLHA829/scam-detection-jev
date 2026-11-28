@@ -135,7 +135,7 @@ function urlSpans(text) {
               start: abs + bounds.pathAt,
               end: abs + raw.length,
               label: 'url',
-              replacement: ' XXX',
+              replacement: ' <PII>',
             });
           }
         }
@@ -212,22 +212,7 @@ function findMaskSpans(text) {
   return mergeSpans(spans);
 }
 
-function applyXxx(text, spans) {
-  const src = text == null ? '' : String(text);
-  const ranges = mergeSpans(Array.isArray(spans) ? spans : []).filter(
-    (span) => span.start >= 0 && span.end <= src.length,
-  );
-  let out = src;
-  for (let i = ranges.length - 1; i >= 0; i -= 1) {
-    const span = ranges[i];
-    const token = span.replacement || 'XXX';
-    out = `${out.slice(0, span.start)}${token}${out.slice(span.end)}`;
-  }
-  return out;
-}
-
 module.exports = {
   findMaskSpans,
-  applyXxx,
   mergeSpans,
 };

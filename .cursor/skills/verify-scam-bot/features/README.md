@@ -33,7 +33,7 @@ Each feature file: H1 + paragraph, then `Sub-features`, `How to get to it (user 
 
 ## Features
 
-- [Mask before LLM](./mask-before-llm.md) — **primary smoke**; `XXX` over PII spans before any chat API call; incomplete mask skips LLM (fail closed).
+- [Mask before LLM](./mask-before-llm.md) — **primary smoke**; typed placeholders over PII spans before any chat API call; incomplete mask skips LLM (fail closed).
 - [AGENTS.md invariants](./agents-md-invariants.md) — saved never auto-block; lookalike/short-link never auto-block; malicious-host block; mask fail-closed; LLM path archives without score auto-block.
 - Unreadable sender contact — a DM whose sender contact cannot be read (whatsmeow bridge error, wwebjs throw) is still reviewed with unknown saved status and never auto-archived or blocked; [whatsmeow transport test](../../../../lib/wa-transport/whatsmeow.test.js) (`reviews a DM with unknown saved status when the bridge contact lookup fails`) and [handler tests](../../../../lib/wa-handlers.test.js) (`only alerts when saved status is unknown`).
 - [Keyword and lookalike AI review](./link-lookalike-archive.md) — lookalike or soliciting short link requires AI confirmation; no auto-block.

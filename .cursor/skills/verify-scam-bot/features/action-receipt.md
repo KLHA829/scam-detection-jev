@@ -51,7 +51,7 @@ node --test --test-reporter tap \
   lib/action-notice.test.js
 ```
 
-Exit code `0`. The request body contains `XXX` and does not contain `91234567`, `陳大文`, or the chat-list name and phone that appear on the receipt.
+Exit code `0`. The request body contains typed mask tokens and does not contain `91234567`, `陳大文`, or the chat-list name and phone that appear on the receipt.
 
 - **Leave does not receipt the identity.** Run:
 

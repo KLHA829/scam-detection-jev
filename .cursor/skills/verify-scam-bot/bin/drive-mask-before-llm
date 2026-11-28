@@ -57,7 +57,7 @@ const TEST_NAMES = [
   'disabled review skips the context chat API and archives only blocklist matches',
   'treats money received, own-account alerts and do-not-share codes as no_action',
   'sends the masked recent messages and archives when the model says archive',
-  'replaces phone, name, and otp with XXX and keeps the lure word',
+  'replaces phone, name, and otp with typed placeholders and keeps the lure word',
   'does not call the model when masking fails',
   'rejects a mask payload that would leave the text raw',
   'archives llm_review_scam when the model flags scam',

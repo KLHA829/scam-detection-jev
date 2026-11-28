@@ -114,7 +114,7 @@ Session keys and local message cache live in `WA_BRIDGE_DB_PATH` (default `./wa-
 
 Set `LLM_REVIEW_API_URL`, `LLM_REVIEW_MODEL`, and `LLM_REVIEW_API_KEY` when your server needs auth. `LLM_REVIEW_ENABLED` defaults to **true**.
 
-Live inbound order (after filters): link heuristics on the current message, then mask and LLM. **`CONTEXT_LLM_ENABLED` defaults to on** (masked transcript of recent 1:1 messages, including your own marked `user:`). Allowlisted official brand domains stay readable and are named in the prompt; lookalike/unknown domains and PII stay masked (`XXX`). Set `CONTEXT_LLM_ENABLED=0` or `false` for single-message primary LLM only.
+Live inbound order (after filters): link heuristics on the current message, then mask and LLM. **`CONTEXT_LLM_ENABLED` defaults to on** (masked transcript of recent 1:1 messages, including your own marked `user:`). Allowlisted official brand domains stay readable and are named in the prompt; lookalike/unknown domains and PII stay masked as typed placeholders (`<PHONE_1>`, `<PII_1>` …). Set `CONTEXT_LLM_ENABLED=0` or `false` for single-message primary LLM only.
 
 On a first message from an unsaved number with no earlier turn, a model archive recommendation acts only on strong evidence (`strong: true`), otherwise holding until the next message; unsolicited investment/trading/health pitches (`pitch: true`) only label an unsaved sender `（可疑推銷）` (and clear the bot-written label on a later confident `no_action` with `pitch: false`). Chats you restore from the archive (`USER_RESTORED_CHATS_PATH`) are routed to your self-chat review card on model verdicts like saved contacts.
 
