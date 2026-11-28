@@ -80,7 +80,7 @@ function startMockLlmServer() {
         guide: '【Stub AI 提示】模擬檢視到可疑誘導／轉帳風險，請先查證對方身分。',
       });
     } else if (/"label"\s*:/.test(sys)) {
-      if ((curatedMalicious && !isWarning) || (/驗證碼|login|XXXil/i.test(usr) && !/payme\.hsbc/i.test(usr))) {
+      if ((curatedMalicious && !isWarning) || (/驗證碼|login|<URL_\d+>/i.test(usr) && !/payme\.hsbc/i.test(usr))) {
         content = JSON.stringify({
           label: 'scam',
           confidence: 0.93,
@@ -99,7 +99,7 @@ function startMockLlmServer() {
       }
     } else if (/投資|高回報|短炒/i.test(usr)) {
       content = JSON.stringify({ action: 'no_action', pitch: true, strong: false, confidence: 0.9, reason: 'stub_pitch' });
-    } else if ((curatedMalicious && !isWarning) || (/驗證碼|login|XXXil/i.test(usr) && !/payme\.hsbc/i.test(usr))) {
+    } else if ((curatedMalicious && !isWarning) || (/驗證碼|login|<URL_\d+>/i.test(usr) && !/payme\.hsbc/i.test(usr))) {
       content = JSON.stringify({ action: 'archive', pitch: false, strong: true, confidence: 0.93, reason: 'stub_lure' });
     } else {
       content = JSON.stringify({ action: 'no_action', pitch: false, strong: false, confidence: 0.9, reason: 'stub_benign' });

@@ -619,7 +619,7 @@ describe('mask cache reuse through WhatsApp orchestration', () => {
       const serialized = JSON.stringify(prompt);
       assert.equal(serialized.includes('91234567'), false);
       assert.equal(serialized.includes('陳大文'), false);
-      assert.match(serialized, /XXX/);
+      assert.match(serialized, /<NAME_1>/);
     }
   }
 

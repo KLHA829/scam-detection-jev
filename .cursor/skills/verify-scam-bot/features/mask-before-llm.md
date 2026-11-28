@@ -1,11 +1,11 @@
 # Mask before LLM
 
-Before any chat-API call, the bot asks jevlike `POST /v1/mask` which characters to hide and writes `XXX` over those spans. The raw text and the span list are not sent. A truncated mask, a missing row, or a non-integer span skips the LLM call. An empty span list is a successful mask of a message that has no personal data.
+Before any chat-API call, the bot asks jevlike `POST /v1/mask` which characters to hide and writes typed placeholders over those spans. The raw text and the span list are not sent. A truncated mask, a missing row, or a non-integer span skips the LLM call. An empty span list is a successful mask of a message that has no personal data.
 
 ## Sub-features
 
 - `mask-http` returns one span row per input message from the stub.
-- `mask-xxx` replaces a Hong Kong phone and a 我係 name with `XXX` and leaves the lure word 驗證碼 visible.
+- `mask-xxx` replaces a Hong Kong phone and a 我係 name with typed tokens (`<PHONE_1>`, `<NAME_1>`) and leaves the lure word 驗證碼 visible.
 - `mask-incomplete` skips the chat API when the mask throws, is short a row, or has a non-integer span. The DM is not archived or blocked because the mask failed.
 - `mask-empty` accepts a span list of `[]`.
 - `mask-long-message` scores a message longer than the PII head's trained context (`context_tokens`) in overlapping windows, so spans at both the head and the tail are masked and the message reaches review; a tokenizer that still leaves model-visible text uncovered fails the mask (`python -m unittest test_jevlike_serve.LongMessageMaskTests`, needs torch, so CI without torch skips it).
@@ -15,7 +15,7 @@ Before any chat-API call, the bot asks jevlike `POST /v1/mask` which characters 
 - `LLM_REVIEW_ALL=1` is a legacy compatibility flag with no effect on review enablement or trigger selection; it does not re-enable review when `LLM_REVIEW_ENABLED=false` (`lib/llm-review.test.js` covers context default-on and off).
 - `benign-notices-prompt` runs `treats money received, own-account alerts and do-not-share codes as no_action` in `lib/context-llm.test.js`: the context prompt's `no_action for ordinary chat` clause names money already sent to the user, own-account bank alerts and do-not-share one-time codes; `drive-mask-before-llm` checks this test's TAP result.
 - `own-turns-masked` runs `sends the user's question and the reply as masked turns marked by speaker` in `lib/context-llm.test.js`: the user's own 1:1 messages enter the context transcript marked `user:`, masked in the same `/v1/mask` call as inbound, with no raw phone in the chat-API body; `drive-mask-before-llm` checks this test's TAP result.
-- `official-domain-facts` runs the `officialHosts` suite in `lib/link-rules.test.js` and `official domains in the context review prompt` in `lib/context-llm.test.js`: an allowlisted domain such as `payme.hsbc` stays readable while the rest of its link stays `XXX`, and the context, primary and guided prompts say it is official; lookalike and unknown domains stay masked and add nothing.
+- `official-domain-facts` runs the `officialHosts` suite in `lib/link-rules.test.js` and `official domains in the context review prompt` in `lib/context-llm.test.js`: an allowlisted domain such as `payme.hsbc` stays readable while the rest of its link stays masked, and the context, primary and guided prompts say it is official; lookalike and unknown domains stay masked and add nothing.
 - `mask-local-identity` attaches the chat-list name and phone on this machine. Those fields are not part of the mask request or the chat-API body.
 
 ## How to get to it (user POV)
@@ -48,11 +48,11 @@ Exit code `0`. JSON has `"ok": true`, `"model": "stub-jevlike"`, `"method": "ide
 
 ```bash
 node --test --test-reporter tap \
-  --test-name-pattern 'sends the masked recent messages and archives when the model says archive|replaces phone, name, and otp with XXX and keeps the lure word' \
+  --test-name-pattern 'sends the masked recent messages and archives when the model says archive|replaces phone, name, and otp with typed placeholders and keeps the lure word' \
   lib/context-llm.test.js
 ```
 
-Exit code `0`. The user message contains `XXX` and `驗證碼`, and does not contain `6123` or `陳大文`.
+Exit code `0`. The user message contains typed mask tokens and `驗證碼`, and does not contain `6123` or `陳大文`.
 
 - **Failed mask skips the model and does not archive.** Run:
 
